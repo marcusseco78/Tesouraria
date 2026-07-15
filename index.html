@@ -1561,7 +1561,7 @@ function _previewPlantoesMes(regras,ano,mes){
 }
 
 const FONTES_PADRAO=[
-  {nome:"HSA",tipoValor:"VARIAVEL",calculada:true,tipoRecorrencia:"REGULAR",diaPagamento:17,ativo:true,obs:"",valorHora:200,horasPlantao:12,percDesconto:8,
+  {nome:"HSA",modos:[{tipoValor:"VARIAVEL",calculada:true,tipoRecorrencia:"REGULAR",diaPagamento:17,ativo:true,obs:"",valorHora:200,horasPlantao:12,percDesconto:8,
    regras:[
      {dow:1,modo:"toda",ordinais:[],qtd:1},
      {dow:2,modo:"toda",ordinais:[],qtd:1},
@@ -1569,10 +1569,10 @@ const FONTES_PADRAO=[
      {dow:5,modo:"ordinal",ordinais:[4],qtd:1},
      {dow:6,modo:"ordinal",ordinais:[1],qtd:2},
      {dow:0,modo:"ordinal",ordinais:[4],qtd:2},
-   ]},
-  {nome:"HSI",tipoValor:"VARIAVEL",calculada:true,tipoRecorrencia:"REGULAR",diaPagamento:30,ativo:true,obs:"",valorHora:90,horasPlantao:12,percDesconto:8,
-   regras:[{dow:1,modo:"toda",ordinais:[],qtd:1}]},
-  {nome:"HDWC SESSC",tipoValor:"ESTAVEL",calculada:false,tipoRecorrencia:"REGULAR",diaPagamento:29,ativo:true,obs:"Carga horária 4h/dia útil",valorFixo:9000},
+   ]}]},
+  {nome:"HSI",modos:[{tipoValor:"VARIAVEL",calculada:true,tipoRecorrencia:"REGULAR",diaPagamento:30,ativo:true,obs:"",valorHora:90,horasPlantao:12,percDesconto:8,
+   regras:[{dow:1,modo:"toda",ordinais:[],qtd:1}]}]},
+  {nome:"HDWC SESSC",modos:[{tipoValor:"ESTAVEL",calculada:false,tipoRecorrencia:"REGULAR",diaPagamento:29,ativo:true,obs:"Carga horária 4h/dia útil",valorFixo:9000}]},
 ];
 
 function RegraPlantaoRow({regra,onChange,onRemover}){
@@ -1611,72 +1611,70 @@ function RegraPlantaoRow({regra,onChange,onRemover}){
   </div>;
 }
 
-function FormFonte({fonte,onChange,onRemover}){
-  function upd(campo,valor){ onChange({...fonte,[campo]:valor}); }
-  function addRegra(){ upd("regras",[...(fonte.regras||[]),{dow:1,modo:"toda",ordinais:[],qtd:1}]); }
-  function updRegra(i,nova){ upd("regras",(fonte.regras||[]).map((r,idx)=>idx===i?nova:r)); }
-  function removerRegra(i){ upd("regras",(fonte.regras||[]).filter((_,idx)=>idx!==i)); }
+function FormModo({modo,onChange,onRemover,podeRemover}){
+  function upd(campo,valor){ onChange({...modo,[campo]:valor}); }
+  function addRegra(){ upd("regras",[...(modo.regras||[]),{dow:1,modo:"toda",ordinais:[],qtd:1}]); }
+  function updRegra(i,nova){ upd("regras",(modo.regras||[]).map((r,idx)=>idx===i?nova:r)); }
+  function removerRegra(i){ upd("regras",(modo.regras||[]).filter((_,idx)=>idx!==i)); }
 
   const hj=new Date();
   let mesRef=hj.getMonth()-1, anoRef=hj.getFullYear();
   if(mesRef<0){mesRef=11;anoRef--;}
-  const ehEstavel=fonte.tipoValor==="ESTAVEL";
-  const ehCalculada=!ehEstavel&&!!fonte.calculada;
-  const ehEsporadica=fonte.tipoRecorrencia==="ESPORADICA";
+  const ehEstavel=modo.tipoValor==="ESTAVEL";
+  const ehCalculada=!ehEstavel&&!!modo.calculada;
+  const ehEsporadica=modo.tipoRecorrencia==="ESPORADICA";
   // valorHora/valorFixo ficam como STRING mascarada enquanto o campo esta
   // sendo editado (mesmo padrao de EditorEnvelope) -- nunca converte pra
   // numero a cada tecla, so na hora de salvar (FontesReceita.salvar) ou
   // aqui no preview via numBR (aceita string mascarada OU numero puro).
-  const plantoesPreview=ehCalculada?_previewPlantoesMes(fonte.regras,anoRef,mesRef):0;
+  const plantoesPreview=ehCalculada?_previewPlantoesMes(modo.regras,anoRef,mesRef):0;
   const valorPreview=ehCalculada
-    ?_round2(plantoesPreview*(Number(fonte.horasPlantao)||12)*(numBR(fonte.valorHora)||0)*(1-(Number(fonte.percDesconto)||0)/100))
-    :(numBR(fonte.valorFixo)||0);
+    ?_round2(plantoesPreview*(Number(modo.horasPlantao)||12)*(numBR(modo.valorHora)||0)*(1-(Number(modo.percDesconto)||0)/100))
+    :(numBR(modo.valorFixo)||0);
   function _round2(n){return Math.round(n*100)/100;}
   // Exibicao do campo mascarado: se o valor ainda for um numero puro (vindo
   // do backend ou dos padroes FONTES_PADRAO, nunca editado nesta sessao),
   // formata pra mascara na hora de mostrar; se ja for string (usuario
   // editou), mostra exatamente o que esta digitado.
-  const dispValorHora=typeof fonte.valorHora==="string"?fonte.valorHora:formatarValorInicial(fonte.valorHora);
-  const dispValorFixo=typeof fonte.valorFixo==="string"?fonte.valorFixo:formatarValorInicial(fonte.valorFixo);
+  const dispValorHora=typeof modo.valorHora==="string"?modo.valorHora:formatarValorInicial(modo.valorHora);
+  const dispValorFixo=typeof modo.valorFixo==="string"?modo.valorFixo:formatarValorInicial(modo.valorFixo);
 
-  return <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:10,padding:12,marginBottom:10}}>
-    <div style={{display:"flex",gap:6,marginBottom:8}}>
-      <input type="text" value={fonte.nome} onChange={e=>upd("nome",e.target.value.toUpperCase())} placeholder="Nome da fonte"
-        style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,fontWeight:700,fontFamily:"inherit"}}/>
-      <button onClick={onRemover} style={{background:"none",border:"1px dashed "+C.border,borderRadius:6,color:C.red,fontSize:11,padding:"0 8px",cursor:"pointer"}}>Remover</button>
-    </div>
+  return <div style={{background:C.borderLight,border:"1px solid "+C.border,borderRadius:10,padding:10,marginBottom:8}}>
+    {podeRemover&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:4}}>
+      <button onClick={onRemover} style={{background:"none",border:"1px dashed "+C.border,borderRadius:6,color:C.red,fontSize:10,padding:"3px 8px",cursor:"pointer"}}>Remover este modo</button>
+    </div>}
 
     {/* Eixo A: como o VALOR se comporta */}
     <div style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
-      <select value={fonte.tipoValor||"VARIAVEL"} onChange={e=>upd("tipoValor",e.target.value)}
-        style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit"}}>
+      <select value={modo.tipoValor||"VARIAVEL"} onChange={e=>upd("tipoValor",e.target.value)}
+        style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",background:C.surface}}>
         <option value="VARIAVEL">Variável (muda a cada vez)</option>
         <option value="ESTAVEL">Estável (valor fixo)</option>
       </select>
       {!ehEstavel&&<label style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:C.textSub,cursor:"pointer",flexShrink:0}}>
-        <input type="checkbox" checked={!!fonte.calculada} onChange={e=>upd("calculada",e.target.checked)}/>Calculada
+        <input type="checkbox" checked={!!modo.calculada} onChange={e=>upd("calculada",e.target.checked)}/>Calculada
       </label>}
     </div>
 
     {/* Eixo B: como a RECORRENCIA se comporta */}
+    <select value={modo.tipoRecorrencia||"REGULAR"} onChange={e=>upd("tipoRecorrencia",e.target.value)}
+      style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",marginBottom:6,boxSizing:"border-box",background:C.surface}}>
+      <option value="REGULAR">Regular (gera todo mês)</option>
+      <option value="ESPORADICA">Esporádica (só quando eu lançar)</option>
+    </select>
     <div style={{display:"flex",gap:6,marginBottom:8,alignItems:"center"}}>
-      <select value={fonte.tipoRecorrencia||"REGULAR"} onChange={e=>upd("tipoRecorrencia",e.target.value)}
-        style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit"}}>
-        <option value="REGULAR">Regular (gera todo mês)</option>
-        <option value="ESPORADICA">Esporádica (só quando eu lançar)</option>
-      </select>
       {!ehEsporadica&&<div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
         <label style={{fontSize:10,color:C.textMuted}}>Dia pgto:</label>
-        <input type="number" min="1" max="31" value={fonte.diaPagamento} onChange={e=>upd("diaPagamento",Number(e.target.value)||1)}
+        <input type="number" min="1" max="31" value={modo.diaPagamento} onChange={e=>upd("diaPagamento",Number(e.target.value)||1)}
           style={{width:40,padding:"5px 6px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"center",fontFamily:"inherit"}}/>
       </div>}
       <label style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:C.textSub,cursor:"pointer",flexShrink:0}}>
-        <input type="checkbox" checked={!!fonte.ativo} onChange={e=>upd("ativo",e.target.checked)}/>Ativa
+        <input type="checkbox" checked={!!modo.ativo} onChange={e=>upd("ativo",e.target.checked)}/>Ativo
       </label>
     </div>
 
     {ehEsporadica&&<div style={{background:C.blueLight,borderRadius:8,padding:"7px 10px",fontSize:11,color:C.blue,marginBottom:8}}>
-      ℹ️ Fonte esporádica: nunca gera lançamento sozinha. Fica disponível no botão "Receitas" do "+" pra lançar manualmente quando existir.
+      ℹ️ Modo esporádico: nunca gera lançamento sozinho. Fica disponível no botão "Receitas" do "+" pra lançar manualmente quando existir.
     </div>}
 
     {ehCalculada?<>
@@ -1688,17 +1686,17 @@ function FormFonte({fonte,onChange,onRemover}){
         </div>
         <div style={{flex:1}}>
           <label style={{fontSize:9,color:C.textMuted}}>HORAS/PLANTÃO</label>
-          <input type="number" value={fonte.horasPlantao} onChange={e=>upd("horasPlantao",Number(e.target.value)||12)}
+          <input type="number" value={modo.horasPlantao} onChange={e=>upd("horasPlantao",Number(e.target.value)||12)}
             style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit"}}/>
         </div>
         <div style={{flex:1}}>
           <label style={{fontSize:9,color:C.textMuted}}>% DESCONTO NF</label>
-          <input type="number" value={fonte.percDesconto} onChange={e=>upd("percDesconto",Number(e.target.value)||0)}
+          <input type="number" value={modo.percDesconto} onChange={e=>upd("percDesconto",Number(e.target.value)||0)}
             style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit"}}/>
         </div>
       </div>
       <div style={{fontSize:10,color:C.textMuted,fontWeight:700,marginBottom:4}}>REGRA DOS PLANTÕES</div>
-      {(fonte.regras||[]).map((r,i)=><RegraPlantaoRow key={i} regra={r} onChange={nova=>updRegra(i,nova)} onRemover={()=>removerRegra(i)}/>)}
+      {(modo.regras||[]).map((r,i)=><RegraPlantaoRow key={i} regra={r} onChange={nova=>updRegra(i,nova)} onRemover={()=>removerRegra(i)}/>)}
       <button onClick={addRegra} style={{background:"none",border:"1px dashed "+C.border,borderRadius:6,color:C.teal,fontSize:11,padding:"5px 10px",cursor:"pointer",marginBottom:8}}>
         + Adicionar regra
       </button>
@@ -1715,13 +1713,13 @@ function FormFonte({fonte,onChange,onRemover}){
       {/* Variavel + nao-calculada: valor digitado a cada lancamento -- so o % padrao fica salvo aqui */}
       <div style={{marginBottom:8}}>
         <label style={{fontSize:9,color:C.textMuted}}>% DESCONTO PADRÃO (editável em cada lançamento)</label>
-        <input type="number" value={fonte.percDesconto} onChange={e=>upd("percDesconto",Number(e.target.value)||0)}
+        <input type="number" value={modo.percDesconto} onChange={e=>upd("percDesconto",Number(e.target.value)||0)}
           style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit"}}/>
       </div>
     </>}
     <div>
       <label style={{fontSize:9,color:C.textMuted}}>OBS (livre)</label>
-      <input type="text" value={fonte.obs||""} onChange={e=>upd("obs",e.target.value)} placeholder="Anotação livre sobre essa fonte"
+      <input type="text" value={modo.obs||""} onChange={e=>upd("obs",e.target.value)} placeholder="Anotação livre sobre esse modo"
         style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,boxSizing:"border-box",fontFamily:"inherit"}}/>
     </div>
   </div>;
@@ -1735,21 +1733,28 @@ function FontesReceita({data,onUpdate}){
   const [loadFonte,setLoadFonte]=useState(null); // nome da fonte gerando individualmente agora
   const [msg,setMsg]=useState(null);
 
-  function atualizarFonte(i,nova){ setFontes(fs=>fs.map((f,idx)=>idx===i?nova:f)); }
+  function novoModoVazio(){
+    return {id:"", tipoValor:"VARIAVEL", calculada:false, tipoRecorrencia:"REGULAR",
+      diaPagamento:1, ativo:true, obs:"", valorHora:0, horasPlantao:12, percDesconto:0, regras:[]};
+  }
+  function atualizarNomeFonte(i,novoNome){ setFontes(fs=>fs.map((f,idx)=>idx===i?{...f,nome:novoNome}:f)); }
   function removerFonte(i){ setFontes(fs=>fs.filter((_,idx)=>idx!==i)); }
-  function addFonte(){ setFontes(fs=>[...fs,{nome:"",tipoValor:"VARIAVEL",calculada:false,tipoRecorrencia:"REGULAR",diaPagamento:1,ativo:true,obs:"",valorHora:0,horasPlantao:12,percDesconto:0,regras:[]}]); }
-  function carregarPadrao(){ setFontes(FONTES_PADRAO.map(f=>({...f,regras:f.regras?f.regras.map(r=>({...r})):undefined}))); }
+  function addFonte(){ setFontes(fs=>[...fs,{nome:"",modos:[novoModoVazio()]}]); }
+  function addModo(fi){ setFontes(fs=>fs.map((f,idx)=>idx===fi?{...f,modos:[...(f.modos||[]),novoModoVazio()]}:f)); }
+  function atualizarModo(fi,mi,novoModo){ setFontes(fs=>fs.map((f,idx)=>idx===fi?{...f,modos:f.modos.map((m,midx)=>midx===mi?novoModo:m)}:f)); }
+  function removerModo(fi,mi){ setFontes(fs=>fs.map((f,idx)=>idx===fi?{...f,modos:f.modos.filter((_,midx)=>midx!==mi)}:f)); }
+  function carregarPadrao(){ setFontes(FONTES_PADRAO.map(f=>({...f,modos:(f.modos||[]).map(m=>({...m,regras:m.regras?m.regras.map(r=>({...r})):undefined}))}))); }
 
   // Converte os campos de valor mascarado (string OU numero puro) pra numero
-  // de verdade e persiste o array INTEIRO de fontes em CONFIG -- usado antes
-  // de QUALQUER acao que dependa do estado salvo no backend (gerar, apagar),
-  // pra nunca mais correr o risco de uma acao usar uma regra desatualizada
-  // so porque o Marcus esqueceu de clicar em "Salvar" antes (bug real
-  // reportado 11/07: editou a regra da segunda no HSA, clicou direto em
-  // "Gerar/atualizar", e o backend gerou com a regra ANTIGA porque a edicao
-  // nunca tinha sido persistida).
+  // de verdade, EM CADA MODO de cada fonte, e persiste o array INTEIRO em
+  // CONFIG -- usado antes de QUALQUER acao que dependa do estado salvo no
+  // backend (gerar, apagar), pra nunca mais correr o risco de uma acao usar
+  // uma regra desatualizada so porque o Marcus esqueceu de "Salvar" antes.
   async function persistir(){
-    const fontesLimpo=fontes.map(f=>({...f,valorHora:numBR(f.valorHora)||0,valorFixo:numBR(f.valorFixo)||0}));
+    const fontesLimpo=fontes.map(f=>({
+      ...f,
+      modos:(f.modos||[]).map(m=>({...m,valorHora:numBR(m.valorHora)||0,valorFixo:numBR(m.valorFixo)||0}))
+    }));
     return await api({action:"salvarFontesReceita",fontes:fontesLimpo});
   }
 
@@ -1763,11 +1768,9 @@ function FontesReceita({data,onUpdate}){
     setLoad(false);
   }
   // "Recalcular TODAS": salva a tela, apaga TODOS os futuros gerados (de
-  // qualquer fonte) e regera do zero com as regras/valores atuais -- nao so
-  // "preenche o que falta" (isso deixaria lancamentos antigos com regra
-  // desatualizada parados la, foi exatamente o bug reportado 11/07).
+  // qualquer fonte/modo) e regera do zero com as regras/valores atuais.
   async function recalcularTodas(){
-    if(!window.confirm("Recalcular TODAS as fontes? Isso apaga todos os lançamentos futuros ainda programados (de qualquer fonte) e regera do zero com os valores/regras atuais da tela. Já executados nunca são tocados."))return;
+    if(!window.confirm("Recalcular TODAS as fontes? Isso apaga todos os lançamentos futuros ainda programados (de qualquer fonte/modo) e regera do zero com os valores/regras atuais da tela. Já executados nunca são tocados."))return;
     setLoadRefresh(true); setMsg(null);
     try{
       await persistir();
@@ -1778,17 +1781,11 @@ function FontesReceita({data,onUpdate}){
     }catch(e){alert(e.message);}
     setLoadRefresh(false);
   }
-  // "Recalcular" UMA fonte: mesma logica do botao "Todas" acima, so que
-  // filtrada pra uma fonte especifica -- salva, apaga os futuros JA
-  // GERADOS dessa fonte (marcador em OBS) e regera do zero com a regra/
-  // valores atuais da tela. E o botao que resolve "mudei o valor-hora/
-  // aliquota/regra de plantao, quero que os lancamentos futuros reflitam
-  // isso" -- sem essa fusao, "gerar" sozinho so preenchia meses NOVOS e
-  // deixava os meses ja gerados com o valor antigo parado (bug real
-  // reportado 11/07: editou a regra da segunda no HSA, clicou em "gerar",
-  // e os meses ja existentes continuaram com 13 plantoes).
+  // "Recalcular" UMA fonte (todos os modos dela juntos) -- mesma logica do
+  // botao "Todas", so que filtrada. E o botao que resolve "mudei valor-hora/
+  // aliquota/regra de algum modo, quero que os lancamentos futuros reflitam".
   async function recalcularUmaFonte(nome){
-    if(!window.confirm("Recalcular \""+nome+"\"? Isso apaga os lançamentos futuros já gerados dessa fonte e regera do zero com os valores/regra atuais da tela. Já executados nunca são tocados."))return;
+    if(!window.confirm("Recalcular \""+nome+"\"? Isso apaga os lançamentos futuros já gerados dessa fonte (todos os modos) e regera do zero com os valores/regra atuais da tela. Já executados nunca são tocados."))return;
     setLoadFonte(nome); setMsg(null);
     try{
       await persistir();
@@ -1803,7 +1800,7 @@ function FontesReceita({data,onUpdate}){
   // Marcus so quer remover (ex: desativou a fonte) sem recriar nada.
   const [loadApagar,setLoadApagar]=useState(null);
   async function apagarFuturosDaFonte(nome){
-    if(!window.confirm("Apagar TODOS os lançamentos ainda programados de \""+nome+"\" (todos os meses futuros), SEM regerar? Já executados não são tocados."))return;
+    if(!window.confirm("Apagar TODOS os lançamentos ainda programados de \""+nome+"\" (todos os modos, todos os meses futuros), SEM regerar? Já executados não são tocados."))return;
     setLoadApagar(nome); setMsg(null);
     try{
       await persistir();
@@ -1814,8 +1811,9 @@ function FontesReceita({data,onUpdate}){
     setLoadApagar(null);
   }
 
-  // Proximos lancamentos ja gerados no Fluxo pra cada fonte -- so leitura,
-  // pra o Marcus conferir sem precisar navegar ate Previsao.
+  // Proximos lancamentos ja gerados no Fluxo pra cada FONTE (soma de todos
+  // os modos dela junto -- o marcador "FONTE_RECEITA:NOME:" ainda casa com
+  // qualquer modo, o id do modo vem depois no marcador) -- so leitura.
   function proximosDaFonte(nome){
     const marcador="FONTE_RECEITA:"+String(nome||"").toUpperCase().replace(/[^A-Z0-9_ ]/g,"").replace(/ /g,"")+":";
     return (data.fluxo||[])
@@ -1824,24 +1822,24 @@ function FontesReceita({data,onUpdate}){
   }
   const jaSalva=nome=>salvas.some(f=>String(f.nome||"").toUpperCase()===String(nome||"").toUpperCase());
 
-  // [NOVO 13/07] Total mensal discriminado (Regular vs Esporádica) + média
-  // dos últimos 12 meses civis (com e sem esporádicas), pedido do Marcus
-  // junto com Receitas Esporádicas. Agrupa por MES CIVIL DE PAGAMENTO (o
-  // mes que consta no proprio marcador FONTE_RECEITA, nao o mes de
-  // referencia trabalhado) -- e a visao "quanto entrou naquele mes", que e
-  // o que um total de caixa deveria mostrar. Considera EXECUTADO e
-  // PROGRAMADO igual (um mes futuro ja tem um valor calculado, mesmo nao
-  // realizado ainda).
+  // [13/07, 2a rodada] Total mensal discriminado (Regular vs Esporádica) +
+  // média dos últimos 12 meses civis. Agora precisa achar o MODO exato que
+  // gerou cada linha (nao so a fonte) pra saber se aquele modo especifico e
+  // regular ou esporadico -- duas fontes podem ter o mesmo nome de modo
+  // gerando linhas diferentes, entao a chave de busca e nome+idDoModo.
   const resumoMensal=useMemo(()=>{
-    const porFonteNome={};
-    fontes.forEach(f=>{porFonteNome[String(f.nome||"").toUpperCase().replace(/[^A-Z0-9_ ]/g,"").replace(/ /g,"")]=f;});
+    const porChaveModo={};
+    fontes.forEach(f=>{
+      const nomeNorm=String(f.nome||"").toUpperCase().replace(/[^A-Z0-9_ ]/g,"").replace(/ /g,"");
+      (f.modos||[]).forEach(m=>{ if(m.id) porChaveModo[nomeNorm+":"+m.id]=m; });
+    });
     const porMes={};
     (data.fluxo||[]).forEach(r=>{
-      const m=String(r.obs||"").match(/FONTE_RECEITA:([A-Z0-9_]+):(\d{4}-\d{2})/);
+      const m=String(r.obs||"").match(/FONTE_RECEITA:([A-Z0-9_]+):([A-Za-z0-9_]+):(\d{4}-\d{2})/);
       if(!m) return;
-      const fonte=porFonteNome[m[1]];
-      const esporadica=fonte&&fonte.tipoRecorrencia==="ESPORADICA";
-      const chave=m[2];
+      const modo=porChaveModo[m[1]+":"+m[2]];
+      const esporadica=modo&&modo.tipoRecorrencia==="ESPORADICA";
+      const chave=m[3];
       if(!porMes[chave]) porMes[chave]={regular:0,esporadica:0};
       if(esporadica) porMes[chave].esporadica+=Number(r.valor)||0;
       else porMes[chave].regular+=Number(r.valor)||0;
@@ -1859,7 +1857,7 @@ function FontesReceita({data,onUpdate}){
       RECEITAS ESTRUTURADAS
     </div>
     <div style={{fontSize:11,color:C.textMuted,marginBottom:12,fontStyle:"italic"}}>
-      Cada fonte calcula sozinha (por plantão) ou usa valor fixo, e já lança a Receita programada nos próximos ~13 meses. O mês de referência é sempre o anterior ao pagamento. Corrija a linha no Fluxo se algo mudar (feriado, plantão cancelado etc). Qualquer botão abaixo (💾, 🔄, 🗑) já salva as edições da tela primeiro, sozinho — nunca usa uma regra antiga esquecida sem salvar.
+      Cada fonte pode ter vários modos de pagamento (ex: HSI regular por plantão + um bônus esporádico). Cada modo calcula sozinho (por plantão), usa valor fixo, ou é lançado manualmente — e modos regulares já lançam a Receita programada nos próximos ~13 meses. Corrija a linha no Fluxo se algo mudar (feriado, plantão cancelado etc). Qualquer botão abaixo (💾, 🔄, 🗑) já salva as edições da tela primeiro, sozinho.
     </div>
 
     {(mesAtual.regular>0||mesAtual.esporadica>0||ultimos12.length>0)&&<div style={{background:C.tealLight,borderRadius:10,padding:"10px 12px",marginBottom:14}}>
@@ -1881,9 +1879,21 @@ function FontesReceita({data,onUpdate}){
       </button>
     </div>}
 
-    {fontes.map((f,i)=><div key={i}>
-      <FormFonte fonte={f} onChange={nova=>atualizarFonte(i,nova)} onRemover={()=>removerFonte(i)}/>
-      <div style={{marginTop:-4,marginBottom:10,paddingLeft:4}}>
+    {fontes.map((f,i)=><div key={i} style={{background:C.surface,border:"1px solid "+C.border,borderRadius:10,padding:12,marginBottom:10}}>
+      <div style={{display:"flex",gap:6,marginBottom:10}}>
+        <input type="text" value={f.nome} onChange={e=>atualizarNomeFonte(i,e.target.value.toUpperCase())} placeholder="Nome da fonte"
+          style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,fontWeight:700,fontFamily:"inherit"}}/>
+        <button onClick={()=>removerFonte(i)} style={{background:"none",border:"1px dashed "+C.border,borderRadius:6,color:C.red,fontSize:11,padding:"0 8px",cursor:"pointer"}}>Remover fonte</button>
+      </div>
+
+      {(f.modos||[]).map((m,mi)=><FormModo key={mi} modo={m} podeRemover={(f.modos||[]).length>1}
+        onChange={novo=>atualizarModo(i,mi,novo)} onRemover={()=>removerModo(i,mi)}/>)}
+
+      <button onClick={()=>addModo(i)} style={{width:"100%",background:"none",border:"1px dashed "+C.border,borderRadius:8,color:C.teal,fontSize:11,fontWeight:600,padding:"7px",cursor:"pointer",marginBottom:8}}>
+        + Adicionar modo de pagamento
+      </button>
+
+      <div>
         {proximosDaFonte(f.nome).length>0&&<>
           <div style={{fontSize:9,color:C.textMuted,fontWeight:700,marginBottom:3}}>PRÓXIMOS JÁ NO FLUXO</div>
           {proximosDaFonte(f.nome).map((r,j)=><div key={j} style={{fontSize:11,color:C.textSub,display:"flex",justifyContent:"space-between",padding:"2px 0"}}>
@@ -1902,15 +1912,15 @@ function FontesReceita({data,onUpdate}){
             </button>
           </div>
           <div style={{fontSize:9,color:C.textMuted,marginTop:3,lineHeight:1.4}}>
-            <b>Recalcular</b>: mudou valor-hora, alíquota ou a regra dessa fonte? Isso refaz TODOS os meses futuros com o valor certo. <b>Desativar e limpar</b>: só some com o que já estava programado, sem recriar — use se for parar de usar essa fonte.
+            <b>Recalcular</b>: mudou valor-hora, alíquota ou a regra de algum modo dessa fonte? Isso refaz TODOS os meses futuros com o valor certo. <b>Desativar e limpar</b>: só some com o que já estava programado, sem recriar.
           </div>
         </div>}
       </div>
     </div>)}
 
-    {fontes.length>0&&<button onClick={addFonte} style={{width:"100%",background:"none",border:"1px dashed "+C.border,borderRadius:8,color:C.teal,fontSize:12,fontWeight:600,padding:"8px",cursor:"pointer",marginBottom:12}}>
+    <button onClick={addFonte} style={{width:"100%",background:"none",border:"1px dashed "+C.border,borderRadius:8,color:C.teal,fontSize:12,fontWeight:600,padding:"8px",cursor:"pointer",marginBottom:12}}>
       + Adicionar outra fonte
-    </button>}
+    </button>
 
     {fontes.length>0&&<div style={{display:"flex",gap:8}}>
       <button onClick={salvar} disabled={load}
@@ -1923,7 +1933,7 @@ function FontesReceita({data,onUpdate}){
       </button>
     </div>}
     {fontes.length>0&&<div style={{fontSize:9,color:C.textMuted,marginTop:5,lineHeight:1.4}}>
-      <b>Salvar</b>: grava suas edições e preenche os meses que ainda faltam — não mexe no que já existe. <b>Recalcular todas</b>: refaz TODOS os meses futuros de TODAS as fontes com os valores atuais (equivale a clicar "Recalcular" em cada uma).
+      <b>Salvar</b>: grava suas edições e preenche os meses que ainda faltam — não mexe no que já existe. <b>Recalcular todas</b>: refaz TODOS os meses futuros de TODAS as fontes/modos com os valores atuais (equivale a clicar "Recalcular" em cada uma).
     </div>}
     {msg&&<div style={{marginTop:8,fontSize:11,color:C.teal,textAlign:"center"}}>{msg}</div>}
   </div>;
@@ -2589,17 +2599,21 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
 
   // Detecta se um item do Fluxo e uma linha de receita CALCULADA (gerada
   // pelo motor de Receitas Estruturadas) -- so essas tem "numero de
-  // plantoes" pra editar. ESTAVEL (ex HDWC) nao tem esse conceito.
+  // plantoes" pra editar. ESTAVEL (ex HDWC) nao tem esse conceito. Marcador
+  // agora e "FONTE_RECEITA:NOME:MODOID:DATA" -- precisa achar o MODO exato
+  // dentro da fonte (uma fonte pode ter varios modos, so um deles calculado).
   function fonteCalculadaDeItem(item){
-    const m=String(item.obs||"").match(/FONTE_RECEITA:([A-Z0-9_]+):/);
+    const m=String(item.obs||"").match(/FONTE_RECEITA:([A-Z0-9_]+):([A-Za-z0-9_]+):/);
     if(!m) return null;
     const fonte=(data.fontesReceita||[]).find(f=>String(f.nome||"").toUpperCase().replace(/[^A-Z0-9_]/g,"")===m[1]);
-    if(!fonte||!fonte.calculada) return null;
+    if(!fonte) return null;
+    const modo=(fonte.modos||[]).find(md=>md.id===m[2]);
+    if(!modo||!modo.calculada) return null;
     const mp=String(item.descricao||"").match(/\(([\d.]+)\s+HORAS\)/);
     const horasAtual=mp?Number(mp[1]):null;
-    const horasPorPlantao=Number(fonte.horasPlantao)||12;
+    const horasPorPlantao=Number(modo.horasPlantao)||12;
     const plantoesAtual=horasAtual?(horasAtual/horasPorPlantao):"";
-    return {fonte,plantoesAtual};
+    return {fonte:modo,plantoesAtual};
   }
   useEffect(()=>{
     if(destaque?.tab==="fluxo"&&destaque.row){
@@ -3981,35 +3995,49 @@ function BotaoLancar({data,onUpdate}){
   // MODELO_RECEITAS_ESPORADICAS_ESPECIFICACAO_COMPLETA.md); esse e o unico
   // jeito dela virar lancamento de verdade.
   const ehReceita=dest==="receita";
-  const fontesEsporadicas=useMemo(()=>(data.fontesReceita||[]).filter(f=>f.tipoRecorrencia==="ESPORADICA"&&f.ativo),[data.fontesReceita]);
-  const [fonteEspId,setFonteEspId]=useState("");
+  // [13/07, 2a rodada] uma fonte agora pode ter varios MODOS -- a lista pra
+  // escolher no "+" precisa ser por MODO esporadico (nao por fonte inteira),
+  // ja que a mesma fonte (ex: HSI) pode ter um modo regular e outro
+  // esporadico ao mesmo tempo. Guarda o par {fonteNome, modo} pra ter tudo
+  // que precisa: o nome (pro marcador) e os campos do modo (pro calculo).
+  const fontesEsporadicas=useMemo(()=>{
+    const lista=[];
+    (data.fontesReceita||[]).forEach(f=>{
+      (f.modos||[]).forEach(modo=>{
+        if(modo.tipoRecorrencia==="ESPORADICA"&&modo.ativo) lista.push({fonteNome:f.nome,modo});
+      });
+    });
+    return lista;
+  },[data.fontesReceita]);
+  const [modoEspId,setModoEspId]=useState("");
   const [bruto,setBruto]=useState("");
   const [percDescReceita,setPercDescReceita]=useState("");
   const [valorEstavel,setValorEstavel]=useState("");
   const [plantoesEsp,setPlantoesEsp]=useState("");
-  const fonteEspSelecionada=fontesEsporadicas.find(f=>f.nome===fonteEspId);
+  const fonteEspSelecionada=fontesEsporadicas.find(x=>x.modo.id===modoEspId);
   // [13/07] a esporadica pode ser das 4 combinacoes possiveis -- o
   // formulario se adapta sozinho, em vez de sempre pedir bruto+desconto:
-  //   ESTAVEL              -> so um valor (pre-preenchido de fonte.valorFixo)
+  //   ESTAVEL              -> so um valor (pre-preenchido do valorFixo do modo)
   //   VARIAVEL + calculada -> quantos plantoes esse mes (usa valorHora/
-  //                           horasPlantao/percDesconto salvos na fonte)
+  //                           horasPlantao/percDesconto salvos no modo)
   //   VARIAVEL + !calculada-> bruto + % desconto (ja existia)
   const liquidoPreview=(()=>{
     if(!fonteEspSelecionada) return 0;
-    if(fonteEspSelecionada.tipoValor==="ESTAVEL") return numBR(valorEstavel)||0;
-    if(fonteEspSelecionada.calculada){
+    const modo=fonteEspSelecionada.modo;
+    if(modo.tipoValor==="ESTAVEL") return numBR(valorEstavel)||0;
+    if(modo.calculada){
       const plantoes=Number(plantoesEsp)||0;
-      const horas=Number(fonteEspSelecionada.horasPlantao)||12;
-      const valorHora=Number(fonteEspSelecionada.valorHora)||0;
-      const perc=Number(fonteEspSelecionada.percDesconto)||0;
+      const horas=Number(modo.horasPlantao)||12;
+      const valorHora=Number(modo.valorHora)||0;
+      const perc=Number(modo.percDesconto)||0;
       return Math.round(plantoes*horas*valorHora*(1-perc/100)*100)/100;
     }
     const b=numBR(bruto)||0;const p=Number(percDescReceita)||0;
     return Math.round(b*(1-p/100)*100)/100;
   })();
   const receitaEspValida=fonteEspSelecionada&&(
-    fonteEspSelecionada.tipoValor==="ESTAVEL"?!!numBR(valorEstavel)
-    :fonteEspSelecionada.calculada?Number(plantoesEsp)>0
+    fonteEspSelecionada.modo.tipoValor==="ESTAVEL"?!!numBR(valorEstavel)
+    :fonteEspSelecionada.modo.calculada?Number(plantoesEsp)>0
     :!!numBR(bruto));
 
   const ehPagamento=dest==="pagpj"||dest==="pagpf";
@@ -4055,15 +4083,15 @@ function BotaoLancar({data,onUpdate}){
       return;
     }
     if(ehReceita){
-      if(!fonteEspId||!receitaEspValida)return;
+      if(!modoEspId||!receitaEspValida)return;
       setLoad(true);
       try{
-        const nomeNorm=String(fonteEspId).toUpperCase().replace(/[^A-Z0-9_ ]/g,"").replace(/ /g,"");
-        const obsMarcador="FONTE_RECEITA:"+nomeNorm+":"+data_;
-        const r=await api({action:"lancar",data:data_,descricao:(fonteEspId+" (ESPORÁDICA)").toUpperCase(),
+        const nomeNorm=String(fonteEspSelecionada.fonteNome).toUpperCase().replace(/[^A-Z0-9_ ]/g,"").replace(/ /g,"");
+        const obsMarcador="FONTE_RECEITA:"+nomeNorm+":"+fonteEspSelecionada.modo.id+":"+data_;
+        const r=await api({action:"lancar",data:data_,descricao:(fonteEspSelecionada.fonteNome+" (ESPORÁDICA)").toUpperCase(),
           valor:liquidoPreview,tipo:"RECEITA",categoria:"RECEITA",forma:"CONTA",
           status:data_<=hoje()?"EXECUTADO":"PROGRAMADO",obs:obsMarcador});
-        onUpdate(r);setOpen(false);setFonteEspId("");setBruto("");setPercDescReceita("");setValorEstavel("");setPlantoesEsp("");setData_(hoje());
+        onUpdate(r);setOpen(false);setModoEspId("");setBruto("");setPercDescReceita("");setValorEstavel("");setPlantoesEsp("");setData_(hoje());
       }catch(e){alert(e.message);}
       setLoad(false);
       return;
@@ -4114,31 +4142,32 @@ function BotaoLancar({data,onUpdate}){
             Nenhuma fonte esporádica cadastrada ainda. Vá em Ferramentas → Receitas e cadastre uma (Variável, não-calculada, Esporádica).
           </div>
         :<>
-          <select value={fonteEspId} onChange={e=>{
-              setFonteEspId(e.target.value);
-              const f=fontesEsporadicas.find(x=>x.nome===e.target.value);
-              setPercDescReceita(f?String(f.percDesconto||0):"");
-              setValorEstavel(f&&f.tipoValor==="ESTAVEL"?formatarValorInicial(f.valorFixo):"");
+          <select value={modoEspId} onChange={e=>{
+              setModoEspId(e.target.value);
+              const x=fontesEsporadicas.find(y=>y.modo.id===e.target.value);
+              const m=x&&x.modo;
+              setPercDescReceita(m?String(m.percDesconto||0):"");
+              setValorEstavel(m&&m.tipoValor==="ESTAVEL"?formatarValorInicial(m.valorFixo):"");
               setPlantoesEsp("");
             }}
             style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",marginBottom:10,background:C.surface}}>
             <option value="">Qual fonte esporádica?</option>
-            {fontesEsporadicas.map(f=><option key={f.nome} value={f.nome}>{f.nome}</option>)}
+            {fontesEsporadicas.map(x=><option key={x.modo.id} value={x.modo.id}>{x.fonteNome}{x.modo.obs?" — "+x.modo.obs:""}</option>)}
           </select>
-          {fonteEspId&&<>
-            {fonteEspSelecionada.tipoValor==="ESTAVEL"?
+          {modoEspId&&<>
+            {fonteEspSelecionada.modo.tipoValor==="ESTAVEL"?
               <div style={{marginBottom:10}}>
                 <label style={{fontSize:9,color:C.textMuted}}>VALOR</label>
                 <input type="text" inputMode="numeric" value={valorEstavel} onChange={e=>setValorEstavel(formatarMoedaInput(e.target.value))}
                   style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",boxSizing:"border-box"}}/>
               </div>
-            :fonteEspSelecionada.calculada?
+            :fonteEspSelecionada.modo.calculada?
               <div style={{marginBottom:10}}>
                 <label style={{fontSize:9,color:C.textMuted}}>QUANTOS PLANTÕES?</label>
                 <input type="number" min="0" value={plantoesEsp} onChange={e=>setPlantoesEsp(e.target.value)}
                   style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",boxSizing:"border-box"}}/>
                 <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>
-                  {fmt(Number(fonteEspSelecionada.valorHora)||0)}/hora × {Number(fonteEspSelecionada.horasPlantao)||12}h × {Number(fonteEspSelecionada.percDesconto)||0}% desconto
+                  {fmt(Number(fonteEspSelecionada.modo.valorHora)||0)}/hora × {Number(fonteEspSelecionada.modo.horasPlantao)||12}h × {Number(fonteEspSelecionada.modo.percDesconto)||0}% desconto
                 </div>
               </div>
             :<div style={{display:"flex",gap:8,marginBottom:10}}>
@@ -4160,7 +4189,7 @@ function BotaoLancar({data,onUpdate}){
             </div>
           </>}
         </>}
-      <button onClick={salvar} disabled={load||!fonteEspId||!receitaEspValida}
+      <button onClick={salvar} disabled={load||!modoEspId||!receitaEspValida}
         style={{width:"100%",padding:"12px",borderRadius:10,background:receitaEspValida?C.accent:C.borderLight,color:receitaEspValida?"#fff":C.textMuted,fontSize:14,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
         {load?"Salvando…":"Salvar lançamento"}
       </button>
@@ -5035,7 +5064,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260714.0150 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260714.0300 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
