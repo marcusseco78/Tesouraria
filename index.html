@@ -3125,16 +3125,16 @@ function Historico({data,onUpdate,destaque,onIrPara}){
           {isOpen&&<div style={{background:C.accentLight,padding:"10px 14px",borderBottom:"1px solid "+C.borderLight,borderLeft:"3px solid "+C.accent}}>
             <input type="text" value={desc} onChange={e=>setDesc(e.target.value)}
               style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid "+C.accent,fontSize:13,fontFamily:"inherit",marginBottom:6,background:C.surface,boxSizing:"border-box"}}/>
-            <div style={{display:"flex",gap:6,marginBottom:6}}>
+            <div style={{display:"grid",gridTemplateColumns:"30px 1fr 1fr",gap:6,marginBottom:6}}>
               <button type="button" onClick={()=>setNeg(n=>!n)}
-                style={{width:30,flexShrink:0,borderRadius:6,border:"1px solid "+C.accent,
+                style={{width:30,borderRadius:6,border:"1px solid "+C.accent,
                   background:neg?C.redLight:C.blueLight,color:neg?C.red:C.blue,fontWeight:800,fontSize:14,cursor:"pointer"}}>
                 {neg?"−":"+"}
               </button>
               <input type="text" inputMode="numeric" value={val} onChange={e=>setVal(formatarMoedaInput(e.target.value))}
-                style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:13,textAlign:"right",flex:1,background:C.surface}}/>
+                style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:13,textAlign:"right",width:"100%",boxSizing:"border-box",background:C.surface}}/>
               <input type="date" value={dt} onChange={e=>setDt(e.target.value)}
-                style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:12,background:C.surface}}/>
+                style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:12,width:"100%",boxSizing:"border-box",background:C.surface}}/>
             </div>
             {!ehFaturaCartao(item)&&<div style={{marginBottom:8}}>
               <select value={categoria} onChange={e=>setCategoria(e.target.value)}
@@ -5164,7 +5164,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260714.0400 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260715.1000 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
