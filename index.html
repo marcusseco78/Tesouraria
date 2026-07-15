@@ -1611,7 +1611,7 @@ function RegraPlantaoRow({regra,onChange,onRemover}){
   </div>;
 }
 
-function FormModo({modo,onChange,onRemover,podeRemover}){
+function FormModo({modo,onChange,onRemover,podeRemover,onLancarAvulso}){
   function upd(campo,valor){ onChange({...modo,[campo]:valor}); }
   function addRegra(){ upd("regras",[...(modo.regras||[]),{dow:1,modo:"toda",ordinais:[],qtd:1}]); }
   function updRegra(i,nova){ upd("regras",(modo.regras||[]).map((r,idx)=>idx===i?nova:r)); }
@@ -1631,6 +1631,7 @@ function FormModo({modo,onChange,onRemover,podeRemover}){
   const valorPreview=ehCalculada
     ?_round2(plantoesPreview*(Number(modo.horasPlantao)||12)*(numBR(modo.valorHora)||0)*(1-(Number(modo.percDesconto)||0)/100))
     :(numBR(modo.valorFixo)||0);
+  const liquidoReferenciaPreview=_round2((numBR(modo.valorReferencia)||0)*(1-(Number(modo.percDesconto)||0)/100));
   function _round2(n){return Math.round(n*100)/100;}
   // Exibicao do campo mascarado: se o valor ainda for um numero puro (vindo
   // do backend ou dos padroes FONTES_PADRAO, nunca editado nesta sessao),
@@ -1639,6 +1640,35 @@ function FormModo({modo,onChange,onRemover,podeRemover}){
   const dispValorHora=typeof modo.valorHora==="string"?modo.valorHora:formatarValorInicial(modo.valorHora);
   const dispValorFixo=typeof modo.valorFixo==="string"?modo.valorFixo:formatarValorInicial(modo.valorFixo);
   const dispValorReferencia=typeof modo.valorReferencia==="string"?modo.valorReferencia:formatarValorInicial(modo.valorReferencia);
+
+  // [NOVO 14/07] Lancamento avulso direto daqui, sem precisar navegar ate o
+  // "+" -- pedido do Marcus depois de se confundir achando que "Salvar" (o
+  // botao do rodape da tela, que so grava o CADASTRO) tambem lancava no
+  // Fluxo. Data por calendario + liquido visivel, exatamente como ele pediu.
+  // Nunca sobrescreve modo.valorReferencia/percDesconto -- so LE esses
+  // valores como ponto de partida; o que for digitado aqui fica local, so
+  // desta vez.
+  const [lancarAberto,setLancarAberto]=useState(false);
+  const [dataLanc,setDataLanc]=useState(()=>hoje());
+  const [valorLanc,setValorLanc]=useState("");
+  const [descLanc,setDescLanc]=useState("");
+  const [loadLanc,setLoadLanc]=useState(false);
+  const liquidoLanc=_round2((numBR(valorLanc)||0)*(1-(Number(descLanc)||0)/100));
+  function abrirLancar(){
+    setValorLanc(formatarValorInicial(modo.valorReferencia||0));
+    setDescLanc(String(modo.percDesconto||0));
+    setDataLanc(hoje());
+    setLancarAberto(true);
+  }
+  async function confirmarLancar(){
+    if(!numBR(valorLanc)) return;
+    setLoadLanc(true);
+    try{
+      await onLancarAvulso({valor:liquidoLanc,data:dataLanc});
+      setLancarAberto(false);
+    }catch(e){alert(e.message);}
+    setLoadLanc(false);
+  }
 
   return <div style={{background:C.borderLight,border:"1px solid "+C.border,borderRadius:10,padding:10,marginBottom:8}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
@@ -1672,8 +1702,42 @@ function FormModo({modo,onChange,onRemover,podeRemover}){
         style={{width:40,padding:"5px 6px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"center",fontFamily:"inherit"}}/>
     </div>}
 
-    {ehEsporadica&&<div style={{background:C.blueLight,borderRadius:8,padding:"7px 10px",fontSize:11,color:C.blue,marginBottom:8}}>
-      ℹ️ Modo esporádico: nunca gera lançamento sozinho. Fica disponível no botão "Receitas" do "+" pra lançar manualmente quando existir.
+    {ehEsporadica&&<div style={{background:C.blueLight,borderRadius:8,padding:"8px 10px",marginBottom:8}}>
+      <div style={{fontSize:11,color:C.blue,marginBottom:lancarAberto?8:0}}>
+        ℹ️ Modo esporádico: nunca gera lançamento sozinho.
+      </div>
+      {!lancarAberto?
+        <button onClick={abrirLancar} style={{background:C.blue,color:"#fff",border:"none",borderRadius:6,padding:"6px 12px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+          📤 Lançar um pagamento agora
+        </button>
+      :<>
+        <div style={{display:"flex",gap:6,marginBottom:6}}>
+          <div style={{flex:1}}>
+            <label style={{fontSize:9,color:C.textMuted}}>VALOR BRUTO</label>
+            <input type="text" inputMode="numeric" value={valorLanc} onChange={e=>setValorLanc(formatarMoedaInput(e.target.value))}
+              style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit",background:"#fff"}}/>
+          </div>
+          <div style={{width:70,flexShrink:0}}>
+            <label style={{fontSize:9,color:C.textMuted}}>DESCONTO</label>
+            <input type="number" value={descLanc} onChange={e=>setDescLanc(e.target.value)}
+              style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit",background:"#fff"}}/>
+          </div>
+        </div>
+        <input type="date" value={dataLanc} onChange={e=>setDataLanc(e.target.value)}
+          style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",marginBottom:6,boxSizing:"border-box",background:"#fff"}}/>
+        <div style={{fontSize:11,color:C.green,fontWeight:700,background:"#fff",borderRadius:6,padding:"6px 8px",marginBottom:8}}>
+          Líquido: {fmt(liquidoLanc)}
+        </div>
+        <div style={{display:"flex",gap:6}}>
+          <button onClick={confirmarLancar} disabled={loadLanc||!numBR(valorLanc)}
+            style={{flex:1,background:C.blue,color:"#fff",border:"none",borderRadius:6,padding:"7px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+            {loadLanc?"Lançando…":"Confirmar lançamento"}
+          </button>
+          <button onClick={()=>setLancarAberto(false)} style={{background:"none",border:"1px solid "+C.border,borderRadius:6,color:C.textSub,fontSize:11,padding:"7px 12px",cursor:"pointer"}}>
+            Cancelar
+          </button>
+        </div>
+      </>}
     </div>}
 
     {ehCalculada?<>
@@ -1713,9 +1777,10 @@ function FormModo({modo,onChange,onRemover,podeRemover}){
           precisa de um VALOR DE REFERENCIA guardado no cadastro por dois
           motivos -- (1) se o modo for REGULAR, e esse valor que gera
           sozinho todo mes (sem ele, geraria R$0,00 -- bug real encontrado
-          13/07); (2) se for ESPORADICA, pre-preenche o campo "bruto" na
-          hora de lancar manualmente, sempre editavel naquele momento. */}
-      <div style={{display:"flex",gap:6,marginBottom:8}}>
+          13/07); (2) se for ESPORADICA, pre-preenche o lancamento avulso
+          (veja o botao "Lancar um pagamento agora" acima), sempre editavel
+          naquele momento -- nunca sobrescreve esse valor de referencia. */}
+      <div style={{display:"flex",gap:6,marginBottom:6}}>
         <div style={{flex:1}}>
           <label style={{fontSize:9,color:C.textMuted}}>VALOR {ehEsporadica?"DE REFERÊNCIA":""}</label>
           <input type="text" inputMode="numeric" value={dispValorReferencia} onChange={e=>upd("valorReferencia",formatarMoedaInput(e.target.value))}
@@ -1727,7 +1792,9 @@ function FormModo({modo,onChange,onRemover,podeRemover}){
             style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit"}}/>
         </div>
       </div>
-      {ehEsporadica&&<div style={{fontSize:9,color:C.textMuted,marginTop:-4,marginBottom:8}}>Editável em cada lançamento — isso aqui é só um valor de partida.</div>}
+      <div style={{background:C.tealLight,borderRadius:8,padding:"7px 10px",fontSize:11,color:C.teal,fontWeight:600,marginBottom:8}}>
+        Líquido de referência: {fmt(liquidoReferenciaPreview)}{ehEsporadica?" — editável em cada lançamento, isso aqui é só um valor de partida.":""}
+      </div>
     </>}
     <div>
       <label style={{fontSize:9,color:C.textMuted}}>OBS (livre)</label>
@@ -1768,6 +1835,25 @@ function FontesReceita({data,onUpdate}){
       modos:(f.modos||[]).map(m=>({...m,valorHora:numBR(m.valorHora)||0,valorFixo:numBR(m.valorFixo)||0,valorReferencia:numBR(m.valorReferencia)||0}))
     }));
     return await api({action:"salvarFontesReceita",fontes:fontesLimpo});
+  }
+
+  // [NOVO 14/07] Lancamento avulso de um modo ESPORADICO, direto do proprio
+  // card (botao "Lancar um pagamento agora" dentro de FormModo) -- e a acao
+  // que de fato registra uma linha no Fluxo pra esse modo. Nao tem nenhuma
+  // relacao com o botao "Salvar" do rodape da tela (esse so grava o
+  // CADASTRO/config, nunca lanca nada sozinho pra modo esporadico -- ponto
+  // de confusao real do Marcus, 14/07). Mesmo formato de marcador que o
+  // motor de geracao automatica usa (FONTE_RECEITA:NOME:MODOID:DATA), so
+  // que aqui SEMPRE via acao "lancar" simples, nunca "gerarReceitasFontes"
+  // (que so atua sobre modos REGULAR).
+  async function lancarAvulsoModo(fonteNome,modo,{valor,data}){
+    const nomeNorm=String(fonteNome).toUpperCase().replace(/[^A-Z0-9_ ]/g,"").replace(/ /g,"");
+    const obsMarcador="FONTE_RECEITA:"+nomeNorm+":"+modo.id+":"+data;
+    const r=await api({action:"lancar",data,descricao:(fonteNome+" (ESPORÁDICA)").toUpperCase(),
+      valor,tipo:"RECEITA",categoria:"RECEITA",forma:"CONTA",
+      status:data<=hoje()?"EXECUTADO":"PROGRAMADO",obs:obsMarcador});
+    onUpdate&&onUpdate(r);
+    setMsg("Lançamento de "+fonteNome+" registrado no Fluxo.");
   }
 
   async function salvar(){
@@ -1899,7 +1985,8 @@ function FontesReceita({data,onUpdate}){
       </div>
 
       {(f.modos||[]).map((m,mi)=><FormModo key={mi} modo={m} podeRemover={(f.modos||[]).length>1}
-        onChange={novo=>atualizarModo(i,mi,novo)} onRemover={()=>removerModo(i,mi)}/>)}
+        onChange={novo=>atualizarModo(i,mi,novo)} onRemover={()=>removerModo(i,mi)}
+        onLancarAvulso={info=>lancarAvulsoModo(f.nome,m,info)}/>)}
 
       <button onClick={()=>addModo(i)} style={{width:"100%",background:"none",border:"1px dashed "+C.border,borderRadius:8,color:C.teal,fontSize:11,fontWeight:600,padding:"7px",cursor:"pointer",marginBottom:8}}>
         + Adicionar modo de pagamento
@@ -5077,7 +5164,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260714.0330 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260714.0400 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
