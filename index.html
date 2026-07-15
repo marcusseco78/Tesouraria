@@ -1623,10 +1623,10 @@ function FormModo({modo,onChange,onRemover,podeRemover}){
   const ehEstavel=modo.tipoValor==="ESTAVEL";
   const ehCalculada=!ehEstavel&&!!modo.calculada;
   const ehEsporadica=modo.tipoRecorrencia==="ESPORADICA";
-  // valorHora/valorFixo ficam como STRING mascarada enquanto o campo esta
-  // sendo editado (mesmo padrao de EditorEnvelope) -- nunca converte pra
-  // numero a cada tecla, so na hora de salvar (FontesReceita.salvar) ou
-  // aqui no preview via numBR (aceita string mascarada OU numero puro).
+  // valorHora/valorFixo/valorReferencia ficam como STRING mascarada enquanto
+  // o campo esta sendo editado (mesmo padrao de EditorEnvelope) -- nunca
+  // converte pra numero a cada tecla, so na hora de salvar (FontesReceita)
+  // ou aqui no preview via numBR (aceita string mascarada OU numero puro).
   const plantoesPreview=ehCalculada?_previewPlantoesMes(modo.regras,anoRef,mesRef):0;
   const valorPreview=ehCalculada
     ?_round2(plantoesPreview*(Number(modo.horasPlantao)||12)*(numBR(modo.valorHora)||0)*(1-(Number(modo.percDesconto)||0)/100))
@@ -1638,11 +1638,15 @@ function FormModo({modo,onChange,onRemover,podeRemover}){
   // editou), mostra exatamente o que esta digitado.
   const dispValorHora=typeof modo.valorHora==="string"?modo.valorHora:formatarValorInicial(modo.valorHora);
   const dispValorFixo=typeof modo.valorFixo==="string"?modo.valorFixo:formatarValorInicial(modo.valorFixo);
+  const dispValorReferencia=typeof modo.valorReferencia==="string"?modo.valorReferencia:formatarValorInicial(modo.valorReferencia);
 
   return <div style={{background:C.borderLight,border:"1px solid "+C.border,borderRadius:10,padding:10,marginBottom:8}}>
-    {podeRemover&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:4}}>
-      <button onClick={onRemover} style={{background:"none",border:"1px dashed "+C.border,borderRadius:6,color:C.red,fontSize:10,padding:"3px 8px",cursor:"pointer"}}>Remover este modo</button>
-    </div>}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+      <label style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:C.textSub,cursor:"pointer"}}>
+        <input type="checkbox" checked={!!modo.ativo} onChange={e=>upd("ativo",e.target.checked)}/>Ativo
+      </label>
+      {podeRemover&&<button onClick={onRemover} style={{background:"none",border:"1px dashed "+C.border,borderRadius:6,color:C.red,fontSize:10,padding:"3px 8px",cursor:"pointer"}}>Remover este modo</button>}
+    </div>
 
     {/* Eixo A: como o VALOR se comporta */}
     <div style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
@@ -1662,16 +1666,11 @@ function FormModo({modo,onChange,onRemover,podeRemover}){
       <option value="REGULAR">Regular (gera todo mês)</option>
       <option value="ESPORADICA">Esporádica (só quando eu lançar)</option>
     </select>
-    <div style={{display:"flex",gap:6,marginBottom:8,alignItems:"center"}}>
-      {!ehEsporadica&&<div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
-        <label style={{fontSize:10,color:C.textMuted}}>Dia pgto:</label>
-        <input type="number" min="1" max="31" value={modo.diaPagamento} onChange={e=>upd("diaPagamento",Number(e.target.value)||1)}
-          style={{width:40,padding:"5px 6px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"center",fontFamily:"inherit"}}/>
-      </div>}
-      <label style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:C.textSub,cursor:"pointer",flexShrink:0}}>
-        <input type="checkbox" checked={!!modo.ativo} onChange={e=>upd("ativo",e.target.checked)}/>Ativo
-      </label>
-    </div>
+    {!ehEsporadica&&<div style={{display:"flex",alignItems:"center",gap:4,marginBottom:8}}>
+      <label style={{fontSize:10,color:C.textMuted}}>Dia pgto:</label>
+      <input type="number" min="1" max="31" value={modo.diaPagamento} onChange={e=>upd("diaPagamento",Number(e.target.value)||1)}
+        style={{width:40,padding:"5px 6px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"center",fontFamily:"inherit"}}/>
+    </div>}
 
     {ehEsporadica&&<div style={{background:C.blueLight,borderRadius:8,padding:"7px 10px",fontSize:11,color:C.blue,marginBottom:8}}>
       ℹ️ Modo esporádico: nunca gera lançamento sozinho. Fica disponível no botão "Receitas" do "+" pra lançar manualmente quando existir.
@@ -1689,8 +1688,8 @@ function FormModo({modo,onChange,onRemover,podeRemover}){
           <input type="number" value={modo.horasPlantao} onChange={e=>upd("horasPlantao",Number(e.target.value)||12)}
             style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit"}}/>
         </div>
-        <div style={{flex:1}}>
-          <label style={{fontSize:9,color:C.textMuted}}>% DESCONTO NF</label>
+        <div style={{width:70,flexShrink:0}}>
+          <label style={{fontSize:9,color:C.textMuted}}>DESCONTO</label>
           <input type="number" value={modo.percDesconto} onChange={e=>upd("percDesconto",Number(e.target.value)||0)}
             style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit"}}/>
         </div>
@@ -1710,12 +1709,25 @@ function FormModo({modo,onChange,onRemover,podeRemover}){
           style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit"}}/>
       </div>
     </>:<>
-      {/* Variavel + nao-calculada: valor digitado a cada lancamento -- so o % padrao fica salvo aqui */}
-      <div style={{marginBottom:8}}>
-        <label style={{fontSize:9,color:C.textMuted}}>% DESCONTO PADRÃO (editável em cada lançamento)</label>
-        <input type="number" value={modo.percDesconto} onChange={e=>upd("percDesconto",Number(e.target.value)||0)}
-          style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit"}}/>
+      {/* Variavel + nao-calculada: o valor de verdade varia a cada vez, mas
+          precisa de um VALOR DE REFERENCIA guardado no cadastro por dois
+          motivos -- (1) se o modo for REGULAR, e esse valor que gera
+          sozinho todo mes (sem ele, geraria R$0,00 -- bug real encontrado
+          13/07); (2) se for ESPORADICA, pre-preenche o campo "bruto" na
+          hora de lancar manualmente, sempre editavel naquele momento. */}
+      <div style={{display:"flex",gap:6,marginBottom:8}}>
+        <div style={{flex:1}}>
+          <label style={{fontSize:9,color:C.textMuted}}>VALOR {ehEsporadica?"DE REFERÊNCIA":""}</label>
+          <input type="text" inputMode="numeric" value={dispValorReferencia} onChange={e=>upd("valorReferencia",formatarMoedaInput(e.target.value))}
+            style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit"}}/>
+        </div>
+        <div style={{width:70,flexShrink:0}}>
+          <label style={{fontSize:9,color:C.textMuted}}>DESCONTO</label>
+          <input type="number" value={modo.percDesconto} onChange={e=>upd("percDesconto",Number(e.target.value)||0)}
+            style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit"}}/>
+        </div>
       </div>
+      {ehEsporadica&&<div style={{fontSize:9,color:C.textMuted,marginTop:-4,marginBottom:8}}>Editável em cada lançamento — isso aqui é só um valor de partida.</div>}
     </>}
     <div>
       <label style={{fontSize:9,color:C.textMuted}}>OBS (livre)</label>
@@ -1753,7 +1765,7 @@ function FontesReceita({data,onUpdate}){
   async function persistir(){
     const fontesLimpo=fontes.map(f=>({
       ...f,
-      modos:(f.modos||[]).map(m=>({...m,valorHora:numBR(m.valorHora)||0,valorFixo:numBR(m.valorFixo)||0}))
+      modos:(f.modos||[]).map(m=>({...m,valorHora:numBR(m.valorHora)||0,valorFixo:numBR(m.valorFixo)||0,valorReferencia:numBR(m.valorReferencia)||0}))
     }));
     return await api({action:"salvarFontesReceita",fontes:fontesLimpo});
   }
@@ -4148,6 +4160,7 @@ function BotaoLancar({data,onUpdate}){
               const m=x&&x.modo;
               setPercDescReceita(m?String(m.percDesconto||0):"");
               setValorEstavel(m&&m.tipoValor==="ESTAVEL"?formatarValorInicial(m.valorFixo):"");
+              setBruto(m&&m.tipoValor==="VARIAVEL"&&!m.calculada&&m.valorReferencia?formatarValorInicial(m.valorReferencia):"");
               setPlantoesEsp("");
             }}
             style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",marginBottom:10,background:C.surface}}>
@@ -5064,7 +5077,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260714.0300 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260714.0330 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
