@@ -60,7 +60,14 @@ const DOW_PT=["DOM","SEG","TER","QUA","QUI","SEX","SAB"];
 const diaSemana=s=>{const m=String(s||"").match(/^(\d{4})-(\d{2})-(\d{2})/);if(!m)return"";const d=new Date(Number(m[1]),Number(m[2])-1,Number(m[3]),12,0,0);return DOW_PT[d.getDay()];};
 // Nome de exibicao: linha de provisao "DCP N" aparece como "Saldo Despesas
 // Cotidianas N" (so estetica de tela -- na planilha continua "DCP N").
-const CAT_LABEL={DCP:"Despesas Cotidianas Semanais",DEPOSITO_AVULSO:"Outras Entradas"};
+const CAT_LABEL={DCP:"Despesas Cotidianas Semanais",DEPOSITO_AVULSO:"Outras Entradas",
+  DIVIDA_PARCELADA:"Parcela de Dívida",DIVIDA_NAO_PARCELADA:"Amortização Dívida",PASSIVO:"Dívida"};
+// [15/07] Categorias de divida sao conceitualmente PASSIVO por tras -- a
+// categoria so distingue se tem cronograma de parcelas (Emprestimo, aba
+// Emprestimos) ou nao (ex: Pai, so saldo corrente). Usado sempre que TIPO
+// precisa ser derivado de uma categoria escolhida (lancamento novo ou edicao).
+const TIPO_POR_CATEGORIA={DIVIDA_PARCELADA:"PASSIVO",DIVIDA_NAO_PARCELADA:"PASSIVO"};
+const tipoDaCategoria=cat=>TIPO_POR_CATEGORIA[cat]||cat;
 const nomeExibicao=item=>(item.categoria==="DCP_PROVISAO"&&/^DCP (\d+)$/.test(item.descricao||""))
   ?String(item.descricao).replace(/^DCP (\d+)$/,"O Envelope semanal $1 ainda tem:"):item.descricao;
 // Periodo que uma provisao DCP cobre: a data do envelope e sempre a
@@ -796,7 +803,7 @@ function CicloCard({fluxo,nome,atual,dcpResumo,basais}){
   const extras=[];
   if(fatPF>0) extras.push({desc:"Fatura PF",v:fatPF});
   if(fatPJ>0) extras.push({desc:"Fatura PJ",v:fatPJ});
-  rows.filter(r=>r.tipo==="EMPRÉSTIMO").forEach(r=>extras.push({desc:r.descricao.slice(0,30),v:Math.abs(r.valor)}));
+  rows.filter(r=>r.categoria==="DIVIDA_PARCELADA").forEach(r=>extras.push({desc:r.descricao.slice(0,30),v:Math.abs(r.valor)}));
   const totEx=extras.reduce((s,e)=>s+e.v,0);
   const pctEx=basais+totEx>0?totEx/(basais+totEx)*100:0;
   return <Card>
@@ -2304,7 +2311,7 @@ function ConciliacaoHub({data,onUpdate,onIrPara}){
 }
 
 function ConciliarExtratoTab({data,onUpdate}){
-  const CATEGORIAS=["DCP","DESPESA FIXA","RECEITA","DEPOSITO_AVULSO","ANDRE","EMPRESTIMO","EXTRAORDINARIA","IMPOSTO","INVESTIMENTO","PASSIVO"];
+  const CATEGORIAS=["DCP","DESPESA FIXA","RECEITA","DEPOSITO_AVULSO","ANDRE","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA","EXTRAORDINARIA","IMPOSTO","INVESTIMENTO"];
   const [resultado,setResultado]=useState(null);
   const [load,setLoad]=useState(false);
   const [cfgNovos,setCfgNovos]=useState({}); // chave estavel (chaveNovo) -> {incluir,categoria,descricao}
@@ -2598,7 +2605,7 @@ function ConciliarExtratoTab({data,onUpdate}){
   </div>;
 }
 
-function Ferramentas({onIrPara}){
+function Ferramentas({onIrPara,onUpdate}){
   const FERRAMENTAS=[
     {id:"recorr",icone:"🔁",titulo:"Recorrências",sub:"Gastos fixos e receitas",cor:C.blue,bg:C.blueLight},
     {id:"cartoes",icone:"💳",titulo:"Cartões",sub:"Faturas PF e PJ",cor:"#D97706",bg:"#FEF3C7"},
@@ -2620,6 +2627,51 @@ function Ferramentas({onIrPara}){
         <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>{f.sub}</div>
       </div>)}
     </div>
+    <BotaoMigracaoDivida onUpdate={onUpdate}/>
+  </div>;
+}
+
+/**
+ * [TEMPORARIO 15/07 -- REMOVER ESTE COMPONENTE INTEIRO DEPOIS DE USAR UMA VEZ]
+ * Roda a migração única "migrarTipoCategoriaDivida" (ver Tesouraria_v3.txt).
+ * Exige confirmação (evita clique acidental) e mostra o resultado antes de
+ * qualquer coisa ser reescrita de verdade.
+ */
+function BotaoMigracaoDivida({onUpdate}){
+  const [estado,setEstado]=useState("idle");
+  const [migrados,setMigrados]=useState(null);
+  const [erro,setErro]=useState(null);
+
+  async function executar(){
+    setEstado("rodando");
+    try{
+      const r=await api({action:"migrarTipoCategoriaDivida"});
+      setMigrados(r.migrados||0);
+      if(onUpdate) onUpdate(r);
+      setEstado("feito");
+    }catch(e){
+      setErro(e.message||String(e));
+      setEstado("erro");
+    }
+  }
+
+  return <div style={{margin:"18px 12px 0",padding:14,borderRadius:14,background:"#FEF2F2",border:"1px dashed "+C.red}}>
+    <div style={{fontSize:11,fontWeight:800,color:C.red,letterSpacing:".05em",marginBottom:4}}>⚠️ AÇÃO ÚNICA — MIGRAR TIPO/CATEGORIA DE DÍVIDA</div>
+    <div style={{fontSize:12,color:C.textMuted,marginBottom:10}}>Reescreve linhas de EMPRÉSTIMO/PASSIVO já existentes pro padrão novo (TIPO=PASSIVO, CATEGORIA=DIVIDA_PARCELADA ou DIVIDA_NAO_PARCELADA). Rodar uma vez só.</div>
+    {estado==="idle"&&<button onClick={()=>setEstado("confirmar")}
+      style={{width:"100%",padding:"9px",borderRadius:8,border:"1px solid "+C.red,background:C.surface,color:C.red,fontWeight:700,fontSize:13,cursor:"pointer"}}>
+      Rodar migração
+    </button>}
+    {estado==="confirmar"&&<div>
+      <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:8}}>Confirma? Isso reescreve TIPO/CATEGORIA de verdade na planilha.</div>
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={()=>setEstado("idle")} style={{flex:1,padding:"8px",borderRadius:8,border:"1px solid "+C.border,background:C.surface,fontSize:13,cursor:"pointer"}}>Cancelar</button>
+        <button onClick={executar} style={{flex:1,padding:"8px",borderRadius:8,border:"none",background:C.red,color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>Sim, migrar</button>
+      </div>
+    </div>}
+    {estado==="rodando"&&<div style={{fontSize:13,color:C.textMuted}}>Rodando...</div>}
+    {estado==="feito"&&<div style={{fontSize:13,color:C.green,fontWeight:700}}>Pronto. {migrados} linha(s) migrada(s).</div>}
+    {estado==="erro"&&<div style={{fontSize:13,color:C.red}}>Erro: {erro}</div>}
   </div>;
 }
 
@@ -2759,7 +2811,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
     const add=(r,cartao)=>{
       const dataCompra=r[0];
       if(!dataCompra||dataCompra<=hj) return; // so estritamente futuro -- hoje ja e "aconteceu", mora no Historico
-      (m[dataCompra]=m[dataCompra]||[]).push({row:_linhaCartao(r),descricao:r[1],valor:r[2],cartao,status:r[7]});
+      (m[dataCompra]=m[dataCompra]||[]).push({row:_linhaCartao(r),descricao:r[1],valor:r[2],cartao,status:r[7],dcpEnvelope:r[9]||null,dcpEnvelopeData:r[10]||null});
     };
     (data.cartaoPF||[]).forEach(r=>add(r,"PF"));
     (data.cartaoPJ||[]).forEach(r=>add(r,"PJ"));
@@ -2992,7 +3044,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
           background:C.borderLight,opacity:0.8,cursor:onIrPara?"pointer":"default"}}>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:13,fontWeight:600,color:C.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontStyle:"italic"}}>{c.descricao}</div>
-          <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>🏷 Cartão {c.cartao} · não conta aqui, já está na fatura</div>
+          <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>🏷 Cartão {c.cartao} · não conta aqui, já está na fatura<TagEnvelopeDCP envelope={c.dcpEnvelope} futuro={true}/></div>
         </div>
         <span style={{fontSize:13,fontWeight:700,color:C.textMuted,flexShrink:0}}>{fmt(c.valor)}</span>
         <span style={{fontSize:12,color:C.textMuted,flexShrink:0}}>→</span>
@@ -3036,7 +3088,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
     return {nome:envelopesPorId[envId].nome, saldo:ultimo?ultimo.saldo:null};
   }
 
-  const CATEGORIAS=["DCP","DESPESA FIXA","RECEITA","DEPOSITO_AVULSO","ANDRE","EMPRESTIMO","EXTRAORDINARIA","IMPOSTO","INVESTIMENTO","PASSIVO"];
+  const CATEGORIAS=["DCP","DESPESA FIXA","RECEITA","DEPOSITO_AVULSO","ANDRE","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA","EXTRAORDINARIA","IMPOSTO","INVESTIMENTO"];
   const ehFaturaCartao=item=>item.categoria==="CARTAO PF"||item.categoria==="CARTAO PJ"||item.tipo==="CARTAO PF"||item.tipo==="CARTAO PJ";
 
   const todos=useMemo(()=>(data.fluxo||[]).filter(r=>r.status==="EXECUTADO").sort((a,b)=>a.data<b.data?1:-1),[data.fluxo]);
@@ -3069,7 +3121,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
     const add=(r,cartao)=>{
       const dataCompra=r[0];
       if(!dataCompra||dataCompra>hj) return;
-      (m[dataCompra]=m[dataCompra]||[]).push({row:_linhaCartao(r),descricao:r[1],valor:r[2],cartao,status:r[7]});
+      (m[dataCompra]=m[dataCompra]||[]).push({row:_linhaCartao(r),descricao:r[1],valor:r[2],cartao,status:r[7],dcpEnvelope:r[9]||null,dcpEnvelopeData:r[10]||null});
     };
     (data.cartaoPF||[]).forEach(r=>add(r,"PF"));
     (data.cartaoPJ||[]).forEach(r=>add(r,"PJ"));
@@ -3113,7 +3165,17 @@ function Historico({data,onUpdate,destaque,onIrPara}){
       const novoValor=(neg?-1:1)*numBR(val);
       if(Math.abs(novoValor-item.valor)>0.005) r=await api({action:"editar",row:item.row,campo:"VALOR",valor:novoValor});
       if(dt!==item.data) r=await api({action:"editar",row:item.row,campo:"DATA",valor:dt});
-      if(!ehFaturaCartao(item)&&categoria!==(item.categoria||"")) r=await api({action:"editar",row:item.row,campo:"CATEGORIA",valor:categoria});
+      if(!ehFaturaCartao(item)&&categoria!==(item.categoria||"")){
+        r=await api({action:"editar",row:item.row,campo:"CATEGORIA",valor:categoria});
+        // [15/07] TIPO sempre acompanha CATEGORIA aqui -- nenhuma categoria
+        // fora DCP pode ser DCP por conceito (Extraordinária, Despesa Fixa
+        // etc. nunca sao "cotidianas"), entao editar a categoria tem que
+        // mover o lancamento pra fora (ou pra dentro) do consumo semanal de
+        // DCP de verdade, nao so trocar o rotulo visivel. Sem isso, um
+        // lancamento reclassificado de DCP pra outra categoria continuava
+        // contando no orcamento semanal por baixo (TIPO antigo nunca mudava).
+        r=await api({action:"editar",row:item.row,campo:"TIPO",valor:tipoDaCategoria(categoria)});
+      }
       if(r) onUpdate(r);
       setConf(null);
     }catch(e){ alert(e.message); }
@@ -3196,7 +3258,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
             background:C.borderLight,opacity:0.8,cursor:onIrPara?"pointer":"default"}}>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:13,fontWeight:600,color:C.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontStyle:"italic"}}>{c.descricao}</div>
-            <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>🏷 Cartão {c.cartao} · não conta aqui, já está na fatura</div>
+            <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>🏷 Cartão {c.cartao} · não conta aqui, já está na fatura<TagEnvelopeDCP envelope={c.dcpEnvelope} futuro={false}/></div>
           </div>
           <span style={{fontSize:13,fontWeight:700,color:C.textMuted,flexShrink:0}}>{fmt(c.valor)}</span>
           <span style={{fontSize:12,color:C.textMuted,flexShrink:0}}>→</span>
@@ -4119,7 +4181,7 @@ function BotaoLancar({data,onUpdate}){
   // que nao fosse literalmente Receita). Mesmo padrao do botao "-/+" ja
   // usado no editar item de cartao -- nunca deriva do que a categoria "e".
   const [vNeg,setVNeg]=useState(true);
-  const CATS=["DCP","DESPESA FIXA","RECEITA","DEPOSITO_AVULSO","ANDRE","EMPRESTIMO","EXTRAORDINARIA","INVESTIMENTO","PASSIVO"];
+  const CATS=["DCP","DESPESA FIXA","RECEITA","DEPOSITO_AVULSO","ANDRE","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA","EXTRAORDINARIA","INVESTIMENTO"];
   const envelopesAbertos=useMemo(()=>calcularEnvelopesCustom(data).filter(e=>!e.encerrado),[data.fluxo,data.cartaoPF,data.cartaoPJ,data.config]);
 
   // [NOVO 13/07] Lancamento manual de Receita Esporadica -- fonte cadastrada
@@ -4235,7 +4297,7 @@ function BotaoLancar({data,onUpdate}){
       const descFinal=desc.trim()||cat;
       if(dest==="conta"){
         const v=(vNeg?-1:1)*Math.abs(numBR(valor));
-        r=await api({action:"lancar",data:data_,descricao:descFinal.toUpperCase(),valor:v,tipo:cat,categoria:cat,forma:"CONTA",status:data_<=hoje()?"EXECUTADO":"PROGRAMADO",obs:"",envelopeId});
+        r=await api({action:"lancar",data:data_,descricao:descFinal.toUpperCase(),valor:v,tipo:tipoDaCategoria(cat),categoria:cat,forma:"CONTA",status:data_<=hoje()?"EXECUTADO":"PROGRAMADO",obs:"",envelopeId});
       } else {
         const cartao=dest==="pj"?"PJ":"PF";
         const v=(vNeg?-1:1)*Math.abs(numBR(valor));
@@ -4419,7 +4481,7 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido}){
     </div>
     <select value={cat} onChange={e=>setCat(e.target.value)}
       style={{width:"100%",padding:"7px 9px",borderRadius:7,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",background:C.surface,marginBottom:8}}>
-      {["DCP","DESPESA FIXA","EXTRAORDINARIA","IMPOSTO","INVESTIMENTO","ANDRE","EMPRESTIMO"].map(c=><option key={c} value={c}>{CAT_LABEL[c]||c}</option>)}
+      {["DCP","DESPESA FIXA","EXTRAORDINARIA","IMPOSTO","INVESTIMENTO","ANDRE","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA"].map(c=><option key={c} value={c}>{CAT_LABEL[c]||c}</option>)}
     </select>
     <div style={{display:"flex",gap:6}}>
       <button onClick={lancar} disabled={load||!desc.trim()||!valor}
@@ -4491,7 +4553,7 @@ function ResetCartao({cartao, data, onUpdate}){
   async function handleFiles(fileList){
     const arquivos=Array.from(fileList);
     if(arquivos.length!==2){
-      alert("Selecione exatamente 2 arquivos (.csv ou .ofx) — a fatura fechada e a fatura em aberto.");
+      alert("Selecione exatamente 2 arquivos .ofx — a fatura fechada e a fatura em aberto.");
       return;
     }
     let lidos;
@@ -4503,7 +4565,7 @@ function ResetCartao({cartao, data, onUpdate}){
     }
     const vencs=lidos.map(l=>extrairVencimentoNome(l.nome));
     if(vencs.some(v=>!v)){
-      alert("Não consegui identificar a data de vencimento em um dos arquivos. O nome deve seguir o padrão Nubank_YYYY-MM-DD...csv/.ofx — não renomeie os arquivos baixados do banco.");
+      alert("Não consegui identificar a data de vencimento em um dos arquivos. O nome deve seguir o padrão Nubank_YYYY-MM-DD....ofx — não renomeie os arquivos baixados do banco.");
       return;
     }
     if(vencs[0]===vencs[1]){
@@ -4511,32 +4573,28 @@ function ResetCartao({cartao, data, onUpdate}){
       return;
     }
 
+    // [15/07] Reconstruir do zero e a operacao de maior risco (reescreve o
+    // cartao inteiro) -- por isso so aceita .ofx, nunca .csv, e o ACCTID e
+    // OBRIGATORIO nos 2 arquivos, sem fallback de "continuar mesmo assim".
+    // Se faltar ACCTID em qualquer um dos 2 (arquivo .ofx malformado, por
+    // exemplo), bloqueia -- nao existe mais caminho de confirmacao manual
+    // aqui, diferente da Conciliacao de fatura avulsa (essa continua aceitando
+    // CSV normalmente).
+    if(!lidos[0].acctid||!lidos[1].acctid){
+      alert("Um dos arquivos não carrega identificador de conta (ACCTID) — confira se os 2 são .ofx originais do banco, sem edição. Essa trava é obrigatória aqui por ser a operação de maior risco.");
+      return;
+    }
     // Trava por ACCTID: as 2 faturas de UMA MESMA reconstrucao tem que vir
-    // da mesma conta -- se vieram de .ofx e o identificador difere entre
-    // elas, alguem misturou fatura de cartoes diferentes na mesma leva.
-    if(lidos[0].acctid&&lidos[1].acctid&&lidos[0].acctid!==lidos[1].acctid){
+    // da mesma conta -- se o identificador difere entre elas, alguem
+    // misturou fatura de cartoes diferentes na mesma leva.
+    if(lidos[0].acctid!==lidos[1].acctid){
       alert("Os 2 arquivos .ofx enviados pertencem a contas diferentes entre si — confira se não misturou fatura de cartões diferentes na mesma reconstrução.");
       return;
     }
 
-    const semAcctid=!lidos[0].acctid&&!lidos[1].acctid;
-    // [CORRIGIDO 13/07] mesma regra do ConciliarCartao: ACCTID presente
-    // (ja validado acima que os 2 arquivos batem entre si) basta sozinho --
-    // a heuristica de conteudo so roda como fallback quando NENHUM dos 2
-    // arquivos tem ACCTID (CSV puro).
-    let avisos=[];
-    if(semAcctid){
-      const itensPreview=lidos.flatMap(l=>previewItensCSV(l.csv));
-      avisos=detectarContaminacaoCruzada(data, cartao, itensPreview);
-      let msg=`Você está enviando CSV (sem identificador de conta) — confirme que estes 2 arquivos são realmente do cartão ${cartao}.\n\n`;
-      if(avisos.length) msg+="Sinais de possível troca de cartão:\n"+avisos.slice(0,6).join("\n")+(avisos.length>6?`\n...e mais ${avisos.length-6}`:"")+"\n\n";
-      msg+="Continuar mesmo assim?";
-      if(!confirm(msg)) return;
-    }
-
     const ordenado=lidos.slice().sort((a,b)=>extrairVencimentoNome(a.nome).localeCompare(extrairVencimentoNome(b.nome)));
     const fechada=ordenado[0], aberta=ordenado[1];
-    await executar(fechada.csv, fechada.nome, aberta.csv, aberta.nome, fechada.acctid||aberta.acctid||"");
+    await executar(fechada.csv, fechada.nome, aberta.csv, aberta.nome, fechada.acctid);
   }
 
   async function executar(pago, nomeP, pend, nomeD, acctid){
@@ -4559,7 +4617,7 @@ function ResetCartao({cartao, data, onUpdate}){
     style={{width:"100%",padding:"8px",borderRadius:10,background:"transparent",
       color:C.textMuted,fontSize:11,fontWeight:600,border:"1px dashed "+C.border,
       cursor:"pointer",fontFamily:"inherit",marginBottom:12}}>
-    ↺ Reconstruir do zero (2 arquivos)
+    ↺ Reconstruir do zero (2 arquivos .ofx)
   </button>;
 
   if(step===3) return <div style={{textAlign:"center",padding:"16px",color:C.textMuted,fontSize:13}}>
@@ -4574,10 +4632,10 @@ function ResetCartao({cartao, data, onUpdate}){
       ↺ Reconstruir Cartão {cartao} do zero
     </div>
     <div style={{fontSize:10,color:C.textMuted,marginBottom:10}}>
-      Selecione os 2 arquivos de uma vez só (a fatura fechada e a em aberto), .csv ou .ofx — o app identifica sozinho qual é qual pela data no nome do arquivo. .ofx é mais seguro: carrega um identificador da conta que trava contra troca acidental entre PF e PJ. Não renomeie os arquivos baixados do banco.
+      Selecione os 2 arquivos de uma vez só (a fatura fechada e a em aberto), só .ofx — o app identifica sozinho qual é qual pela data no nome do arquivo. Só .ofx é aceito aqui (não .csv): essa é a operação de maior risco do sistema (reescreve o cartão inteiro), e o .ofx carrega um identificador da conta que trava contra troca acidental entre PF e PJ. Não renomeie os arquivos baixados do banco.
     </div>
 
-    <input ref={filesRef} type="file" accept=".csv,.ofx" multiple style={{display:"none"}}
+    <input ref={filesRef} type="file" accept=".ofx" multiple style={{display:"none"}}
       onChange={e=>{
         const fl=e.target.files;
         if(fl&&fl.length){setLoad(true);handleFiles(fl).finally(()=>setLoad(false));}
@@ -5197,7 +5255,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260715.1300 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260715.1600 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -5236,7 +5294,7 @@ function Tesouraria(){
         tab==="dashboard"   ? <Dashboard data={data}/> :
         tab==="fluxo"       ? <Fluxo data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
         tab==="historico"   ? <Historico data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
-        tab==="ferramentas" ? <Ferramentas onIrPara={t=>{navegar(t);}}/> :
+        tab==="ferramentas" ? <Ferramentas onIrPara={t=>{navegar(t);}} onUpdate={setData}/> :
         tab==="recorr"      ? <Recorrencias data={data} onUpdate={setData}/> :
         tab==="cartoes"     ? <Cartoes data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
         tab==="dcp"         ? <DCPTab data={data} onUpdate={setData} onIrPara={irPara}/> :
