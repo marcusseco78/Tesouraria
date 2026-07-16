@@ -1428,23 +1428,26 @@ function EmprestimosPassivos({data,onUpdate}){
     </div>
     {showForm&&<FormCriarEmprestimo onSalvo={r=>{onUpdate&&onUpdate(r);setShowForm(false);}} onClose={()=>setShowForm(false)}/>}
     {!emprestimos.length&&!saldoPai&&<div style={{padding:"30px 16px",textAlign:"center",fontSize:12,color:C.textMuted,fontStyle:"italic"}}>Nenhum item com número de parcelas definido.</div>}
-    {emprestimos.length>0&&<div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:10,background:C.redLight,borderRadius:8,padding:"8px 10px"}}>
-      Total das parcelas: {fmt(emprestimos.reduce((s,it)=>s+it.valor,0))}/ciclo
-      {projecaoCiclos.length>0&&<div style={{fontSize:11,fontWeight:600,color:C.textMuted,marginTop:6,display:"flex",gap:14}}>
-        {projecaoCiclos.map(p=><span key={p.desl}>{p.desl===1?"Próximo ciclo":"Ciclo seguinte"}: <b style={{color:C.red}}>{fmt(-p.total)}</b></span>)}
-      </div>}
+    {emprestimos.length>0&&<div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:10,padding:10}}>
+      <div style={{fontSize:10,fontWeight:800,color:C.red,letterSpacing:".08em",marginBottom:8}}>EMPRÉSTIMOS PARCELADOS</div>
+      <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:10,background:C.redLight,borderRadius:8,padding:"8px 10px"}}>
+        Total das parcelas: {fmt(emprestimos.reduce((s,it)=>s+it.valor,0))}/ciclo
+        {projecaoCiclos.length>0&&<div style={{fontSize:11,fontWeight:600,color:C.textMuted,marginTop:6,display:"flex",gap:14}}>
+          {projecaoCiclos.map(p=><span key={p.desl}>{p.desl===1?"Próximo ciclo":"Ciclo seguinte"}: <b style={{color:C.red}}>{fmt(-p.total)}</b></span>)}
+        </div>}
+      </div>
+      {emprestimos.map(it=><div key={it.desc} style={{background:C.bg||"#F9FAFB",border:"1px solid "+C.borderLight,borderRadius:8,padding:10,marginBottom:6}}>
+        <div style={{fontSize:13,fontWeight:700,color:C.text}}>{it.desc}</div>
+        <div style={{display:"flex",justifyContent:"space-between",marginTop:4,fontSize:11,color:C.textMuted}}>
+          <span>Valor: <b style={{color:C.red}}>{fmt(it.valor)}</b></span>
+          <span>{it.parcAtualReal}/{it.parcTotalReal} parcelas</span>
+        </div>
+        <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>
+          Faltam {it.restantes} · última em <b>{fmtD(it.dataUltimaISO)}</b>
+        </div>
+      </div>)}
     </div>}
-    {emprestimos.map(it=><div key={it.desc} style={{background:C.surface,border:"1px solid "+C.border,borderRadius:8,padding:10,marginBottom:6}}>
-      <div style={{fontSize:13,fontWeight:700,color:C.text}}>{it.desc}</div>
-      <div style={{display:"flex",justifyContent:"space-between",marginTop:4,fontSize:11,color:C.textMuted}}>
-        <span>Valor: <b style={{color:C.red}}>{fmt(it.valor)}</b></span>
-        <span>{it.parcAtualReal}/{it.parcTotalReal} parcelas</span>
-      </div>
-      <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>
-        Faltam {it.restantes} · última em <b>{fmtD(it.dataUltimaISO)}</b>
-      </div>
-    </div>)}
-    {saldoPai>0&&<div style={{background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:8,padding:10,marginTop:emprestimos.length?10:0}}>
+    {saldoPai>0&&<div style={{background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:10,padding:10,marginTop:emprestimos.length?14:0}}>
       <div style={{fontSize:10,fontWeight:800,color:"#B45309",letterSpacing:".08em",marginBottom:6}}>CRÉDITO PÓS-FIXADO</div>
       <div style={{fontSize:13,fontWeight:700,color:C.text}}>Pai <span style={{fontWeight:500,color:C.textMuted}}>· correção 100% CDI</span></div>
       <div style={{fontSize:15,fontWeight:800,color:C.accent,marginTop:4}}>{fmt(-saldoPai)}</div>
@@ -2628,6 +2631,52 @@ function Ferramentas({onIrPara,onUpdate}){
       </div>)}
     </div>
     <BotaoMigracaoDivida onUpdate={onUpdate}/>
+    <BotaoViradaManual onUpdate={onUpdate}/>
+  </div>;
+}
+
+/**
+ * [TEMPORARIO 16/07 -- REMOVER DEPOIS DE CONFIRMAR QUE A VIRADA VOLTOU A
+ * FUNCIONAR AUTOMATICAMENTE] Nao existe nenhum trigger de horario rodando
+ * (confirmado no painel Acionadores do Apps Script -- "Nenhum resultado").
+ * A virada de ciclo nunca rodou sozinha. "viradaCiclo" ja e uma acao normal
+ * do dispatch (mesma familia de "lancar"/"editar", que ja rodam certinho o
+ * dia todo) -- esse botao so chama ela manualmente, com confirmacao, pra
+ * nao depender do editor do Apps Script pra resolver o de hoje.
+ */
+function BotaoViradaManual({onUpdate}){
+  const [estado,setEstado]=useState("idle");
+  const [erro,setErro]=useState(null);
+
+  async function executar(){
+    setEstado("rodando");
+    try{
+      const r=await api({action:"viradaCiclo"});
+      onUpdate&&onUpdate(r);
+      setEstado("feito");
+    }catch(e){
+      setErro(e.message||String(e));
+      setEstado("erro");
+    }
+  }
+
+  return <div style={{margin:"18px 12px 0",padding:14,borderRadius:14,background:"#FEF2F2",border:"1px dashed "+C.red}}>
+    <div style={{fontSize:11,fontWeight:800,color:C.red,letterSpacing:".05em",marginBottom:4}}>⚠️ AÇÃO ÚNICA — RODAR VIRADA DE CICLO AGORA</div>
+    <div style={{fontSize:12,color:C.textMuted,marginBottom:10}}>O trigger automático de dia 16 não existe (confirmado no Apps Script). Isso roda a virada manualmente, uma vez, pra recuperar o ciclo de hoje.</div>
+    {estado==="idle"&&<button onClick={()=>setEstado("confirmar")}
+      style={{width:"100%",padding:"9px",borderRadius:8,border:"1px solid "+C.red,background:C.surface,color:C.red,fontWeight:700,fontSize:13,cursor:"pointer"}}>
+      Rodar virada agora
+    </button>}
+    {estado==="confirmar"&&<div>
+      <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:8}}>Confirma? Isso vira o ciclo pra JUL/AGO de verdade na planilha.</div>
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={()=>setEstado("idle")} style={{flex:1,padding:"8px",borderRadius:8,border:"1px solid "+C.border,background:C.surface,fontSize:13,cursor:"pointer"}}>Cancelar</button>
+        <button onClick={executar} style={{flex:1,padding:"8px",borderRadius:8,border:"none",background:C.red,color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>Sim, rodar</button>
+      </div>
+    </div>}
+    {estado==="rodando"&&<div style={{fontSize:13,color:C.textMuted}}>Rodando...</div>}
+    {estado==="feito"&&<div style={{fontSize:13,color:C.green,fontWeight:700}}>Pronto. Confira o Dashboard.</div>}
+    {estado==="erro"&&<div style={{fontSize:13,color:C.red}}>Erro: {erro}</div>}
   </div>;
 }
 
@@ -5255,7 +5304,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260715.1600 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260716.1010 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
