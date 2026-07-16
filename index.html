@@ -1868,11 +1868,11 @@ function FontesReceita({data,onUpdate}){
   // "Recalcular TODAS": salva a tela, apaga TODOS os futuros gerados (de
   // qualquer fonte/modo) e regera do zero com as regras/valores atuais.
   async function recalcularTodas(){
-    if(!window.confirm("Recalcular TODAS as fontes? Isso apaga todos os lançamentos futuros ainda programados (de qualquer fonte/modo) e regera do zero com os valores/regras atuais da tela. Já executados nunca são tocados."))return;
+    if(!window.confirm("Recalcular TODAS as fontes? Isso apaga os lançamentos futuros ainda programados de modo Regular (de qualquer fonte) e regera do zero com os valores/regras atuais da tela. Esporádica nunca é tocada por aqui — nunca é gerada sozinha. Já executados nunca são tocados."))return;
     setLoadRefresh(true); setMsg(null);
     try{
       await persistir();
-      await api({action:"apagarFuturosFonte"});
+      await api({action:"apagarFuturosFonte",tipos:["REGULAR"]});
       const r=await api({action:"gerarReceitasFontes"});
       onUpdate&&onUpdate(r);
       setMsg("Todas as fontes recalculadas: "+(r.itensAdicionados||0)+" lançamento(s) gerado(s).");
@@ -1883,26 +1883,38 @@ function FontesReceita({data,onUpdate}){
   // botao "Todas", so que filtrada. E o botao que resolve "mudei valor-hora/
   // aliquota/regra de algum modo, quero que os lancamentos futuros reflitam".
   async function recalcularUmaFonte(nome){
-    if(!window.confirm("Recalcular \""+nome+"\"? Isso apaga os lançamentos futuros já gerados dessa fonte (todos os modos) e regera do zero com os valores/regra atuais da tela. Já executados nunca são tocados."))return;
+    if(!window.confirm("Recalcular \""+nome+"\"? Isso apaga os lançamentos futuros de modo Regular já gerados dessa fonte e regera do zero com os valores/regra atuais da tela. Esporádica nunca é tocada por aqui. Já executados nunca são tocados."))return;
     setLoadFonte(nome); setMsg(null);
     try{
       await persistir();
-      await api({action:"apagarFuturosFonte",fonte:nome});
+      await api({action:"apagarFuturosFonte",fonte:nome,tipos:["REGULAR"]});
       const r=await api({action:"gerarReceitasFontes",fonte:nome});
       onUpdate&&onUpdate(r);
       setMsg(nome+": recalculado, "+(r.itensAdicionados||0)+" lançamento(s) gerado(s).");
     }catch(e){alert(e.message);}
     setLoadFonte(null);
   }
-  // Apaga futuros SEM regerar -- fica disponivel a parte pra quando o
-  // Marcus so quer remover (ex: desativou a fonte) sem recriar nada.
+  // Apaga futuros SEM regerar -- pra quando o Marcus so quer remover (ex:
+  // desativou o modo) sem recriar nada. [15/07] agora com filtro por tipo:
+  // Regular e/ou Esporadica marcados separadamente, nunca um seletor global
+  // de fonte (cada fonte ja tem seu proprio card, isso so vive dentro dele).
   const [loadApagar,setLoadApagar]=useState(null);
+  const [tiposApagar,setTiposApagar]=useState({});// {nome: {regular:bool, esporadica:bool}}
+  function setTipoApagar(nome,campo,valor){
+    setTiposApagar(prev=>({...prev,[nome]:{...(prev[nome]||{regular:true,esporadica:true}),[campo]:valor}}));
+  }
   async function apagarFuturosDaFonte(nome){
-    if(!window.confirm("Apagar TODOS os lançamentos ainda programados de \""+nome+"\" (todos os modos, todos os meses futuros), SEM regerar? Já executados não são tocados."))return;
+    const sel=tiposApagar[nome]||{regular:true,esporadica:true};
+    const tipos=[];
+    if(sel.regular)tipos.push("REGULAR");
+    if(sel.esporadica)tipos.push("ESPORADICA");
+    if(!tipos.length){alert("Marque pelo menos um tipo (Regulares ou Esporádicas).");return;}
+    const desc=tipos.length===2?"todos os modos (Regulares e Esporádicas)":tipos[0]==="REGULAR"?"só os modos Regulares":"só os modos Esporádicas";
+    if(!window.confirm("Apagar "+desc+" ainda programados de \""+nome+"\", SEM regerar? Já executados não são tocados."))return;
     setLoadApagar(nome); setMsg(null);
     try{
       await persistir();
-      const r=await api({action:"apagarFuturosFonte",fonte:nome});
+      const r=await api({action:"apagarFuturosFonte",fonte:nome,tipos});
       onUpdate&&onUpdate(r);
       setMsg(nome+": "+(r.apagados||0)+" lançamento(s) apagado(s).");
     }catch(e){alert(e.message);}
@@ -2000,18 +2012,31 @@ function FontesReceita({data,onUpdate}){
           </div>)}
         </>}
         {jaSalva(f.nome)&&<div style={{marginTop:6}}>
-          <div style={{display:"flex",gap:6}}>
+          <div style={{display:"flex",gap:6,marginBottom:6}}>
             <button onClick={()=>recalcularUmaFonte(f.nome)} disabled={loadFonte===f.nome}
               style={{background:"none",border:"1px dashed "+C.teal,borderRadius:6,color:C.teal,fontSize:10,fontWeight:600,padding:"4px 9px",cursor:"pointer"}}>
               {loadFonte===f.nome?"Recalculando…":"🔄 Recalcular essa fonte"}
             </button>
+          </div>
+          <div style={{background:C.redLight,border:"1px dashed "+C.red,borderRadius:6,padding:8}}>
+            <div style={{fontSize:9,color:C.red,fontWeight:700,marginBottom:5}}>🗑 APAGAR FUTUROS DESSA FONTE (sem regerar)</div>
+            <div style={{display:"flex",gap:12,marginBottom:6}}>
+              <label style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:C.text,cursor:"pointer"}}>
+                <input type="checkbox" checked={(tiposApagar[f.nome]||{regular:true}).regular!==false} onChange={e=>setTipoApagar(f.nome,"regular",e.target.checked)}/>
+                Regulares
+              </label>
+              <label style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:C.text,cursor:"pointer"}}>
+                <input type="checkbox" checked={(tiposApagar[f.nome]||{esporadica:true}).esporadica!==false} onChange={e=>setTipoApagar(f.nome,"esporadica",e.target.checked)}/>
+                Esporádicas
+              </label>
+            </div>
             <button onClick={()=>apagarFuturosDaFonte(f.nome)} disabled={loadApagar===f.nome}
-              style={{background:"none",border:"1px dashed "+C.red,borderRadius:6,color:C.red,fontSize:10,fontWeight:600,padding:"4px 9px",cursor:"pointer"}}>
-              {loadApagar===f.nome?"Apagando…":"🗑 Desativar e limpar futuros"}
+              style={{width:"100%",background:"none",border:"1px solid "+C.red,borderRadius:6,color:C.red,fontSize:11,fontWeight:700,padding:"6px",cursor:"pointer"}}>
+              {loadApagar===f.nome?"Apagando…":"Apagar futuros"}
             </button>
           </div>
-          <div style={{fontSize:9,color:C.textMuted,marginTop:3,lineHeight:1.4}}>
-            <b>Recalcular</b>: mudou valor-hora, alíquota ou a regra de algum modo dessa fonte? Isso refaz TODOS os meses futuros com o valor certo. <b>Desativar e limpar</b>: só some com o que já estava programado, sem recriar.
+          <div style={{fontSize:9,color:C.textMuted,marginTop:5,lineHeight:1.4}}>
+            <b>Recalcular</b>: mudou valor-hora, alíquota ou a regra de algum modo Regular? Refaz TODOS os meses futuros Regulares com o valor certo (Esporádica nunca é tocada — não tem fórmula pra reaplicar). <b>Apagar futuros</b>: só some com o que já estava programado, sem recriar — marque Regulares e/ou Esporádicas conforme o que quer limpar.
           </div>
         </div>}
       </div>
@@ -2573,7 +2598,7 @@ function ConciliarExtratoTab({data,onUpdate}){
   </div>;
 }
 
-function Ferramentas({onIrPara,onUpdate}){
+function Ferramentas({onIrPara}){
   const FERRAMENTAS=[
     {id:"recorr",icone:"🔁",titulo:"Recorrências",sub:"Gastos fixos e receitas",cor:C.blue,bg:C.blueLight},
     {id:"cartoes",icone:"💳",titulo:"Cartões",sub:"Faturas PF e PJ",cor:"#D97706",bg:"#FEF3C7"},
@@ -2595,54 +2620,6 @@ function Ferramentas({onIrPara,onUpdate}){
         <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>{f.sub}</div>
       </div>)}
     </div>
-    <BotaoLimpezaTemporaria onUpdate={onUpdate}/>
-  </div>;
-}
-
-/**
- * [TEMPORARIO 15/07 -- REMOVER ESTE COMPONENTE INTEIRO E A CHAMADA EM
- * Ferramentas DEPOIS DE USAR UMA VEZ] Botão de uso único pra rodar a ação
- * "limparFantasmasCiclo13" (ver Tesouraria_v3.txt). Exige toque duplo
- * (confirmar) pra evitar clique acidental, e mostra o resultado antes de
- * qualquer coisa ser apagada de verdade.
- */
-function BotaoLimpezaTemporaria({onUpdate}){
-  const [estado,setEstado]=useState("idle"); // idle -> confirmar -> rodando -> feito/erro
-  const [resultado,setResultado]=useState(null);
-  const [erro,setErro]=useState(null);
-
-  async function executar(){
-    setEstado("rodando");
-    try{
-      const r=await api({action:"limparFantasmasCiclo13"});
-      setResultado(r.limpezaFantasma||{fluxo:0,cartaoPF:0,cartaoPJ:0});
-      if(onUpdate) onUpdate(r);
-      setEstado("feito");
-    }catch(e){
-      setErro(e.message||String(e));
-      setEstado("erro");
-    }
-  }
-
-  return <div style={{margin:"18px 12px 0",padding:14,borderRadius:14,background:"#FEF2F2",border:"1px dashed "+C.red}}>
-    <div style={{fontSize:11,fontWeight:800,color:C.red,letterSpacing:".05em",marginBottom:4}}>⚠️ AÇÃO ÚNICA — LIMPEZA DE CICLO FANTASMA</div>
-    <div style={{fontSize:12,color:C.textMuted,marginBottom:10}}>Apaga só as linhas geradas pelos bugs de virada/cartão corrigidos em 15/07 (nunca mexe em EXECUTADO ou PAGO). Rodar uma vez só.</div>
-    {estado==="idle"&&<button onClick={()=>setEstado("confirmar")}
-      style={{width:"100%",padding:"9px",borderRadius:8,border:"1px solid "+C.red,background:C.surface,color:C.red,fontWeight:700,fontSize:13,cursor:"pointer"}}>
-      Rodar limpeza
-    </button>}
-    {estado==="confirmar"&&<div>
-      <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:8}}>Confirma? Isso apaga linhas de verdade na planilha.</div>
-      <div style={{display:"flex",gap:8}}>
-        <button onClick={()=>setEstado("idle")} style={{flex:1,padding:"8px",borderRadius:8,border:"1px solid "+C.border,background:C.surface,fontSize:13,cursor:"pointer"}}>Cancelar</button>
-        <button onClick={executar} style={{flex:1,padding:"8px",borderRadius:8,border:"none",background:C.red,color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>Sim, apagar</button>
-      </div>
-    </div>}
-    {estado==="rodando"&&<div style={{fontSize:13,color:C.textMuted}}>Rodando...</div>}
-    {estado==="feito"&&<div style={{fontSize:13,color:C.green,fontWeight:700}}>
-      Pronto. Apagado: {resultado.fluxo} do Fluxo, {resultado.cartaoPF} do Cartão PF, {resultado.cartaoPJ} do Cartão PJ.
-    </div>}
-    {estado==="erro"&&<div style={{fontSize:13,color:C.red}}>Erro: {erro}</div>}
   </div>;
 }
 
@@ -2996,10 +2973,17 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
             style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:11,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
             🗑 Apagar este lançamento
           </button>
-          <button onClick={()=>apagarTodosComEssaDescricao(item)} disabled={!!load}
-            style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:10,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
-            🗑 Apagar TODOS os "{item.descricao}" futuros (Fluxo)
-          </button>
+          {String(item.obs||"").indexOf("FONTE_RECEITA")>=0?
+            <button onClick={()=>onIrPara&&onIrPara({tab:"receitas"})}
+              style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.teal,fontSize:10,border:"1px dashed "+C.teal,cursor:"pointer",fontFamily:"inherit"}}>
+              🏥 Gerenciar futuros dessa fonte em Receitas
+            </button>
+          :
+            <button onClick={()=>apagarTodosComEssaDescricao(item)} disabled={!!load}
+              style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:10,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
+              🗑 Apagar TODOS os "{item.descricao}" futuros (Fluxo)
+            </button>
+          }
         </div>}
       </div>;})}
       {cartaoExibir.map(c=><div key={"cart-"+c.cartao+"-"+c.row}
@@ -5213,7 +5197,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260715.1100 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260715.1300 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -5252,7 +5236,7 @@ function Tesouraria(){
         tab==="dashboard"   ? <Dashboard data={data}/> :
         tab==="fluxo"       ? <Fluxo data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
         tab==="historico"   ? <Historico data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
-        tab==="ferramentas" ? <Ferramentas onIrPara={t=>{navegar(t);}} onUpdate={setData}/> :
+        tab==="ferramentas" ? <Ferramentas onIrPara={t=>{navegar(t);}}/> :
         tab==="recorr"      ? <Recorrencias data={data} onUpdate={setData}/> :
         tab==="cartoes"     ? <Cartoes data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
         tab==="dcp"         ? <DCPTab data={data} onUpdate={setData} onIrPara={irPara}/> :
