@@ -192,6 +192,12 @@ function listarPeriodosEnvelope(env,ateData){
 // depois dela varia.
 function _linhaCartao(r){ return r&&r.length?r[r.length-1]:null; }
 function _obsCartaoRaw(r){ return r&&r.length>8?r[8]:null; }
+// [NOVO 17/07] Le os termos alternativos (alias) gravados no OBS de um item
+// de cartao -- usado so pra pre-preencher o campo de edicao, nunca muda a
+// descricao exibida em nenhuma tela.
+function _obsAliasCartao(obsRaw){
+  try{ const o=JSON.parse(obsRaw||"{}"); return o.alias||""; }catch(e){ return ""; }
+}
 function parseEnvelopesCustom(data){
   try{ return data?.config?.ENVELOPES_JSON ? JSON.parse(data.config.ENVELOPES_JSON) : []; }
   catch(e){ return []; }
@@ -1834,6 +1840,11 @@ function FontesReceita({data,onUpdate}){
       diaPagamento:1, ativo:true, obs:"", valorHora:0, horasPlantao:12, percDesconto:0, regras:[]};
   }
   function atualizarNomeFonte(i,novoNome){ setFontes(fs=>fs.map((f,idx)=>idx===i?{...f,nome:novoNome}:f)); }
+  // [NOVO 17/07] Termos alternativos de identificacao (de onde o dinheiro
+  // realmente vem no extrato -- ex: HDWC cai de uma conta salario do Banco
+  // do Brasil, HSA/HSI caem da conta da Intensiva). So usado por
+  // Conciliacao de Extrato, nunca muda a descricao das linhas geradas.
+  function atualizarAliasFonte(i,novoAlias){ setFontes(fs=>fs.map((f,idx)=>idx===i?{...f,alias:novoAlias}:f)); }
   function removerFonte(i){ setFontes(fs=>fs.filter((_,idx)=>idx!==i)); }
   function addFonte(){ setFontes(fs=>[...fs,{nome:"",modos:[novoModoVazio()]}]); }
   function addModo(fi){ setFontes(fs=>fs.map((f,idx)=>idx===fi?{...f,modos:[...(f.modos||[]),novoModoVazio()]}:f)); }
@@ -2011,6 +2022,12 @@ function FontesReceita({data,onUpdate}){
         <input type="text" value={f.nome} onChange={e=>atualizarNomeFonte(i,e.target.value.toUpperCase())} placeholder="Nome da fonte"
           style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,fontWeight:700,fontFamily:"inherit"}}/>
         <button onClick={()=>removerFonte(i)} style={{background:"none",border:"1px dashed "+C.border,borderRadius:6,color:C.red,fontSize:11,padding:"0 8px",cursor:"pointer"}}>Remover fonte</button>
+      </div>
+      <div style={{marginBottom:10}}>
+        <input type="text" value={f.alias||""} onChange={e=>atualizarAliasFonte(i,e.target.value.toUpperCase())}
+          placeholder="Termos alternativos no extrato (ex: BANCO DO BRASIL | FOLHA)"
+          style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:11,fontFamily:"inherit",boxSizing:"border-box"}}/>
+        <div style={{fontSize:9,color:C.textMuted,marginTop:2}}>Separe vários com "|". Ajuda a Conciliação de Extrato a reconhecer esse depósito mesmo com nome diferente no banco.</div>
       </div>
 
       {(f.modos||[]).map((m,mi)=><FormModo key={mi} modo={m} podeRemover={(f.modos||[]).length>1}
@@ -3778,6 +3795,7 @@ function Recorrencias({data,onUpdate}){
   const [val,setVal]=useState("");
   const [dia,setDia]=useState("");
   const [tolerancia,setTolerancia]=useState("");
+  const [alias,setAlias]=useState("");
   const [neg,setNeg]=useState(true);
   const [load,setLoad]=useState(false);
   const [showForm,setShowForm]=useState(false);
@@ -3789,7 +3807,7 @@ function Recorrencias({data,onUpdate}){
   const items=(data.recorr||[]).map((r,i)=>({
     idx:i,desc:r[0],valor:Number(r[1]),forma:r[2],
     diaVenc:r[3],parcAtual:r[4],parcTotal:r[5],
-    ativo:r[6],tipo:r[7],obs:r[8],destino:r[9],tolerancia:r[10]
+    ativo:r[6],tipo:r[7],obs:r[8],destino:r[9],tolerancia:r[10],alias:r[11]
   })).filter(r=>String(r.ativo).toUpperCase()!=="N"&&r.ativo!==false&&r.ativo!==0);
 
   // Emprestimos/passivos: qualquer recorrencia do FLUXO com numero de
@@ -3850,6 +3868,7 @@ function Recorrencias({data,onUpdate}){
     setDia(String(item.diaVenc));
     setNeg(item.valor<0);
     setTolerancia(item.tolerancia!=null&&item.tolerancia!==""?String(item.tolerancia):"");
+    setAlias(item.alias||"");
   }
 
   async function salvar(item){
@@ -3865,6 +3884,9 @@ function Recorrencias({data,onUpdate}){
         ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_VENC",valor:String(novoDia),resumo:""});
       if(novaTolerancia!=null&&novaTolerancia!==Number(item.tolerancia))
         ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"TOLERANCIA_DIAS",valor:String(novaTolerancia),resumo:""});
+      const novoAlias=alias.trim().toUpperCase();
+      if(novoAlias!==String(item.alias||"").trim().toUpperCase())
+        ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"ALIAS_CSV",valor:novoAlias,resumo:""});
       onUpdate(ultimoResultado||await api({action:"getData"}));
     }catch(e){alert(e.message);}
     setLoad(false);setEdit(null);
@@ -3897,6 +3919,9 @@ function Recorrencias({data,onUpdate}){
               <span style={{fontSize:10,color:C.textMuted}}>{item.forma}</span>
               {item.tolerancia!=null&&item.tolerancia!==""&&<span style={{fontSize:10,background:"#FEF3C7",color:"#92400E",borderRadius:5,padding:"2px 6px",fontWeight:600}}>
                 {Number(item.tolerancia)===0?"não posterga":"posterga até "+item.tolerancia+"d"}
+              </span>}
+              {item.alias&&<span style={{fontSize:10,background:C.blueLight,color:C.blue,borderRadius:5,padding:"2px 6px",fontWeight:600}}>
+                🏷 apelido no banco
               </span>}
             </div>
           </div>
@@ -3938,6 +3963,13 @@ function Recorrencias({data,onUpdate}){
             <input type="text" inputMode="numeric" value={tolerancia} onChange={e=>setTolerancia(e.target.value.replace(/\D/g,""))}
               placeholder="ex: 30 (0 = não pode atrasar)"
               style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",boxSizing:"border-box"}}/>
+          </div>
+          <div style={{marginBottom:10}}>
+            <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Termos alternativos (como o banco/extrato pode chamar esse gasto)</div>
+            <input value={alias} onChange={e=>setAlias(e.target.value)}
+              placeholder="ex: ZELT | IMOBILIARIA"
+              style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
+            <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Separe vários termos com "|". Ajuda a Conciliação (de Fatura ou de Extrato) a reconhecer o mesmo gasto mesmo quando o banco usa um nome diferente. Não muda o nome exibido no app.</div>
           </div>
           <div style={{display:"flex",gap:8}}>
             <button onClick={()=>salvar(item)} disabled={load}
@@ -4089,7 +4121,7 @@ function FormNovaRecorr({onSalvo,onClose}){
         <input value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Ex: PSICÓLOGO" style={inp}/></div>
       <div style={{display:"flex",gap:8}}>
         <div style={{flex:1}}><label style={lbl}>Valor (R$)</label>
-          <input type="number" step="0.01" value={valor} onChange={e=>setValor(e.target.value)} placeholder="0,00" style={{...inp,textAlign:"right"}}/></div>
+          <input type="text" inputMode="numeric" value={valor} onChange={e=>setValor(formatarMoedaInput(e.target.value))} placeholder="0,00" style={{...inp,textAlign:"right"}}/></div>
         <div style={{flex:1}}><label style={lbl}>Tipo</label>
           <select value={tipo} onChange={e=>setTipo(e.target.value)} style={sel}>
             <option>DESPESA FIXA</option><option>RECEITA</option>
@@ -4667,6 +4699,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   const [eData,setEData]=useState("");
   const [eCategoria,setECategoria]=useState("DCP");
   const [eNeg,setENeg]=useState(true);
+  const [eAlias,setEAlias]=useState("");
   const [eLoad,setELoad]=useState(false);
   // resultado da última conciliação de CSV rodada nesta aba (sem Gemini)
   const [conciliacao,setConciliacao]=useState(null); // {cartao, vencimentoAlvo, foraDaPlanilha, aguardandoFatura, possiveisDivergencias}
@@ -4676,6 +4709,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
 
   function abrirEdicaoItem(r){
     setEditRow(_linhaCartao(r));setEDesc(r[1]);setEValor(formatarValorInicial(r[2]));setENeg(r[2]<0);setECategoria(r[5]||"DCP");setEData(String(r[0]||"").slice(0,10));
+    setEAlias(_obsAliasCartao(_obsCartaoRaw(r)));
   }
 
   async function salvarEdicaoItem(origValor){
@@ -4701,6 +4735,10 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         // um item recategorizado pra fora de DCP continuaria contando no
         // consumo semanal (o motor considera DCP=S OU categoria=DCP).
         res=await api({action:"editar",aba:abaCartao,row:editRow,campo:"DCP",valor:eCategoria==="DCP"?"S":"N"});
+      }
+      const aliasNovo=eAlias.trim().toUpperCase();
+      if(aliasNovo!==String(origValor.alias||"").trim().toUpperCase()){
+        res=await api({action:"editarAliasCartao",aba:abaCartao,row:editRow,alias:aliasNovo});
       }
       onUpdate(res||await api({action:"getData"}));
       setEditRow(null);
@@ -5075,8 +5113,9 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         </div>
         {isOpen&&<PainelEdicaoItemCartao r={r} eDesc={eDesc} setEDesc={setEDesc} eValor={eValor} setEValor={setEValor}
           eData={eData} setEData={setEData}
-          eNeg={eNeg} setENeg={setENeg} eCategoria={eCategoria} setECategoria={setECategoria} eLoad={eLoad} motivo={motivo}
-          onSalvar={()=>salvarEdicaoItem({desc:r[1],valor:r[2],categoria:r[5],data:r[0]})} onApagar={apagarItem} onApagarTodos={()=>apagarTodosItemComEssaDescricao(r[1])} onCancelar={()=>setEditRow(null)}
+          eNeg={eNeg} setENeg={setENeg} eCategoria={eCategoria} setECategoria={setECategoria}
+          eAlias={eAlias} setEAlias={setEAlias} eLoad={eLoad} motivo={motivo}
+          onSalvar={()=>salvarEdicaoItem({desc:r[1],valor:r[2],categoria:r[5],data:r[0],alias:_obsAliasCartao(_obsCartaoRaw(r))})} onApagar={apagarItem} onApagarTodos={()=>apagarTodosItemComEssaDescricao(r[1])} onCancelar={()=>setEditRow(null)}
           onUsarCSV={divergencia?()=>usarDadosDoCSV(divergencia):null} previewCSV={divergencia?descComNotaPreservada(divergencia):null}
           data={data} abaCartao={abaCartao} onUpdate={onUpdate}/>}
       </div>;})}
@@ -5087,7 +5126,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
 // Painel inline de edição/exclusão de um item de CARTAO_PF/PJ (usado em
 // Confirmados e Previstos). Mesmo estilo do painel ⋮ do Fluxo, mas mais
 // simples: só descrição, valor (com toggle de sinal) e apagar.
-function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEData,eNeg,setENeg,eCategoria,setECategoria,eLoad,motivo,onSalvar,onApagar,onApagarTodos,onCancelar,onUsarCSV,previewCSV,data,abaCartao,onUpdate}){
+function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEData,eNeg,setENeg,eCategoria,setECategoria,eAlias,setEAlias,eLoad,motivo,onSalvar,onApagar,onApagarTodos,onCancelar,onUsarCSV,previewCSV,data,abaCartao,onUpdate}){
   return <div style={{background:C.accentLight,padding:"10px 14px",
     borderBottom:"1px solid "+C.accent,borderLeft:"3px solid "+C.accent}}>
     {motivo&&motivo.tipo==="divergencia"&&<div style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"8px 10px",marginBottom:10,fontSize:11,color:"#92400E"}}>
@@ -5129,6 +5168,13 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
         style={{padding:"6px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:13,fontFamily:"inherit",background:C.surface}}>
         {["DCP","DESPESA FIXA","EXTRAORDINARIA","IMPOSTO"].map(c=><option key={c} value={c}>{CAT_LABEL[c]||c}</option>)}
       </select>
+    </div>
+    <div style={{display:"flex",flexDirection:"column",gap:3,marginBottom:8}}>
+      <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>TERMOS ALTERNATIVOS (como o banco pode chamar esse gasto)</span>
+      <input value={eAlias} onChange={e=>setEAlias(e.target.value)}
+        placeholder="ex: CANAIS STREAMING | AMAZON VAREJO"
+        style={{padding:"6px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:12,fontFamily:"inherit",background:C.surface}}/>
+      <span style={{fontSize:9,color:"#92400E"}}>Separe vários com "|". Ajuda a conciliação a reconhecer o mesmo gasto com nome diferente no CSV.</span>
     </div>
     {data&&onUpdate&&<SeletorEnvelopeItem aba={abaCartao} row={_linhaCartao(r)} obsAtual={_obsCartaoRaw(r)} data={data} onUpdate={onUpdate}/>}
     <div style={{display:"flex",gap:8}}>
@@ -5218,7 +5264,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260716.2300 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260717.1859 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
