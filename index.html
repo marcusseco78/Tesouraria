@@ -875,7 +875,14 @@ function Dashboard({data}){
   },[fluxo,hj]);
   const ciclosVisiveis=useMemo(()=>new Set(ciclosOrdenados.slice(0,periodo)),[ciclosOrdenados,periodo]);
   const chartPts=useMemo(()=>{const m={};fluxo.forEach(r=>{if(r.data>=hj&&r.saldoProjetado!=null&&(!r.ciclo||ciclosVisiveis.has(r.ciclo)))m[r.data]={d:r.data,v:r.saldoProjetado};});return Object.values(m).sort((a,b)=>a.d>b.d?1:-1);},[fluxo,hj,ciclosVisiveis]);
-  const ciclos=useMemo(()=>[...new Set(fluxo.map(r=>r.ciclo).filter(Boolean))].slice(0,3),[fluxo]);
+  // [FIX 16/07] Antes pegava os 3 primeiros nomes de ciclo unicos de TODO o
+  // historico do Fluxo, sem olhar a data -- coincidentemente sempre certo
+  // ate hoje, porque o sistema nasceu no proprio ciclo JUN/JUL (primeiro da
+  // historia = ciclo atual, por acaso). Na primeira virada de verdade da
+  // vida do sistema, os dois se separaram e o Dashboard ficou preso no
+  // ciclo mais antigo do historico pra sempre. ciclosOrdenados (acima) ja
+  // filtra por data>=hoje antes de tirar os unicos -- so reaproveitar.
+  const ciclos=useMemo(()=>ciclosOrdenados.slice(0,3),[ciclosOrdenados]);
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
       <div style={{background:bgZ(saldo),border:"2px solid "+corZ(saldo),borderRadius:16,padding:"14px 14px"}}>
@@ -5304,7 +5311,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260716.1010 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260716.1700 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
