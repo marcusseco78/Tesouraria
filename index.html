@@ -2615,7 +2615,7 @@ function ConciliarExtratoTab({data,onUpdate}){
   </div>;
 }
 
-function Ferramentas({onIrPara,onUpdate}){
+function Ferramentas({onIrPara}){
   const FERRAMENTAS=[
     {id:"recorr",icone:"🔁",titulo:"Recorrências",sub:"Gastos fixos e receitas",cor:C.blue,bg:C.blueLight},
     {id:"cartoes",icone:"💳",titulo:"Cartões",sub:"Faturas PF e PJ",cor:"#D97706",bg:"#FEF3C7"},
@@ -2637,145 +2637,8 @@ function Ferramentas({onIrPara,onUpdate}){
         <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>{f.sub}</div>
       </div>)}
     </div>
-    <BotaoMigracaoDivida onUpdate={onUpdate}/>
-    <BotaoViradaManual onUpdate={onUpdate}/>
-    <BotaoCorrigirCiclo onUpdate={onUpdate}/>
   </div>;
 }
-
-/**
- * [TEMPORARIO 16/07 -- REMOVER DEPOIS DE USAR UMA VEZ] Corrige linhas do
- * Fluxo ainda nao executadas cuja etiqueta de ciclo nao bate com a data de
- * verdade (ex: reagendou/editou valor manual e a etiqueta ficou orfa).
- */
-function BotaoCorrigirCiclo({onUpdate}){
-  const [estado,setEstado]=useState("idle");
-  const [corrigidos,setCorrigidos]=useState(null);
-  const [erro,setErro]=useState(null);
-
-  async function executar(){
-    setEstado("rodando");
-    try{
-      const r=await api({action:"corrigirCicloDesatualizado"});
-      setCorrigidos(r.corrigidos||0);
-      if(onUpdate) onUpdate(r);
-      setEstado("feito");
-    }catch(e){
-      setErro(e.message||String(e));
-      setEstado("erro");
-    }
-  }
-
-  return <div style={{margin:"18px 12px 0",padding:14,borderRadius:14,background:"#FEF2F2",border:"1px dashed "+C.red}}>
-    <div style={{fontSize:11,fontWeight:800,color:C.red,letterSpacing:".05em",marginBottom:4}}>⚠️ AÇÃO ÚNICA — CORRIGIR ETIQUETA DE CICLO</div>
-    <div style={{fontSize:12,color:C.textMuted,marginBottom:10}}>Recalcula o ciclo certo de qualquer lançamento futuro cuja etiqueta não bate com a data (nunca mexe em executado). Rodar uma vez só.</div>
-    {estado==="idle"&&<button onClick={()=>setEstado("confirmar")}
-      style={{width:"100%",padding:"9px",borderRadius:8,border:"1px solid "+C.red,background:C.surface,color:C.red,fontWeight:700,fontSize:13,cursor:"pointer"}}>
-      Rodar correção
-    </button>}
-    {estado==="confirmar"&&<div>
-      <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:8}}>Confirma? Isso reescreve a coluna de ciclo de verdade na planilha.</div>
-      <div style={{display:"flex",gap:8}}>
-        <button onClick={()=>setEstado("idle")} style={{flex:1,padding:"8px",borderRadius:8,border:"1px solid "+C.border,background:C.surface,fontSize:13,cursor:"pointer"}}>Cancelar</button>
-        <button onClick={executar} style={{flex:1,padding:"8px",borderRadius:8,border:"none",background:C.red,color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>Sim, corrigir</button>
-      </div>
-    </div>}
-    {estado==="rodando"&&<div style={{fontSize:13,color:C.textMuted}}>Rodando...</div>}
-    {estado==="feito"&&<div style={{fontSize:13,color:C.green,fontWeight:700}}>Pronto. {corrigidos} linha(s) corrigida(s).</div>}
-    {estado==="erro"&&<div style={{fontSize:13,color:C.red}}>Erro: {erro}</div>}
-  </div>;
-}
-
-/**
- * [TEMPORARIO 16/07 -- REMOVER DEPOIS DE CONFIRMAR QUE A VIRADA VOLTOU A
- * FUNCIONAR AUTOMATICAMENTE] Nao existe nenhum trigger de horario rodando
- * (confirmado no painel Acionadores do Apps Script -- "Nenhum resultado").
- * A virada de ciclo nunca rodou sozinha. "viradaCiclo" ja e uma acao normal
- * do dispatch (mesma familia de "lancar"/"editar", que ja rodam certinho o
- * dia todo) -- esse botao so chama ela manualmente, com confirmacao, pra
- * nao depender do editor do Apps Script pra resolver o de hoje.
- */
-function BotaoViradaManual({onUpdate}){
-  const [estado,setEstado]=useState("idle");
-  const [erro,setErro]=useState(null);
-
-  async function executar(){
-    setEstado("rodando");
-    try{
-      const r=await api({action:"viradaCiclo"});
-      onUpdate&&onUpdate(r);
-      setEstado("feito");
-    }catch(e){
-      setErro(e.message||String(e));
-      setEstado("erro");
-    }
-  }
-
-  return <div style={{margin:"18px 12px 0",padding:14,borderRadius:14,background:"#FEF2F2",border:"1px dashed "+C.red}}>
-    <div style={{fontSize:11,fontWeight:800,color:C.red,letterSpacing:".05em",marginBottom:4}}>⚠️ AÇÃO ÚNICA — RODAR VIRADA DE CICLO AGORA</div>
-    <div style={{fontSize:12,color:C.textMuted,marginBottom:10}}>O trigger automático de dia 16 não existe (confirmado no Apps Script). Isso roda a virada manualmente, uma vez, pra recuperar o ciclo de hoje.</div>
-    {estado==="idle"&&<button onClick={()=>setEstado("confirmar")}
-      style={{width:"100%",padding:"9px",borderRadius:8,border:"1px solid "+C.red,background:C.surface,color:C.red,fontWeight:700,fontSize:13,cursor:"pointer"}}>
-      Rodar virada agora
-    </button>}
-    {estado==="confirmar"&&<div>
-      <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:8}}>Confirma? Isso vira o ciclo pra JUL/AGO de verdade na planilha.</div>
-      <div style={{display:"flex",gap:8}}>
-        <button onClick={()=>setEstado("idle")} style={{flex:1,padding:"8px",borderRadius:8,border:"1px solid "+C.border,background:C.surface,fontSize:13,cursor:"pointer"}}>Cancelar</button>
-        <button onClick={executar} style={{flex:1,padding:"8px",borderRadius:8,border:"none",background:C.red,color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>Sim, rodar</button>
-      </div>
-    </div>}
-    {estado==="rodando"&&<div style={{fontSize:13,color:C.textMuted}}>Rodando...</div>}
-    {estado==="feito"&&<div style={{fontSize:13,color:C.green,fontWeight:700}}>Pronto. Confira o Dashboard.</div>}
-    {estado==="erro"&&<div style={{fontSize:13,color:C.red}}>Erro: {erro}</div>}
-  </div>;
-}
-
-/**
- * [TEMPORARIO 15/07 -- REMOVER ESTE COMPONENTE INTEIRO DEPOIS DE USAR UMA VEZ]
- * Roda a migração única "migrarTipoCategoriaDivida" (ver Tesouraria_v3.txt).
- * Exige confirmação (evita clique acidental) e mostra o resultado antes de
- * qualquer coisa ser reescrita de verdade.
- */
-function BotaoMigracaoDivida({onUpdate}){
-  const [estado,setEstado]=useState("idle");
-  const [migrados,setMigrados]=useState(null);
-  const [erro,setErro]=useState(null);
-
-  async function executar(){
-    setEstado("rodando");
-    try{
-      const r=await api({action:"migrarTipoCategoriaDivida"});
-      setMigrados(r.migrados||0);
-      if(onUpdate) onUpdate(r);
-      setEstado("feito");
-    }catch(e){
-      setErro(e.message||String(e));
-      setEstado("erro");
-    }
-  }
-
-  return <div style={{margin:"18px 12px 0",padding:14,borderRadius:14,background:"#FEF2F2",border:"1px dashed "+C.red}}>
-    <div style={{fontSize:11,fontWeight:800,color:C.red,letterSpacing:".05em",marginBottom:4}}>⚠️ AÇÃO ÚNICA — MIGRAR TIPO/CATEGORIA DE DÍVIDA</div>
-    <div style={{fontSize:12,color:C.textMuted,marginBottom:10}}>Reescreve linhas de EMPRÉSTIMO/PASSIVO já existentes pro padrão novo (TIPO=PASSIVO, CATEGORIA=DIVIDA_PARCELADA ou DIVIDA_NAO_PARCELADA). Rodar uma vez só.</div>
-    {estado==="idle"&&<button onClick={()=>setEstado("confirmar")}
-      style={{width:"100%",padding:"9px",borderRadius:8,border:"1px solid "+C.red,background:C.surface,color:C.red,fontWeight:700,fontSize:13,cursor:"pointer"}}>
-      Rodar migração
-    </button>}
-    {estado==="confirmar"&&<div>
-      <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:8}}>Confirma? Isso reescreve TIPO/CATEGORIA de verdade na planilha.</div>
-      <div style={{display:"flex",gap:8}}>
-        <button onClick={()=>setEstado("idle")} style={{flex:1,padding:"8px",borderRadius:8,border:"1px solid "+C.border,background:C.surface,fontSize:13,cursor:"pointer"}}>Cancelar</button>
-        <button onClick={executar} style={{flex:1,padding:"8px",borderRadius:8,border:"none",background:C.red,color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>Sim, migrar</button>
-      </div>
-    </div>}
-    {estado==="rodando"&&<div style={{fontSize:13,color:C.textMuted}}>Rodando...</div>}
-    {estado==="feito"&&<div style={{fontSize:13,color:C.green,fontWeight:700}}>Pronto. {migrados} linha(s) migrada(s).</div>}
-    {estado==="erro"&&<div style={{fontSize:13,color:C.red}}>Erro: {erro}</div>}
-  </div>;
-}
-
-
 
 function DCPTab({data,onUpdate,onIrPara}){
   const fluxo=data.fluxo||[];
@@ -5355,7 +5218,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260716.2210 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260716.2300 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -5394,7 +5257,7 @@ function Tesouraria(){
         tab==="dashboard"   ? <Dashboard data={data}/> :
         tab==="fluxo"       ? <Fluxo data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
         tab==="historico"   ? <Historico data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
-        tab==="ferramentas" ? <Ferramentas onIrPara={t=>{navegar(t);}} onUpdate={setData}/> :
+        tab==="ferramentas" ? <Ferramentas onIrPara={t=>{navegar(t);}}/> :
         tab==="recorr"      ? <Recorrencias data={data} onUpdate={setData}/> :
         tab==="cartoes"     ? <Cartoes data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
         tab==="dcp"         ? <DCPTab data={data} onUpdate={setData} onIrPara={irPara}/> :
