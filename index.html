@@ -2639,6 +2639,50 @@ function Ferramentas({onIrPara,onUpdate}){
     </div>
     <BotaoMigracaoDivida onUpdate={onUpdate}/>
     <BotaoViradaManual onUpdate={onUpdate}/>
+    <BotaoCorrigirCiclo onUpdate={onUpdate}/>
+  </div>;
+}
+
+/**
+ * [TEMPORARIO 16/07 -- REMOVER DEPOIS DE USAR UMA VEZ] Corrige linhas do
+ * Fluxo ainda nao executadas cuja etiqueta de ciclo nao bate com a data de
+ * verdade (ex: reagendou/editou valor manual e a etiqueta ficou orfa).
+ */
+function BotaoCorrigirCiclo({onUpdate}){
+  const [estado,setEstado]=useState("idle");
+  const [corrigidos,setCorrigidos]=useState(null);
+  const [erro,setErro]=useState(null);
+
+  async function executar(){
+    setEstado("rodando");
+    try{
+      const r=await api({action:"corrigirCicloDesatualizado"});
+      setCorrigidos(r.corrigidos||0);
+      if(onUpdate) onUpdate(r);
+      setEstado("feito");
+    }catch(e){
+      setErro(e.message||String(e));
+      setEstado("erro");
+    }
+  }
+
+  return <div style={{margin:"18px 12px 0",padding:14,borderRadius:14,background:"#FEF2F2",border:"1px dashed "+C.red}}>
+    <div style={{fontSize:11,fontWeight:800,color:C.red,letterSpacing:".05em",marginBottom:4}}>⚠️ AÇÃO ÚNICA — CORRIGIR ETIQUETA DE CICLO</div>
+    <div style={{fontSize:12,color:C.textMuted,marginBottom:10}}>Recalcula o ciclo certo de qualquer lançamento futuro cuja etiqueta não bate com a data (nunca mexe em executado). Rodar uma vez só.</div>
+    {estado==="idle"&&<button onClick={()=>setEstado("confirmar")}
+      style={{width:"100%",padding:"9px",borderRadius:8,border:"1px solid "+C.red,background:C.surface,color:C.red,fontWeight:700,fontSize:13,cursor:"pointer"}}>
+      Rodar correção
+    </button>}
+    {estado==="confirmar"&&<div>
+      <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:8}}>Confirma? Isso reescreve a coluna de ciclo de verdade na planilha.</div>
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={()=>setEstado("idle")} style={{flex:1,padding:"8px",borderRadius:8,border:"1px solid "+C.border,background:C.surface,fontSize:13,cursor:"pointer"}}>Cancelar</button>
+        <button onClick={executar} style={{flex:1,padding:"8px",borderRadius:8,border:"none",background:C.red,color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>Sim, corrigir</button>
+      </div>
+    </div>}
+    {estado==="rodando"&&<div style={{fontSize:13,color:C.textMuted}}>Rodando...</div>}
+    {estado==="feito"&&<div style={{fontSize:13,color:C.green,fontWeight:700}}>Pronto. {corrigidos} linha(s) corrigida(s).</div>}
+    {estado==="erro"&&<div style={{fontSize:13,color:C.red}}>Erro: {erro}</div>}
   </div>;
 }
 
@@ -5311,7 +5355,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260716.1700 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260716.2210 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
