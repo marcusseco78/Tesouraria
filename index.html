@@ -2025,9 +2025,9 @@ function FontesReceita({data,onUpdate}){
       </div>
       <div style={{marginBottom:10}}>
         <input type="text" value={f.alias||""} onChange={e=>atualizarAliasFonte(i,e.target.value.toUpperCase())}
-          placeholder="Termos alternativos no extrato (ex: BANCO DO BRASIL | FOLHA)"
+          placeholder="Termos alternativos no extrato (ex: BANCO DO BRASIL; FOLHA)"
           style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:11,fontFamily:"inherit",boxSizing:"border-box"}}/>
-        <div style={{fontSize:9,color:C.textMuted,marginTop:2}}>Separe vários com "|". Ajuda a Conciliação de Extrato a reconhecer esse depósito mesmo com nome diferente no banco.</div>
+        <div style={{fontSize:9,color:C.textMuted,marginTop:2}}>Separe vários com ";". Ajuda a Conciliação de Extrato a reconhecer esse depósito mesmo com nome diferente no banco.</div>
       </div>
 
       {(f.modos||[]).map((m,mi)=><FormModo key={mi} modo={m} podeRemover={(f.modos||[]).length>1}
@@ -3010,11 +3010,17 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
               style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.teal,fontSize:10,border:"1px dashed "+C.teal,cursor:"pointer",fontFamily:"inherit"}}>
               🏥 Gerenciar futuros dessa fonte em Receitas
             </button>
-          :
+          :<>
             <button onClick={()=>apagarTodosComEssaDescricao(item)} disabled={!!load}
               style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:10,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
               🗑 Apagar TODOS os "{item.descricao}" futuros (Fluxo)
             </button>
+            {(data.recorr||[]).some(r=>String(r[0]).toUpperCase()===String(item.descricao).toUpperCase()&&String(r[6]).toUpperCase()==="S")&&
+              <button onClick={()=>onIrPara&&onIrPara({tab:"recorr"})}
+                style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.blue,fontSize:10,border:"1px dashed "+C.blue,cursor:"pointer",fontFamily:"inherit"}}>
+                🔁 Gerenciar/apagar esta recorrência
+              </button>}
+          </>
           }
         </div>}
       </div>;})}
@@ -3790,6 +3796,104 @@ function Conversar({data,onUpdate,initTxt,onInitDone,msgs,setMsgs}){
 
 
 // ── RECORRÊNCIAS ──────────────────────────────────────────────────────────────
+function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCartao,neg,setNeg,val,setVal,dia,setDia,tolerancia,setTolerancia,alias,setAlias,load,salvar,apagar}){
+  // [CORRIGIDO 17/07] Precisa viver FORA de Recorrencias (nunca definido
+  // dentro do corpo de outro componente) -- antes, toda tecla digitada em
+  // qualquer campo do painel (alias, tolerancia, valor) disparava um
+  // re-render de Recorrencias, que redefinia esta funcao com uma identidade
+  // NOVA a cada vez. React via isso como "componente diferente" e
+  // desmontava/remontava a arvore inteira a cada tecla -- derrubando o
+  // foco e, no celular, fechando o teclado. Com a funcao aqui fora (mesma
+  // identidade sempre), React so atualiza o DOM, nunca remonta.
+  if(!lista.length) return null;
+  return <div style={{marginBottom:8,borderTop:"2px solid "+C.border,paddingTop:6}}>
+    <div style={{padding:"8px 16px 4px",display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+      <span style={{fontSize:11,fontWeight:800,color:cor,textTransform:"uppercase",letterSpacing:".1em"}}>{titulo}</span>
+      <span style={{fontSize:11,color:C.textMuted}}>{lista.length} itens · {fmt(lista.reduce((s,r)=>s+r.valor,0))}/ciclo</span>
+    </div>
+    {lista.map(item=>{const isOpen=edit===item.desc;return <div key={item.desc}>
+      <div onClick={()=>isOpen?setEdit(null):abrir(item)}
+        style={{display:"flex",alignItems:"center",gap:10,padding:"13px 16px",
+          borderBottom:"1px solid "+C.borderLight,background:isOpen?bg:C.surface,cursor:"pointer"}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:14,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginBottom:4}}>{item.desc}</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+            <span style={{fontSize:11,background:C.borderLight,borderRadius:5,padding:"2px 7px",color:C.textSub,fontWeight:600}}>{fmtDia(item.diaVenc,ehCartao(item))}</span>
+            {item.parcTotal>0&&<span style={{fontSize:11,color:C.textMuted}}>{item.parcAtual}/{item.parcTotal} parcelas</span>}
+            <span style={{fontSize:10,color:C.textMuted}}>{item.forma}</span>
+            {item.tolerancia!=null&&item.tolerancia!==""&&<span style={{fontSize:10,background:"#FEF3C7",color:"#92400E",borderRadius:5,padding:"2px 6px",fontWeight:600}}>
+              {Number(item.tolerancia)===0?"não posterga":"posterga até "+item.tolerancia+"d"}
+            </span>}
+            {item.alias&&<span style={{fontSize:10,background:C.blueLight,color:C.blue,borderRadius:5,padding:"2px 6px",fontWeight:600}}>
+              🏷 apelido no banco
+            </span>}
+          </div>
+        </div>
+        <div style={{textAlign:"right",flexShrink:0,marginRight:6}}>
+          <div style={{fontSize:16,fontWeight:800,color:cor,fontVariantNumeric:"tabular-nums"}}>{fmt(item.valor)}</div>
+          <div style={{fontSize:10,color:C.textMuted,marginTop:2}}>{item.tipo}</div>
+        </div>
+        <span style={{fontSize:11,color:C.textMuted}}>{isOpen?"▲":"▼"}</span>
+      </div>
+      {isOpen&&<div style={{background:bg,padding:"12px 16px",borderBottom:"1px solid "+C.border}}>
+        <div style={{display:"flex",gap:10,marginBottom:10}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Valor</div>
+            <div style={{display:"flex",gap:4}}>
+              <button type="button" onClick={()=>setNeg(n=>!n)}
+                style={{width:28,flexShrink:0,borderRadius:8,border:"1px solid "+C.border,
+                  background:neg?C.redLight:C.blueLight,color:neg?C.red:C.blue,fontWeight:800,fontSize:14,cursor:"pointer"}}>
+                {neg?"−":"+"}
+              </button>
+              <input type="text" inputMode="numeric" value={val} onChange={e=>setVal(formatarMoedaInput(e.target.value))}
+                style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,textAlign:"right",fontFamily:"inherit"}}/>
+            </div>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Vencimento</div>
+            <select value={dia} onChange={e=>setDia(e.target.value)}
+              style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,
+                fontSize:13,fontFamily:"inherit",background:C.surface}}>
+              {!ehCartao(item)&&<><option value="2">Toda terça-feira</option>
+              <option value="6">Todo sábado</option></>}
+              {[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31].map(d=>
+                <option key={d} value={String(d)}>{"Dia "+d+" do mês"}</option>
+              )}
+            </select>
+          </div>
+        </div>
+        <div style={{marginBottom:10}}>
+          <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Dias de tolerância (atraso sem virar problema)</div>
+          <input type="text" inputMode="numeric" value={tolerancia} onChange={e=>setTolerancia(e.target.value.replace(/\D/g,""))}
+            placeholder="ex: 30 (0 = não pode atrasar)"
+            style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",boxSizing:"border-box"}}/>
+        </div>
+        <div style={{marginBottom:10}}>
+          <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Termos alternativos (como o banco/extrato pode chamar esse gasto)</div>
+          <input value={alias} onChange={e=>setAlias(e.target.value)}
+            placeholder="ex: ZELT; IMOBILIARIA"
+            style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
+          <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Separe vários termos com ";". Ajuda a Conciliação (de Fatura ou de Extrato) a reconhecer o mesmo gasto mesmo quando o banco usa um nome diferente. Não muda o nome exibido no app.</div>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>salvar(item)} disabled={load}
+            style={{flex:1,background:cor,color:"#fff",borderRadius:8,padding:"8px",fontSize:13,fontWeight:700,border:"none",cursor:"pointer"}}>
+            {load?"…":"Salvar"}
+          </button>
+          <button onClick={()=>setEdit(null)}
+            style={{background:C.borderLight,color:C.textSub,borderRadius:8,padding:"8px 14px",fontSize:13,border:"none",cursor:"pointer"}}>
+            Cancelar
+          </button>
+        </div>
+        <button onClick={()=>apagar(item)} disabled={load}
+          style={{width:"100%",marginTop:8,padding:"6px",borderRadius:8,background:"transparent",color:C.red,fontSize:11,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
+          🗑 Apagar esta recorrência
+        </button>
+      </div>}
+    </div>;})}
+  </div>;
+}
+
 function Recorrencias({data,onUpdate}){
   const [edit,setEdit]=useState(null);
   const [val,setVal]=useState("");
@@ -3894,100 +3998,23 @@ function Recorrencias({data,onUpdate}){
 
   async function apagar(item){
     if(!confirm("Apagar \""+item.desc+"\"? Para de gerar novas ocorrências (o que já foi lançado continua no Fluxo/Cartões, editável normalmente)."))return;
+    // [NOVO 17/07] Antes disso o Marcus tinha que lembrar de ir apagar
+    // manualmente os lançamentos já gerados numa segunda etapa (aconteceu
+    // com CLARO e ALUGUEL) -- agora pergunta na hora, junto.
+    const querApagarFuturos=confirm("Apagar também os lançamentos futuros já gerados (ainda programados/pendentes) para \""+item.desc+"\"? Executados/pagos nunca são tocados.");
     setLoad(true);
-    try{ onUpdate(await api({action:"deletarRecorrencia",descricao:item.desc})); setEdit(null); }
+    try{
+      let r=await api({action:"deletarRecorrencia",descricao:item.desc});
+      if(querApagarFuturos){
+        const destNorm=String(item.destino||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+        const aba=destNorm==="CARTAOPJ"?"CARTAO_PJ":destNorm==="CARTAOPF"?"CARTAO_PF":"FLUXO";
+        r=await api({action:"deletarPorDescricao",aba,descricao:item.desc,apenasFuturas:false,apenasProgramadas:true});
+      }
+      onUpdate(r);
+      setEdit(null);
+    }
     catch(e){alert(e.message);}
     setLoad(false);
-  }
-
-  function Secao({titulo,lista,cor,bg}){
-    if(!lista.length) return null;
-    return <div style={{marginBottom:8,borderTop:"2px solid "+C.border,paddingTop:6}}>
-      <div style={{padding:"8px 16px 4px",display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-        <span style={{fontSize:11,fontWeight:800,color:cor,textTransform:"uppercase",letterSpacing:".1em"}}>{titulo}</span>
-        <span style={{fontSize:11,color:C.textMuted}}>{lista.length} itens · {fmt(lista.reduce((s,r)=>s+r.valor,0))}/ciclo</span>
-      </div>
-      {lista.map(item=>{const isOpen=edit===item.desc;return <div key={item.desc}>
-        <div onClick={()=>isOpen?setEdit(null):abrir(item)}
-          style={{display:"flex",alignItems:"center",gap:10,padding:"13px 16px",
-            borderBottom:"1px solid "+C.borderLight,background:isOpen?bg:C.surface,cursor:"pointer"}}>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:14,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginBottom:4}}>{item.desc}</div>
-            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-              <span style={{fontSize:11,background:C.borderLight,borderRadius:5,padding:"2px 7px",color:C.textSub,fontWeight:600}}>{fmtDia(item.diaVenc,ehCartao(item))}</span>
-              {item.parcTotal>0&&<span style={{fontSize:11,color:C.textMuted}}>{item.parcAtual}/{item.parcTotal} parcelas</span>}
-              <span style={{fontSize:10,color:C.textMuted}}>{item.forma}</span>
-              {item.tolerancia!=null&&item.tolerancia!==""&&<span style={{fontSize:10,background:"#FEF3C7",color:"#92400E",borderRadius:5,padding:"2px 6px",fontWeight:600}}>
-                {Number(item.tolerancia)===0?"não posterga":"posterga até "+item.tolerancia+"d"}
-              </span>}
-              {item.alias&&<span style={{fontSize:10,background:C.blueLight,color:C.blue,borderRadius:5,padding:"2px 6px",fontWeight:600}}>
-                🏷 apelido no banco
-              </span>}
-            </div>
-          </div>
-          <div style={{textAlign:"right",flexShrink:0,marginRight:6}}>
-            <div style={{fontSize:16,fontWeight:800,color:cor,fontVariantNumeric:"tabular-nums"}}>{fmt(item.valor)}</div>
-            <div style={{fontSize:10,color:C.textMuted,marginTop:2}}>{item.tipo}</div>
-          </div>
-          <span style={{fontSize:11,color:C.textMuted}}>{isOpen?"▲":"▼"}</span>
-        </div>
-        {isOpen&&<div style={{background:bg,padding:"12px 16px",borderBottom:"1px solid "+C.border}}>
-          <div style={{display:"flex",gap:10,marginBottom:10}}>
-            <div style={{flex:1}}>
-              <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Valor</div>
-              <div style={{display:"flex",gap:4}}>
-                <button type="button" onClick={()=>setNeg(n=>!n)}
-                  style={{width:28,flexShrink:0,borderRadius:8,border:"1px solid "+C.border,
-                    background:neg?C.redLight:C.blueLight,color:neg?C.red:C.blue,fontWeight:800,fontSize:14,cursor:"pointer"}}>
-                  {neg?"−":"+"}
-                </button>
-                <input type="text" inputMode="numeric" value={val} onChange={e=>setVal(formatarMoedaInput(e.target.value))}
-                  style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,textAlign:"right",fontFamily:"inherit"}}/>
-              </div>
-            </div>
-            <div style={{flex:1}}>
-              <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Vencimento</div>
-              <select value={dia} onChange={e=>setDia(e.target.value)}
-                style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,
-                  fontSize:13,fontFamily:"inherit",background:C.surface}}>
-                {!ehCartao(item)&&<><option value="2">Toda terça-feira</option>
-                <option value="6">Todo sábado</option></>}
-                {[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31].map(d=>
-                  <option key={d} value={String(d)}>{"Dia "+d+" do mês"}</option>
-                )}
-              </select>
-            </div>
-          </div>
-          <div style={{marginBottom:10}}>
-            <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Dias de tolerância (atraso sem virar problema)</div>
-            <input type="text" inputMode="numeric" value={tolerancia} onChange={e=>setTolerancia(e.target.value.replace(/\D/g,""))}
-              placeholder="ex: 30 (0 = não pode atrasar)"
-              style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",boxSizing:"border-box"}}/>
-          </div>
-          <div style={{marginBottom:10}}>
-            <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Termos alternativos (como o banco/extrato pode chamar esse gasto)</div>
-            <input value={alias} onChange={e=>setAlias(e.target.value)}
-              placeholder="ex: ZELT | IMOBILIARIA"
-              style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
-            <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Separe vários termos com "|". Ajuda a Conciliação (de Fatura ou de Extrato) a reconhecer o mesmo gasto mesmo quando o banco usa um nome diferente. Não muda o nome exibido no app.</div>
-          </div>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={()=>salvar(item)} disabled={load}
-              style={{flex:1,background:cor,color:"#fff",borderRadius:8,padding:"8px",fontSize:13,fontWeight:700,border:"none",cursor:"pointer"}}>
-              {load?"…":"Salvar"}
-            </button>
-            <button onClick={()=>setEdit(null)}
-              style={{background:C.borderLight,color:C.textSub,borderRadius:8,padding:"8px 14px",fontSize:13,border:"none",cursor:"pointer"}}>
-              Cancelar
-            </button>
-          </div>
-          <button onClick={()=>apagar(item)} disabled={load}
-            style={{width:"100%",marginTop:8,padding:"6px",borderRadius:8,background:"transparent",color:C.red,fontSize:11,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
-            🗑 Apagar esta recorrência
-          </button>
-        </div>}
-      </div>;})}
-    </div>;
   }
 
   const totalRecorr=(data.recorr||[]).length;
@@ -4047,10 +4074,26 @@ function Recorrencias({data,onUpdate}){
       Aba RECORRENCIAS nao encontrada. Atualize o script e toque Script.
       Abas: {(data.sheets||[]).join(", ")||"—"}
     </div>}
-    <Secao titulo="Recorrentes semanais" lista={debitosSemanais} cor={C.red} bg={C.redLight}/>
-    <Secao titulo="Recorrentes mensais" lista={debitosMensais} cor={C.red} bg={C.redLight}/>
-    <Secao titulo="Recorrentes no cartão" lista={debitosCartao} cor={C.red} bg={C.redLight}/>
-    <Secao titulo="Receitas recorrentes" lista={receitas} cor={C.blue} bg={C.blueLight}/>
+    <SecaoRecorrencias titulo="Recorrentes semanais" lista={debitosSemanais} cor={C.red} bg={C.redLight}
+      edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
+      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
+      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias}
+      load={load} salvar={salvar} apagar={apagar}/>
+    <SecaoRecorrencias titulo="Recorrentes mensais" lista={debitosMensais} cor={C.red} bg={C.redLight}
+      edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
+      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
+      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias}
+      load={load} salvar={salvar} apagar={apagar}/>
+    <SecaoRecorrencias titulo="Recorrentes no cartão" lista={debitosCartao} cor={C.red} bg={C.redLight}
+      edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
+      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
+      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias}
+      load={load} salvar={salvar} apagar={apagar}/>
+    <SecaoRecorrencias titulo="Receitas recorrentes" lista={receitas} cor={C.blue} bg={C.blueLight}
+      edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
+      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
+      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias}
+      load={load} salvar={salvar} apagar={apagar}/>
     {totalRecorr>0&&!items.length&&<div style={{padding:"20px",textAlign:"center",color:C.textMuted,fontSize:13}}>
       {totalRecorr} itens, nenhum ativo.
     </div>}
@@ -4068,6 +4111,7 @@ function FormNovaRecorr({onSalvo,onClose}){
   const [freq,setFreq]=useState("mensal");
   const [dia,setDia]=useState("10");
   const [parc,setParc]=useState("0");
+  const [alias,setAlias]=useState("");
   const [load,setLoad]=useState(false);
 
   const ehCartao=destino==="CARTAO_PF"||destino==="CARTAO_PJ";
@@ -4098,7 +4142,7 @@ function FormNovaRecorr({onSalvo,onClose}){
       await api({action:"lancarRecorrencia",
         descricao:desc,valor:Math.abs(numBR(valor))*sinal,
         forma,dia_venc:dv,semanal:isWeekly,destino,parc_total:parseInt(parc)||0,
-        tipo,intervalo_meses:f.m,obs:""});
+        tipo,intervalo_meses:f.m,obs:"",alias_csv:alias.trim().toUpperCase()});
       onSalvo();
     }catch(e){alert(e.message);}
     setLoad(false);
@@ -4149,6 +4193,10 @@ function FormNovaRecorr({onSalvo,onClose}){
       {!isWeekly&&<div><label style={lbl}>Dia do mes</label>
         <input type="number" min="1" max="31" value={dia} onChange={e=>setDia(e.target.value)}
           style={{...inp,textAlign:"center",width:80}}/></div>}
+      <div><label style={lbl}>Termos alternativos (opcional)</label>
+        <input value={alias} onChange={e=>setAlias(e.target.value)} placeholder="ex: ZELT; IMOBILIARIA" style={inp}/>
+        <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Separe vários com ";". Ajuda a Conciliação a reconhecer esse gasto quando o banco usa um nome diferente.</div>
+      </div>
       <button onClick={salvar} disabled={load||!desc.trim()||!valor}
         style={{background:C.accent,color:"#fff",borderRadius:8,padding:"10px",
           fontSize:14,fontWeight:700,border:"none",cursor:"pointer",width:"100%"}}>
@@ -5117,7 +5165,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           eAlias={eAlias} setEAlias={setEAlias} eLoad={eLoad} motivo={motivo}
           onSalvar={()=>salvarEdicaoItem({desc:r[1],valor:r[2],categoria:r[5],data:r[0],alias:_obsAliasCartao(_obsCartaoRaw(r))})} onApagar={apagarItem} onApagarTodos={()=>apagarTodosItemComEssaDescricao(r[1])} onCancelar={()=>setEditRow(null)}
           onUsarCSV={divergencia?()=>usarDadosDoCSV(divergencia):null} previewCSV={divergencia?descComNotaPreservada(divergencia):null}
-          data={data} abaCartao={abaCartao} onUpdate={onUpdate}/>}
+          data={data} abaCartao={abaCartao} onUpdate={onUpdate} onIrPara={onIrPara}/>}
       </div>;})}
     </div>}
   </div>;
@@ -5126,7 +5174,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
 // Painel inline de edição/exclusão de um item de CARTAO_PF/PJ (usado em
 // Confirmados e Previstos). Mesmo estilo do painel ⋮ do Fluxo, mas mais
 // simples: só descrição, valor (com toggle de sinal) e apagar.
-function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEData,eNeg,setENeg,eCategoria,setECategoria,eAlias,setEAlias,eLoad,motivo,onSalvar,onApagar,onApagarTodos,onCancelar,onUsarCSV,previewCSV,data,abaCartao,onUpdate}){
+function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEData,eNeg,setENeg,eCategoria,setECategoria,eAlias,setEAlias,eLoad,motivo,onSalvar,onApagar,onApagarTodos,onCancelar,onUsarCSV,previewCSV,data,abaCartao,onUpdate,onIrPara}){
   return <div style={{background:C.accentLight,padding:"10px 14px",
     borderBottom:"1px solid "+C.accent,borderLeft:"3px solid "+C.accent}}>
     {motivo&&motivo.tipo==="divergencia"&&<div style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"8px 10px",marginBottom:10,fontSize:11,color:"#92400E"}}>
@@ -5172,9 +5220,9 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
     <div style={{display:"flex",flexDirection:"column",gap:3,marginBottom:8}}>
       <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>TERMOS ALTERNATIVOS (como o banco pode chamar esse gasto)</span>
       <input value={eAlias} onChange={e=>setEAlias(e.target.value)}
-        placeholder="ex: CANAIS STREAMING | AMAZON VAREJO"
+        placeholder="ex: CANAIS STREAMING; AMAZON VAREJO"
         style={{padding:"6px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:12,fontFamily:"inherit",background:C.surface}}/>
-      <span style={{fontSize:9,color:"#92400E"}}>Separe vários com "|". Ajuda a conciliação a reconhecer o mesmo gasto com nome diferente no CSV.</span>
+      <span style={{fontSize:9,color:"#92400E"}}>Separe vários com ";". Ajuda a conciliação a reconhecer o mesmo gasto com nome diferente no CSV.</span>
     </div>
     {data&&onUpdate&&<SeletorEnvelopeItem aba={abaCartao} row={_linhaCartao(r)} obsAtual={_obsCartaoRaw(r)} data={data} onUpdate={onUpdate}/>}
     <div style={{display:"flex",gap:8}}>
@@ -5195,6 +5243,11 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
       style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:10,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
       🗑 Apagar TODOS os "{eDesc}" pendentes neste cartão
     </button>}
+    {data&&(data.recorr||[]).some(rec=>String(rec[0]).toUpperCase()===String(r[1]).toUpperCase()&&String(rec[6]).toUpperCase()==="S")&&
+      <button onClick={()=>onIrPara&&onIrPara({tab:"recorr"})}
+        style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.blue,fontSize:10,border:"1px dashed "+C.blue,cursor:"pointer",fontFamily:"inherit"}}>
+        🔁 Gerenciar/apagar esta recorrência
+      </button>}
   </div>;
 }
 
@@ -5264,7 +5317,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260717.1859 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260717.2052 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
