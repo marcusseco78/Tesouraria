@@ -4966,6 +4966,20 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     return obs.faturaOriginalVenc===vencAnterior;
   }),[data.fluxo,vencAnterior,tipoAlvo,cartao]);
 
+  // [NOVO 18/07] Card "Fatura anterior" -- mesmo raciocinio que ja existia
+  // pra pagamentosFaturaAnterior (nota informativa), agora tambem vira os
+  // 3 numeros de topo: total da fatura que fechou, quanto ja foi pago dela
+  // (so EXECUTADO -- "efetuado" de verdade, nao agendado) ate o fechamento
+  // desta fatura atual, e quanto ainda resta (se sobrou rotativo).
+  const faturaAnteriorObj=faturas[idxInicial+fatIdx-1];
+  const totalFaturaAnterior=useMemo(()=>
+    faturaAnteriorObj?faturaAnteriorObj.itens.reduce((s,r)=>s+Math.abs(Number(r[2])||0),0):0,
+  [faturaAnteriorObj]);
+  const totalPagoFaturaAnterior=useMemo(()=>
+    pagamentosFaturaAnterior.filter(r=>r.status==="EXECUTADO").reduce((s,r)=>s+Math.abs(r.valor||0),0),
+  [pagamentosFaturaAnterior]);
+  const restanteFaturaAnterior=Math.max(0,totalFaturaAnterior-totalPagoFaturaAnterior);
+
   // Só aplica os selos de conciliação se ela foi rodada pro MESMO cartão e
   // (quando identificado) pra MESMA fatura que está em tela agora -- senão um
   // resultado antigo de outra fatura ficaria "vazando" selo em fatura errada.
@@ -5025,34 +5039,45 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
       {navBtn(1,idxInicial+fatIdx>=faturas.length-1)}
     </div>
 
-    {/* Nota informativa: pagamento(s) da fatura ANTERIOR, que cronologicamente
-        cai dentro do periodo de compras desta fatura -- so pra contexto,
-        nunca conta em nenhum total desta tela. Clique leva pro Historico. */}
-    {pagamentosFaturaAnterior.length>0&&<div style={{marginBottom:10}}>
+    {/* [NOVO 18/07] Card "Fatura anterior" -- so aparece se existe uma fatura
+        anterior de verdade (ja teve pelo menos 1 fatura antes desta). Mostra
+        total, quanto ja foi pago (efetuado, ate o fechamento da fatura atual)
+        e quanto ainda resta -- clique em cada pagamento leva pro Histórico. */}
+    {faturaAnteriorObj&&<Card style={{marginBottom:10,padding:"12px 16px",background:C.borderLight}}>
+      <div style={{fontSize:11,fontWeight:800,color:C.textSub,marginBottom:8,textTransform:"uppercase",letterSpacing:".05em"}}>
+        Fatura anterior · {fmtD(vencAnterior)}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,textAlign:"center",marginBottom:pagamentosFaturaAnterior.length>0?10:0}}>
+        <div>
+          <div style={{fontSize:9,color:C.textMuted,marginBottom:3}}>TOTAL</div>
+          <div style={{fontSize:13,fontWeight:800,color:C.text}}>{fmt(totalFaturaAnterior)}</div>
+        </div>
+        <div>
+          <div style={{fontSize:9,color:C.textMuted,marginBottom:3}}>PAGO ATÉ {fmtD(faturaAtual.venc).slice(0,5)}</div>
+          <div style={{fontSize:13,fontWeight:800,color:C.green}}>{fmt(totalPagoFaturaAnterior)}</div>
+        </div>
+        <div>
+          <div style={{fontSize:9,color:C.textMuted,marginBottom:3}}>RESTANTE</div>
+          <div style={{fontSize:13,fontWeight:800,color:restanteFaturaAnterior>0.01?C.orange:C.textMuted}}>{fmt(restanteFaturaAnterior)}</div>
+        </div>
+      </div>
       {pagamentosFaturaAnterior.map(p=><div key={"pagant-"+p.row}
         onClick={()=>onIrPara&&onIrPara({tab:"historico",row:p.row})}
         style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,
-          background:C.borderLight,borderRadius:8,padding:"7px 10px",marginBottom:4,
+          background:C.surface,borderRadius:8,padding:"7px 10px",marginBottom:4,
           cursor:onIrPara?"pointer":"default",fontSize:11}}>
-        <span style={{color:C.textMuted}}>💳 Pagamento da fatura anterior ({fmtD(vencAnterior)}) · {fmtD(p.data)}{p.status==="PROGRAMADO"?" (agendado)":""}</span>
+        <span style={{color:C.textMuted}}>{fmtD(p.data)}{p.status==="PROGRAMADO"?" (agendado)":""}</span>
         <span style={{fontWeight:700,color:C.textMuted,flexShrink:0}}>{fmt(p.valor)}</span>
       </div>)}
-    </div>}
+    </Card>}
 
-    {/* Pago x falta (cruzado com o Fluxo) */}
-    {(totalPago>0.01||totalFalta>0.01)&&<div style={{display:"flex",gap:8,marginBottom:10,fontSize:11}}>
-      <div style={{flex:1,background:C.greenLight,borderRadius:8,padding:"6px 10px",textAlign:"center"}}>
-        <div style={{color:C.textMuted,fontSize:9}}>PAGO NO MÊS</div>
-        <div style={{color:C.green,fontWeight:800,fontSize:13}}>{fmt(totalPago)}</div>
-      </div>
-      <div style={{flex:1,background:totalFalta>0.01?"#FEF3C7":C.borderLight,borderRadius:8,padding:"6px 10px",textAlign:"center"}}>
-        <div style={{color:C.textMuted,fontSize:9}}>FALTA QUITAR</div>
-        <div style={{color:totalFalta>0.01?C.orange:C.textMuted,fontWeight:800,fontSize:13}}>{fmt(totalFalta)}</div>
-      </div>
-    </div>}
-
-    {/* Resumo da fatura */}
+    {/* Card "Fatura atual" -- Confirmado/Previsto/Total + Pago no período/Falta
+        quitar juntos no mesmo card, pra ficar claro que sao a MESMA fatura
+        vista de dois angulos (o que foi lançado vs. o que já foi pago dela). */}
     <Card style={{marginBottom:12,padding:"14px 16px"}}>
+      <div style={{fontSize:11,fontWeight:800,color:C.textSub,marginBottom:8,textTransform:"uppercase",letterSpacing:".05em"}}>
+        Fatura atual · {fmtD(faturaAtual.venc)}
+      </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,textAlign:"center"}}>
         <div>
           <div style={{fontSize:10,color:C.textMuted,marginBottom:3}}>CONFIRMADO</div>
@@ -5060,13 +5085,23 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         </div>
         <div>
           <div style={{fontSize:10,color:C.textMuted,marginBottom:3}}>PREVISTO</div>
-          <div style={{fontSize:15,fontWeight:800,color:C.textSub}}>{fmt(totalPrev)}</div>
+          <div style={{fontSize:15,fontWeight:800,color:C.textMuted}}>{fmt(totalPrev)}</div>
         </div>
-        <div style={{background:bgZ(0),borderRadius:8,padding:"4px 0"}}>
+        <div>
           <div style={{fontSize:10,color:C.textMuted,marginBottom:3}}>TOTAL FATURA</div>
           <div style={{fontSize:15,fontWeight:800,color:C.red}}>{fmt(totalFatura)}</div>
         </div>
       </div>
+      {(totalPago>0.01||totalFalta>0.01)&&<div style={{display:"flex",gap:8,marginTop:10,fontSize:11}}>
+        <div style={{flex:1,background:C.greenLight,borderRadius:8,padding:"6px 10px",textAlign:"center"}}>
+          <div style={{color:C.textMuted,fontSize:9}}>PAGO NO PERÍODO (01/{(()=>{const[y,m]=faturaAtual.venc.split("-").map(Number);const mi=m===1?12:m-1;return String(mi).padStart(2,"0");})()} em diante)</div>
+          <div style={{color:C.green,fontWeight:800,fontSize:13}}>{fmt(totalPago)}</div>
+        </div>
+        <div style={{flex:1,background:totalFalta>0.01?"#FEF3C7":C.borderLight,borderRadius:8,padding:"6px 10px",textAlign:"center"}}>
+          <div style={{color:C.textMuted,fontSize:9}}>FALTA QUITAR</div>
+          <div style={{color:totalFalta>0.01?C.orange:C.textMuted,fontWeight:800,fontSize:13}}>{fmt(totalFalta)}</div>
+        </div>
+      </div>}
     </Card>
 
     {/* Botão novo lançamento */}
@@ -5317,7 +5352,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260717.2052 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260718.0855 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
