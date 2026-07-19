@@ -2338,7 +2338,7 @@ function ConciliacaoHub({data,onUpdate,onIrPara}){
 }
 
 function ConciliarExtratoTab({data,onUpdate}){
-  const CATEGORIAS=["DCP","DESPESA FIXA","RECEITA","DEPOSITO_AVULSO","ANDRE","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA","EXTRAORDINARIA","IMPOSTO","INVESTIMENTO"];
+  const CATEGORIAS=["DCP","DESPESA FIXA","RECEITA","DEPOSITO_AVULSO","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA","EXTRAORDINARIA","IMPOSTO","INVESTIMENTO"];
   const [resultado,setResultado]=useState(null);
   const [load,setLoad]=useState(false);
   const [cfgNovos,setCfgNovos]=useState({}); // chave estavel (chaveNovo) -> {incluir,categoria,descricao}
@@ -3074,7 +3074,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
     return {nome:envelopesPorId[envId].nome, saldo:ultimo?ultimo.saldo:null};
   }
 
-  const CATEGORIAS=["DCP","DESPESA FIXA","RECEITA","DEPOSITO_AVULSO","ANDRE","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA","EXTRAORDINARIA","IMPOSTO","INVESTIMENTO"];
+  const CATEGORIAS=["DCP","DESPESA FIXA","RECEITA","DEPOSITO_AVULSO","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA","EXTRAORDINARIA","IMPOSTO","INVESTIMENTO"];
   const ehFaturaCartao=item=>item.categoria==="CARTAO PF"||item.categoria==="CARTAO PJ"||item.tipo==="CARTAO PF"||item.tipo==="CARTAO PJ";
 
   const todos=useMemo(()=>(data.fluxo||[]).filter(r=>r.status==="EXECUTADO").sort((a,b)=>a.data<b.data?1:-1),[data.fluxo]);
@@ -3363,7 +3363,7 @@ Para EXTRATO de conta corrente:
 - Não existe: sugira lancar como EXECUTADO
 - INFERÊNCIAS AUTOMÁTICAS (não perguntar):
   - Rose = Roselaine Marques de Oliveira, R$135, DESPESA FIXA, terças e sábados
-  - André Ferrera Seco = categoria ANDRÉ
+  - André Ferrera Seco = DESPESA FIXA (a identificação de André agora é pelo envelope "André", não mais categoria própria — se o item já tiver o envelope selecionado, mantenha; senão, avise o Marcus pra marcar)
   - Boletos do dia 16 (Adhering, Benevix, Celesc, Condomínio/Arboris, Aluguel/PJBank, Omint) = dar baixa nos PROGRAMADOS do ciclo atual
   - Resgates de empréstimo do dia 16 = dar baixa nos empréstimos correspondentes pelo valor
   - Transferências para Intensiva Cuidados Criticos Neonatais = aporte PJ, NÃO lançar no FLUXO PF
@@ -3395,8 +3395,7 @@ Para FATURA de cartão (CSV Nubank):
 
 CATEGORIAS:
 - DCP (Despesas Cotidianas Provisionadas): gasolina, alimentação, farmácia, compras do dia. Gasolina é SEMPRE DCP. Teto = num. de segundas do ciclo x valor base (editável, padrão R$1.250/semana), ajustado semana a semana. Parcelada desconta o total uma vez só, na compra original.
-- DESPESA FIXA: assinaturas recorrentes (YouTube, Claude, ChatGPT, Jusbrasil, Serasa etc), condomínio, aluguel, seguros, empréstimos. NÃO entram no DCP.
-- ANDRÉ: PIX e gastos com André entram no fluxo como ANDRÉ/TRANSFERÊNCIAS, NUNCA como DCP.
+- DESPESA FIXA: assinaturas recorrentes (YouTube, Claude, ChatGPT, Jusbrasil, Serasa etc), condomínio, aluguel, seguros, empréstimos, gastos com André. NÃO entram no DCP. [ANDRÉ deixou de ser categoria em 19/07 — gastos com André agora são DESPESA FIXA + envelope "André" pra rastreio, nunca categoria própria.]
 - EXTRAORDINÁRIA: viagens, eventos, presentes maiores. Fora do DCP se Marcus determinar.
 
 POSTERGAÇÕES — o que pode atrasar sem risco:
@@ -3417,7 +3416,7 @@ DÍVIDA PAI: passivo administrável (100% CDI, ~R$87.500). NÃO entra no fluxo a
 
 REGRAS DE OPERAÇÃO:
 - Despesas = valor negativo. Receitas = valor positivo.
-- Tipos: RECEITA | DCP | DESPESA FIXA | EMPRESTIMO | CARTÃO PF | CARTÃO PJ | ANDRÉ | FAMÍLIA | EXTRAORDINÁRIA
+- Tipos: RECEITA | DCP | DESPESA FIXA | EMPRESTIMO | CARTÃO PF | CARTÃO PJ | FAMÍLIA | EXTRAORDINÁRIA
 - Formas: CONTA | DÉBITO | CARTÃO PF | CARTÃO PJ
 
 AÇÕES (use quando Marcus pedir operações na planilha):
@@ -4169,7 +4168,7 @@ function FormNovaRecorr({onSalvo,onClose}){
         <div style={{flex:1}}><label style={lbl}>Tipo</label>
           <select value={tipo} onChange={e=>setTipo(e.target.value)} style={sel}>
             <option>DESPESA FIXA</option><option>RECEITA</option>
-            <option>ANDRE</option><option>EMPRESTIMO</option><option value="DCP">Despesas Cotidianas Semanais</option>
+            <option>EMPRESTIMO</option><option value="DCP">Despesas Cotidianas Semanais</option>
           </select></div>
       </div>
       <div><label style={lbl}>Destino</label>
@@ -4224,7 +4223,7 @@ function BotaoLancar({data,onUpdate}){
   // que nao fosse literalmente Receita). Mesmo padrao do botao "-/+" ja
   // usado no editar item de cartao -- nunca deriva do que a categoria "e".
   const [vNeg,setVNeg]=useState(true);
-  const CATS=["DCP","DESPESA FIXA","RECEITA","DEPOSITO_AVULSO","ANDRE","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA","EXTRAORDINARIA","INVESTIMENTO"];
+  const CATS=["DCP","DESPESA FIXA","RECEITA","DEPOSITO_AVULSO","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA","EXTRAORDINARIA","INVESTIMENTO"];
   const envelopesAbertos=useMemo(()=>calcularEnvelopesCustom(data).filter(e=>!e.encerrado),[data.fluxo,data.cartaoPF,data.cartaoPJ,data.config]);
 
   // [NOVO 13/07] Lancamento manual de Receita Esporadica -- fonte cadastrada
@@ -4524,7 +4523,7 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido}){
     </div>
     <select value={cat} onChange={e=>setCat(e.target.value)}
       style={{width:"100%",padding:"7px 9px",borderRadius:7,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",background:C.surface,marginBottom:8}}>
-      {["DCP","DESPESA FIXA","EXTRAORDINARIA","IMPOSTO","INVESTIMENTO","ANDRE","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA"].map(c=><option key={c} value={c}>{CAT_LABEL[c]||c}</option>)}
+      {["DCP","DESPESA FIXA","EXTRAORDINARIA","IMPOSTO","INVESTIMENTO","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA"].map(c=><option key={c} value={c}>{CAT_LABEL[c]||c}</option>)}
     </select>
     <div style={{display:"flex",gap:6}}>
       <button onClick={lancar} disabled={load||!desc.trim()||!valor}
@@ -4931,9 +4930,15 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   // fatura, seguindo a cadeia inteira de restantes (linha original + todas
   // as continuacoes marcadas com faturaOriginalVenc igual ao vencimento
   // desta fatura).
+  // [CORRIGIDO 18/07] Comparacao de TIPO tolerante a espaco sobrando e
+  // acento -- achado real: edicao manual na planilha deixou "CARTAO PJ "
+  // (espaco no fim) na celula, e a comparacao exata "===" simplesmente
+  // nunca batia, sem erro nenhum pra avisar. Normaliza os dois lados antes
+  // de comparar (mesmo espirito de _normTipo no backend).
   const tipoAlvo="CARTAO "+cartao;
+  const _tipoNorm=t=>String(t||"").trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
   const linhasDaFatura=useMemo(()=>(data.fluxo||[]).filter(r=>{
-    if(r.tipo!==tipoAlvo&&r.tipo!=="CARTÃO "+cartao) return false;
+    if(_tipoNorm(r.tipo)!==_tipoNorm(tipoAlvo)) return false;
     if(r.data===faturaAtual.venc) return true;
     let obs={};
     try{obs=JSON.parse(r.obs||"{}");}catch(e){}
@@ -4959,7 +4964,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     return `${ano}-${String(mes).padStart(2,"0")}-07`;
   },[faturaAtual.venc]);
   const pagamentosFaturaAnterior=useMemo(()=>(data.fluxo||[]).filter(r=>{
-    if(r.tipo!==tipoAlvo&&r.tipo!=="CARTÃO "+cartao) return false;
+    if(_tipoNorm(r.tipo)!==_tipoNorm(tipoAlvo)) return false;
     if(r.data===vencAnterior) return false; // a propria linha da fatura anterior, nao um pagamento dela
     let obs={};
     try{obs=JSON.parse(r.obs||"{}");}catch(e){}
@@ -5352,7 +5357,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260718.0855 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260719.1150 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
