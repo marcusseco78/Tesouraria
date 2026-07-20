@@ -143,6 +143,19 @@ const nomeExibicao=(item,data)=>{
 // alias batendo + regras globais batendo) -- usado tanto por nomeExibicao
 // (so aplica se sobrar exatamente 1) quanto pelo painel de edicao do item
 // (mostra todos como sugestao clicavel quando for ambiguo).
+// [NOVO 20/07] Acha o envelope sugerido (CONFIG.ENVELOPE_REGRAS_JSON) pra
+// uma descricao digitada na hora de lancar algo novo -- so sugestao, nunca
+// aplica sozinho (a pessoa ainda escolhe/confirma). Retorna o primeiro
+// match ou "" se nenhum bater.
+function envelopeRegraSugerido(descricaoCrua,data){
+  const desc=String(descricaoCrua||"").toUpperCase().trim();
+  if(!desc) return "";
+  try{
+    const regras=JSON.parse((data.config&&data.config.ENVELOPE_REGRAS_JSON)||"[]");
+    const achou=regras.find(r=>r.padrao&&desc.indexOf(r.padrao)>=0);
+    return achou?achou.envelopeId:"";
+  }catch(e){ return ""; }
+}
 function apelidosCandidatos(descricaoCrua,data){
   const desc=String(descricaoCrua||"").toUpperCase();
   const out=[];
@@ -398,11 +411,12 @@ function SeletorEnvelopeItem({aba,row,obsAtual,data,onUpdate}){
   const envelopes=useMemo(()=>parseEnvelopesCustom(data),[data.config]);
   const atual=_obsEnvelopeId(obsAtual)||"";
   const [load,setLoad]=useState(false);
+  const [vincular,setVincular]=useState(false);
   if(!envelopes.length&&!atual) return null;
 
   async function mudar(novoId){
     setLoad(true);
-    try{ onUpdate(await api({action:"classificarEnvelope",aba,row,envelopeId:novoId})); }
+    try{ onUpdate(await api({action:"classificarEnvelope",aba,row,envelopeId:novoId,vincularRegra:vincular})); }
     catch(e){ alert(e.message); }
     setLoad(false);
   }
@@ -414,6 +428,10 @@ function SeletorEnvelopeItem({aba,row,obsAtual,data,onUpdate}){
       <option value="">Nenhum</option>
       {envelopes.map(env=><option key={env.id} value={env.id}>{env.nome}</option>)}
     </select>
+    {envelopes.length>0&&<label style={{display:"flex",alignItems:"center",gap:5,marginTop:5,fontSize:10,color:C.textMuted,cursor:"pointer"}}>
+      <input type="checkbox" checked={vincular} onChange={e=>setVincular(e.target.checked)} disabled={load}/>
+      Vincular lançamentos como este a este envelope também (marca a descrição inteira como regra permanente, aplica em todo o histórico e sugere nos próximos lançamentos parecidos)
+    </label>}
   </div>;
 }
 function TagEnvelopeDCP({envelope,futuro}){
@@ -2605,9 +2623,12 @@ function ConciliarExtratoTab({data,onUpdate}){
         if(!row){ alert("Não achei a fatura "+cfg.pagFatura+" com vencimento "+fmtD(venc)+" no Fluxo -- confirme se esse ciclo já foi gerado."); setLoad(false); return; }
         r=await api({action:"pagarFaturaAvulso",row,valorPago:Math.abs(Number(n.valor)),data:n.data});
       }else{
+        let obsNovo={};
+        if(n.identificador) obsNovo.extratoId=n.identificador;
+        if(cfg.envelopeId) obsNovo.envelope=cfg.envelopeId;
         r=await api({action:"lancar",data:n.data,descricao:cfg.descricao.toUpperCase(),
           valor:Number(n.valor),tipo:cfg.categoria,categoria:cfg.categoria,forma:"CONTA",
-          status:"EXECUTADO",obs:JSON.stringify(n.identificador?{extratoId:n.identificador}:{})});
+          status:"EXECUTADO",obs:JSON.stringify(obsNovo)});
       }
       onUpdate(r);
       setResultado(res=>({...res,novos:res.novos.filter(x=>chaveNovo(x)!==chaveNovo(n))}));
@@ -2632,9 +2653,12 @@ function ConciliarExtratoTab({data,onUpdate}){
       if(normais.length){
         const itens=normais.map(n=>{
           const cfg=cfgNovos[chaveNovo(n)];
+          let obsNovo={};
+          if(n.identificador) obsNovo.extratoId=n.identificador;
+          if(cfg.envelopeId) obsNovo.envelope=cfg.envelopeId;
           return {data:n.data, descricao:cfg.descricao.toUpperCase(), valor:Number(n.valor), tipo:cfg.categoria,
             categoria:cfg.categoria, forma:"CONTA", status:"EXECUTADO",
-            obs:n.identificador?JSON.stringify({extratoId:n.identificador}):""};
+            obs:Object.keys(obsNovo).length?JSON.stringify(obsNovo):""};
         });
         onUpdate(await api({action:"lancarLote",itens}));
       }
@@ -2734,7 +2758,7 @@ function ConciliarExtratoTab({data,onUpdate}){
         </button>;})()}
         {resultado.novos.map(n=>{
           const chave=chaveNovo(n);
-          const cfg=cfgNovos[chave]||{incluir:true,categoria:"EXTRAORDINARIA",descricao:"",pagFatura:null};
+          const cfg=cfgNovos[chave]||{incluir:true,categoria:"EXTRAORDINARIA",descricao:"",pagFatura:null,envelopeId:envelopeRegraSugerido(n.descricao,data)};
           const s=n.sugestao||{};
           const vencAuto=vencimentoFaturaDoMes(n.data);
           return <div key={chave} style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"10px 12px",marginBottom:6}}>
@@ -2773,6 +2797,13 @@ function ConciliarExtratoTab({data,onUpdate}){
                   style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",background:C.surface,marginBottom:8}}>
                   {CATEGORIAS.map(c=><option key={c} value={c}>{CAT_LABEL[c]||c}</option>)}
                 </select>}
+
+            {!cfg.pagFatura&&parseEnvelopesCustom(data).length>0&&
+              <select value={cfg.envelopeId||""} onChange={e=>setCfgNovos({...cfgNovos,[chave]:{...cfg,envelopeId:e.target.value}})}
+                style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",background:C.surface,marginBottom:8}}>
+                <option value="">Envelope: nenhum</option>
+                {parseEnvelopesCustom(data).map(env=><option key={env.id} value={env.id}>Envelope: {env.nome}</option>)}
+              </select>}
 
             <div style={{display:"flex",gap:6}}>
               <button onClick={()=>lancarNovo(n)} disabled={load||!cfg.incluir}
@@ -3983,7 +4014,7 @@ function Conversar({data,onUpdate,initTxt,onInitDone,msgs,setMsgs}){
 
 
 // ── RECORRÊNCIAS ──────────────────────────────────────────────────────────────
-function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCartao,neg,setNeg,val,setVal,dia,setDia,tolerancia,setTolerancia,alias,setAlias,load,salvar,apagar}){
+function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCartao,neg,setNeg,val,setVal,dia,setDia,tolerancia,setTolerancia,alias,setAlias,envelopePadrao,setEnvelopePadrao,load,salvar,apagar,data}){
   // [CORRIGIDO 17/07] Precisa viver FORA de Recorrencias (nunca definido
   // dentro do corpo de outro componente) -- antes, toda tecla digitada em
   // qualquer campo do painel (alias, tolerancia, valor) disparava um
@@ -4062,6 +4093,15 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
             style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
           <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Separe vários termos com ";". Ajuda a Conciliação (de Fatura ou de Extrato) a reconhecer o mesmo gasto mesmo quando o banco usa um nome diferente. Não muda o nome exibido no app.</div>
         </div>
+        {data&&<div style={{marginBottom:10}}>
+          <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Envelope padrão (opcional)</div>
+          <select value={envelopePadrao} onChange={e=>setEnvelopePadrao(e.target.value)}
+            style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",background:C.surface,boxSizing:"border-box"}}>
+            <option value="">Nenhum</option>
+            {parseEnvelopesCustom(data).map(env=><option key={env.id} value={env.id}>{env.nome}</option>)}
+          </select>
+          <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Toda ocorrência futura gerada por esta recorrência já nasce marcada nesse envelope, sem precisar marcar item por item. Ao salvar, também aplica retroativo em tudo que já existe (inclusive já pago/executado).</div>
+        </div>}
         <div style={{display:"flex",gap:8}}>
           <button onClick={()=>salvar(item)} disabled={load}
             style={{flex:1,background:cor,color:"#fff",borderRadius:8,padding:"8px",fontSize:13,fontWeight:700,border:"none",cursor:"pointer"}}>
@@ -4087,7 +4127,7 @@ function Recorrencias({data,onUpdate}){
   const [dia,setDia]=useState("");
   const [tolerancia,setTolerancia]=useState("");
   const [alias,setAlias]=useState("");
-  const [neg,setNeg]=useState(true);
+  const [envelopePadrao,setEnvelopePadrao]=useState("");
   const [load,setLoad]=useState(false);
   const [showForm,setShowForm]=useState(false);
   const [loadTolerancia,setLoadTolerancia]=useState(false);
@@ -4098,7 +4138,7 @@ function Recorrencias({data,onUpdate}){
   const items=(data.recorr||[]).map((r,i)=>({
     idx:i,desc:r[0],valor:Number(r[1]),forma:r[2],
     diaVenc:r[3],parcAtual:r[4],parcTotal:r[5],
-    ativo:r[6],tipo:r[7],obs:r[8],destino:r[9],tolerancia:r[10],alias:r[11]
+    ativo:r[6],tipo:r[7],obs:r[8],destino:r[9],tolerancia:r[10],alias:r[11],envelopePadrao:r[12]
   })).filter(r=>String(r.ativo).toUpperCase()!=="N"&&r.ativo!==false&&r.ativo!==0);
 
   // Emprestimos/passivos: qualquer recorrencia do FLUXO com numero de
@@ -4160,6 +4200,7 @@ function Recorrencias({data,onUpdate}){
     setNeg(item.valor<0);
     setTolerancia(item.tolerancia!=null&&item.tolerancia!==""?String(item.tolerancia):"");
     setAlias(item.alias||"");
+    setEnvelopePadrao(item.envelopePadrao||"");
   }
 
   async function salvar(item){
@@ -4178,6 +4219,8 @@ function Recorrencias({data,onUpdate}){
       const novoAlias=alias.trim().toUpperCase();
       if(novoAlias!==String(item.alias||"").trim().toUpperCase())
         ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"ALIAS_CSV",valor:novoAlias,resumo:""});
+      if(envelopePadrao!==String(item.envelopePadrao||""))
+        ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"ENVELOPE_PADRAO",valor:envelopePadrao,resumo:""});
       onUpdate(ultimoResultado||await api({action:"getData"}));
     }catch(e){alert(e.message);}
     setLoad(false);setEdit(null);
@@ -4264,23 +4307,23 @@ function Recorrencias({data,onUpdate}){
     <SecaoRecorrencias titulo="Recorrentes semanais" lista={debitosSemanais} cor={C.red} bg={C.redLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
-      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias}
-      load={load} salvar={salvar} apagar={apagar}/>
+      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao}
+      load={load} salvar={salvar} apagar={apagar} data={data}/>
     <SecaoRecorrencias titulo="Recorrentes mensais" lista={debitosMensais} cor={C.red} bg={C.redLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
-      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias}
-      load={load} salvar={salvar} apagar={apagar}/>
+      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao}
+      load={load} salvar={salvar} apagar={apagar} data={data}/>
     <SecaoRecorrencias titulo="Recorrentes no cartão" lista={debitosCartao} cor={C.red} bg={C.redLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
-      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias}
-      load={load} salvar={salvar} apagar={apagar}/>
+      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao}
+      load={load} salvar={salvar} apagar={apagar} data={data}/>
     <SecaoRecorrencias titulo="Receitas recorrentes" lista={receitas} cor={C.blue} bg={C.blueLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
-      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias}
-      load={load} salvar={salvar} apagar={apagar}/>
+      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao}
+      load={load} salvar={salvar} apagar={apagar} data={data}/>
     {totalRecorr>0&&!items.length&&<div style={{padding:"20px",textAlign:"center",color:C.textMuted,fontSize:13}}>
       {totalRecorr} itens, nenhum ativo.
     </div>}
@@ -4631,7 +4674,11 @@ function BotaoLancar({data,onUpdate}){
       Nenhuma fatura em aberto encontrada nesse cartão.
     </div>}
     {/* Descrição (opcional em pagamento) */}
-    {!ehPagamento&&<input value={desc} onChange={e=>setDesc(e.target.value.toUpperCase())} placeholder="Descrição (opcional)"
+    {!ehPagamento&&<input value={desc} onChange={e=>{
+        const v=e.target.value.toUpperCase();
+        setDesc(v);
+        if(!envelopeId){const sug=envelopeRegraSugerido(v,data);if(sug)setEnvelopeId(sug);}
+      }} placeholder="Descrição (opcional)"
       style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",marginBottom:10,textTransform:"uppercase"}}/>}
     <div style={{display:"flex",gap:8,marginBottom:8}}>
       <button type="button" onClick={()=>setVNeg(n=>!n)}
@@ -4681,19 +4728,29 @@ function BotaoLancar({data,onUpdate}){
 // (🔴 fora da planilha). Pré-preenche descrição/valor/data do CSV; Marcus só
 // escolhe categoria (e ajusta parcelas se for o caso) e confirma -- sem
 // Gemini em nenhum ponto deste caminho.
-function NovoDoCSV({item, cartao, onUpdate, onResolvido}){
+function NovoDoCSV({item, cartao, onUpdate, onResolvido, data, onSync}){
   const [desc,setDesc]=useState(item.title.toUpperCase());
   const [valor,setValor]=useState(formatarValorInicial(-Math.abs(item.amount)));
   const [cat,setCat]=useState("");
   const [parc,setParc]=useState(item.parcela!=="1/1"?(item.parcela.split("/")[1]||"1"):"1");
+  const [envelopeId,setEnvelopeId]=useState(()=>envelopeRegraSugerido(item.title,data));
+  const [incluir,setIncluir]=useState(true);
   const [load,setLoad]=useState(false);
+  const envelopes=useMemo(()=>parseEnvelopesCustom(data),[data&&data.config]);
+
+  // [NOVO 20/07] Espelha o estado atual pro componente pai a cada mudanca --
+  // permite "Lançar todos os marcados" sem perder a digitacao responsiva
+  // (estado continua local aqui, so um resumo sobe pro pai via callback).
+  useEffect(()=>{
+    onSync&&onSync({desc,valor,cat,parc,envelopeId,incluir});
+  },[desc,valor,cat,parc,envelopeId,incluir]);
 
   async function lancar(){
     setLoad(true);
     try{
       const r=await api({action:"lancarCartao",cartao,descricao:desc.toUpperCase(),
         valor:(-1)*Math.abs(numBR(valor)),parcelas:parseInt(parc)||1,
-        categoria:cat,dcp:cat==="DCP"?"S":"N",data_compra:item.date});
+        categoria:cat,dcp:cat==="DCP"?"S":"N",data_compra:item.date,envelopeId});
       onUpdate(r);
       onResolvido();
     }catch(e){alert(e.message);}
@@ -4701,8 +4758,16 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido}){
   }
 
   return <div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,padding:"10px 12px",marginBottom:8}}>
+    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+      <input type="checkbox" checked={incluir} onChange={e=>setIncluir(e.target.checked)}/>
+      <span style={{fontSize:11,color:C.textSub}}>Incluir no "Lançar todos"</span>
+    </div>
     <div style={{fontSize:10,color:C.textMuted,marginBottom:6}}>{fmtD(item.date)}{item.parcela!=="1/1"?" · parc. no CSV: "+item.parcela:""}</div>
-    <input value={desc} onChange={e=>setDesc(e.target.value)}
+    <input value={desc} onChange={e=>{
+        const v=e.target.value;
+        setDesc(v);
+        if(!envelopeId){const sug=envelopeRegraSugerido(v,data);if(sug)setEnvelopeId(sug);}
+      }}
       style={{width:"100%",padding:"7px 9px",borderRadius:7,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",marginBottom:6}}/>
     <div style={{display:"flex",gap:6,marginBottom:6}}>
       <input type="text" inputMode="numeric" value={valor} onChange={e=>setValor(formatarMoedaInput(e.target.value))}
@@ -4711,10 +4776,15 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido}){
         style={{width:64,padding:"7px 9px",borderRadius:7,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",textAlign:"center"}}/>
     </div>
     <select value={cat} onChange={e=>setCat(e.target.value)}
-      style={{width:"100%",padding:"7px 9px",borderRadius:7,border:"1px solid "+(cat?C.border:C.red),fontSize:13,fontFamily:"inherit",background:C.surface,marginBottom:8}}>
+      style={{width:"100%",padding:"7px 9px",borderRadius:7,border:"1px solid "+(cat?C.border:C.red),fontSize:13,fontFamily:"inherit",background:C.surface,marginBottom:6}}>
       <option value="">Escolha uma categoria...</option>
       {["DCP","DESPESA FIXA","EXTRAORDINARIA","IMPOSTO","INVESTIMENTO","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA"].map(c=><option key={c} value={c}>{CAT_LABEL[c]||c}</option>)}
     </select>
+    {envelopes.length>0&&<select value={envelopeId} onChange={e=>setEnvelopeId(e.target.value)}
+      style={{width:"100%",padding:"7px 9px",borderRadius:7,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",background:C.surface,marginBottom:8}}>
+      <option value="">Envelope: nenhum</option>
+      {envelopes.map(env=><option key={env.id} value={env.id}>Envelope: {env.nome}</option>)}
+    </select>}
     <div style={{display:"flex",gap:6}}>
       <button onClick={lancar} disabled={load||!desc.trim()||!valor||!cat}
         style={{flex:1,background:C.accent,color:"#fff",borderRadius:7,padding:"7px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer"}}>
@@ -5068,6 +5138,37 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     setConciliacao(c=>c?{...c,foraDaPlanilha:(c.foraDaPlanilha||[]).filter(n=>n!==item)}:c);
   }
 
+  // [NOVO 20/07] "Lançar todos os marcados" pro cartão -- mesma ideia que
+  // ja existia so na Conciliação de Extrato. syncNovosCartao e um espelho
+  // (chave estavel -> config atual) que cada NovoDoCSV atualiza sozinho via
+  // onSync, sem tirar a responsividade de digitar em cada campo.
+  const [syncNovosCartao,setSyncNovosCartao]=useState({});
+  const marcadosNovosCartao=useMemo(()=>
+    Object.entries(syncNovosCartao).filter(([,cfg])=>cfg.incluir&&cfg.cat&&cfg.desc.trim()&&cfg.valor),
+  [syncNovosCartao]);
+
+  async function lancarTodosNovosCartao(){
+    if(!marcadosNovosCartao.length) return;
+    setLoad(true);
+    const chavesLancadas=[];
+    try{
+      for(const [chave,cfg] of marcadosNovosCartao){
+        const r=await api({action:"lancarCartao",cartao,descricao:cfg.desc.toUpperCase(),
+          valor:(-1)*Math.abs(numBR(cfg.valor)),parcelas:parseInt(cfg.parc)||1,
+          categoria:cfg.cat,dcp:cfg.cat==="DCP"?"S":"N",data_compra:novosDoCSV.find((item,i)=>item.date+"|"+item.title+"|"+item.amount+"|"+i===chave)?.date,
+          envelopeId:cfg.envelopeId});
+        onUpdate(r);
+        chavesLancadas.push(chave);
+      }
+    }catch(e){alert(e.message);}
+    // Remove da lista os que deram certo, mesmo se algum no meio falhar --
+    // evita relancar por engano os que ja foram, so o alerta acima ja avisa
+    // qual travou.
+    setConciliacao(c=>c?{...c,foraDaPlanilha:(c.foraDaPlanilha||[]).filter((item,i)=>
+      !chavesLancadas.includes(item.date+"|"+item.title+"|"+item.amount+"|"+i))}:c);
+    setLoad(false);
+  }
+
   // Agrupar por vencimento, ordenado cronologicamente
   const faturas=useMemo(()=>{
     const mp={};
@@ -5391,12 +5492,21 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
 
     {/* 🔴 Itens que apareceram no CSV mas ainda não têm linha na planilha */}
     {novosDoCSV.length>0&&<div style={{marginBottom:12}}>
-      <div style={{fontSize:11,fontWeight:700,color:C.red,padding:"6px 4px",letterSpacing:".05em"}}>
-        🔴 NOVOS NO CSV — ainda não lançados ({novosDoCSV.length})
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 4px"}}>
+        <span style={{fontSize:11,fontWeight:700,color:C.red,letterSpacing:".05em"}}>
+          🔴 NOVOS NO CSV — ainda não lançados ({novosDoCSV.length})
+        </span>
+        {novosDoCSV.length>1&&<button onClick={lancarTodosNovosCartao} disabled={load||!marcadosNovosCartao.length}
+          style={{fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,background:marcadosNovosCartao.length?"#EA580C":C.borderLight,
+            color:marcadosNovosCartao.length?"#fff":C.textMuted,border:"none",cursor:marcadosNovosCartao.length?"pointer":"default",fontFamily:"inherit"}}>
+          🚀 Lançar todos marcados ({marcadosNovosCartao.length})
+        </button>}
       </div>
-      {novosDoCSV.map((item,i)=><NovoDoCSV key={item.date+"|"+item.title+"|"+item.amount+"|"+i}
-        item={item} cartao={cartao} onUpdate={onUpdate}
-        onResolvido={()=>removerNovoDoCSV(item)}/>)}
+      {novosDoCSV.map((item,i)=>{const chave=item.date+"|"+item.title+"|"+item.amount+"|"+i;
+        return <NovoDoCSV key={chave}
+        item={item} cartao={cartao} onUpdate={onUpdate} data={data}
+        onResolvido={()=>removerNovoDoCSV(item)}
+        onSync={cfg=>setSyncNovosCartao(s=>({...s,[chave]:cfg}))}/>;})}
     </div>}
 
     {/* Form novo lançamento */}
@@ -5655,7 +5765,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260720.0957 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260720.1046 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
