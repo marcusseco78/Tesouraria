@@ -3426,7 +3426,8 @@ function Historico({data,onUpdate,destaque,onIrPara}){
             </div>
             {!ehFaturaCartao(item)&&<div style={{marginBottom:8}}>
               <select value={categoria} onChange={e=>setCategoria(e.target.value)}
-                style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:13,fontFamily:"inherit",background:C.surface}}>
+                style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+(categoria?C.accent:C.red),fontSize:13,fontFamily:"inherit",background:C.surface}}>
+                <option value="">Escolha uma categoria...</option>
                 {CATEGORIAS.map(c=><option key={c} value={c}>{CAT_LABEL[c]||c}</option>)}
               </select>
             </div>}
@@ -3438,9 +3439,9 @@ function Historico({data,onUpdate,destaque,onIrPara}){
               <span style={{flex:1}}/>
               <button onClick={()=>setConf(null)} disabled={load}
                 style={{background:C.borderLight,color:C.textSub,borderRadius:6,padding:"6px 10px",fontSize:12,border:"none",cursor:"pointer"}}>Cancelar</button>
-              <button onClick={()=>salvar(item)} disabled={load}
+              <button onClick={()=>salvar(item)} disabled={load||(!ehFaturaCartao(item)&&!categoria)}
                 style={{background:C.accent,color:"#fff",borderRadius:6,padding:"6px 16px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer"}}>
-                {load?"…":"Salvar"}
+                {load?"…":(!ehFaturaCartao(item)&&!categoria)?"Escolha a categoria":"Salvar"}
               </button>
             </div>
           </div>}
@@ -4400,7 +4401,7 @@ function BotaoLancar({data,onUpdate}){
   const [desc,setDesc]=useState("");
   const [valor,setValor]=useState("");
   const [data_,setData_]=useState(hoje());
-  const [cat,setCat]=useState("DCP");
+  const [cat,setCat]=useState("");
   const [parc,setParc]=useState("1");
   const [vencAlvo,setVencAlvo]=useState("");
   const [envelopeId,setEnvelopeId]=useState("");
@@ -4645,7 +4646,8 @@ function BotaoLancar({data,onUpdate}){
       style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",marginBottom:10,boxSizing:"border-box"}}/>
     {/* Categoria (nao aplica a pagamento de fatura) */}
     {!ehPagamento&&<select value={cat} onChange={e=>{setCat(e.target.value);if(e.target.value==="RECEITA")setVNeg(false);}}
-      style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",marginBottom:10,background:C.surface}}>
+      style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+(cat?C.border:C.red),fontSize:14,fontFamily:"inherit",marginBottom:10,background:C.surface}}>
+      <option value="">Escolha uma categoria...</option>
       {CATS.map(c=><option key={c} value={c}>{CAT_LABEL[c]||c}</option>)}
     </select>}
     {!ehPagamento&&envelopesAbertos.length>0&&<select value={envelopeId} onChange={e=>setEnvelopeId(e.target.value)}
@@ -4661,10 +4663,10 @@ function BotaoLancar({data,onUpdate}){
           background:parc===n?C.accentLight:"transparent",color:parc===n?C.accent:C.textSub,
           fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{n}x</button>)}
     </div>}
-    <button onClick={salvar} disabled={load||!valor||(ehPagamento&&!vencAlvo)}
+    <button onClick={salvar} disabled={load||!valor||(ehPagamento&&!vencAlvo)||(!ehPagamento&&!ehReceita&&!cat)}
       style={{width:"100%",padding:"12px",borderRadius:10,background:C.accent,color:"#fff",
         fontSize:15,fontWeight:800,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-      {load?"Salvando...":"Salvar lançamento"}
+      {load?"Salvando...":(!ehPagamento&&!ehReceita&&!cat)?"Escolha uma categoria":"Salvar lançamento"}
     </button>
     </>}
   </div>;
@@ -4682,7 +4684,7 @@ function BotaoLancar({data,onUpdate}){
 function NovoDoCSV({item, cartao, onUpdate, onResolvido}){
   const [desc,setDesc]=useState(item.title.toUpperCase());
   const [valor,setValor]=useState(formatarValorInicial(-Math.abs(item.amount)));
-  const [cat,setCat]=useState("DCP");
+  const [cat,setCat]=useState("");
   const [parc,setParc]=useState(item.parcela!=="1/1"?(item.parcela.split("/")[1]||"1"):"1");
   const [load,setLoad]=useState(false);
 
@@ -4709,13 +4711,14 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido}){
         style={{width:64,padding:"7px 9px",borderRadius:7,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",textAlign:"center"}}/>
     </div>
     <select value={cat} onChange={e=>setCat(e.target.value)}
-      style={{width:"100%",padding:"7px 9px",borderRadius:7,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",background:C.surface,marginBottom:8}}>
+      style={{width:"100%",padding:"7px 9px",borderRadius:7,border:"1px solid "+(cat?C.border:C.red),fontSize:13,fontFamily:"inherit",background:C.surface,marginBottom:8}}>
+      <option value="">Escolha uma categoria...</option>
       {["DCP","DESPESA FIXA","EXTRAORDINARIA","IMPOSTO","INVESTIMENTO","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA"].map(c=><option key={c} value={c}>{CAT_LABEL[c]||c}</option>)}
     </select>
     <div style={{display:"flex",gap:6}}>
-      <button onClick={lancar} disabled={load||!desc.trim()||!valor}
+      <button onClick={lancar} disabled={load||!desc.trim()||!valor||!cat}
         style={{flex:1,background:C.accent,color:"#fff",borderRadius:7,padding:"7px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer"}}>
-        {load?"…":"Lançar"}
+        {load?"…":!cat?"Escolha a categoria":"Lançar"}
       </button>
       <button onClick={onResolvido} disabled={load}
         style={{background:C.borderLight,color:C.textSub,borderRadius:7,padding:"7px 12px",fontSize:12,border:"none",cursor:"pointer"}}>
@@ -4943,13 +4946,13 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   const [nValor,setNValor]=useState("");
   const [nData,setNData]=useState(hoje());
   const [nParc,setNParc]=useState("1");
-  const [nCat,setNCat]=useState("DCP");
+  const [nCat,setNCat]=useState("");
   // edição/exclusão de item existente do cartão
   const [editRow,setEditRow]=useState(null);
   const [eDesc,setEDesc]=useState("");
   const [eValor,setEValor]=useState("");
   const [eData,setEData]=useState("");
-  const [eCategoria,setECategoria]=useState("DCP");
+  const [eCategoria,setECategoria]=useState("");
   const [eNeg,setENeg]=useState(true);
   const [eAlias,setEAlias]=useState("");
   const [eApelido,setEApelido]=useState("");
@@ -4961,7 +4964,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   const abaCartao="CARTAO_"+cartao;
 
   function abrirEdicaoItem(r){
-    setEditRow(_linhaCartao(r));setEDesc(r[1]);setEValor(formatarValorInicial(r[2]));setENeg(r[2]<0);setECategoria(r[5]||"DCP");setEData(String(r[0]||"").slice(0,10));
+    setEditRow(_linhaCartao(r));setEDesc(r[1]);setEValor(formatarValorInicial(r[2]));setENeg(r[2]<0);setECategoria(r[5]||"");setEData(String(r[0]||"").slice(0,10));
     setEAlias(_obsAliasCartao(_obsCartaoRaw(r)));
     setEApelido(_obsApelidoCartao(_obsCartaoRaw(r)));
   }
@@ -5413,13 +5416,14 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
             fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{n}x</button>)}
       </div>
       <select value={nCat} onChange={e=>setNCat(e.target.value)}
-        style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",background:C.surface,marginBottom:8}}>
+        style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid "+(nCat?C.border:C.red),fontSize:13,fontFamily:"inherit",background:C.surface,marginBottom:8}}>
+        <option value="">Escolha uma categoria...</option>
         {["DCP","DESPESA FIXA","EXTRAORDINARIA","IMPOSTO"].map(c=><option key={c} value={c}>{CAT_LABEL[c]||c}</option>)}
       </select>
-      <button onClick={lancarNovo} disabled={load||!nDesc.trim()||!nValor}
+      <button onClick={lancarNovo} disabled={load||!nDesc.trim()||!nValor||!nCat}
         style={{width:"100%",padding:"9px",borderRadius:8,background:C.accent,color:"#fff",
           fontSize:13,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-        {load?"Salvando...":"Confirmar compra"}
+        {load?"Salvando...":!nCat?"Escolha a categoria":"Confirmar compra"}
       </button>
     </Card>}
 
@@ -5517,7 +5521,8 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
     <div style={{display:"flex",flexDirection:"column",gap:3,marginBottom:8}}>
       <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA</span>
       <select value={eCategoria} onChange={e=>setECategoria(e.target.value)}
-        style={{padding:"6px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:13,fontFamily:"inherit",background:C.surface}}>
+        style={{padding:"6px 8px",borderRadius:6,border:"1px solid "+(eCategoria?C.accent:C.red),fontSize:13,fontFamily:"inherit",background:C.surface}}>
+        <option value="">Escolha uma categoria...</option>
         {["DCP","DESPESA FIXA","EXTRAORDINARIA","IMPOSTO"].map(c=><option key={c} value={c}>{CAT_LABEL[c]||c}</option>)}
       </select>
     </div>
@@ -5545,7 +5550,7 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
     </div>
     {data&&onUpdate&&<SeletorEnvelopeItem aba={abaCartao} row={_linhaCartao(r)} obsAtual={_obsCartaoRaw(r)} data={data} onUpdate={onUpdate}/>}
     <div style={{display:"flex",gap:8}}>
-      <button onClick={onSalvar} disabled={eLoad||!eDesc.trim()||!eValor}
+      <button onClick={onSalvar} disabled={eLoad||!eDesc.trim()||!eValor||!eCategoria}
         style={{flex:1,background:C.accent,color:"#fff",borderRadius:6,padding:"7px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer"}}>
         {eLoad?"…":"Salvar"}
       </button>
@@ -5650,7 +5655,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260720.0042 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260720.0957 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
