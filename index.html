@@ -83,6 +83,15 @@ function configFatura(data){
   const v=parseInt(cfg.CARTAO_DIA_VENCIMENTO);
   return { fechamento:(f>=1&&f<=31)?f:31, vencimento:(v>=1&&v<=31)?v:7 };
 }
+// [NOVO 20/07] Confere se uma fatura (cartao+vencimento) esta travada
+// (CONFIG.FATURAS_TRAVADAS_JSON) -- so leitura, a decisao de travar/destravar
+// e sempre do backend (travarFatura/destravarFatura), nunca inferida aqui.
+function faturaTravada(cartao,vencimento,data){
+  try{
+    const lista=JSON.parse((data&&data.config&&data.config.FATURAS_TRAVADAS_JSON)||"[]");
+    return lista.some(f=>f.cartao===cartao&&f.vencimento===vencimento);
+  }catch(e){ return false; }
+}
 // A que mes civil de FECHAMENTO uma data (string YYYY-MM-DD) pertence.
 // Retorna {ano, mes} com mes 1-indexed (jeito mais facil de bater com o
 // zero-padding de string de data sem confundir com Date.getMonth() 0-indexed).
@@ -1380,6 +1389,112 @@ function SugestaoReagendamento({onUpdate}){
 // unico, RECEITA) e o cronograma de parcelas (recorrencia EMPRESTIMO, que
 // ja gera as parcelas futuras na hora, sem esperar virada de ciclo). Nenhuma
 // logica nova no script -- so uniao de front-end do que ja funciona.
+function FormCriarDividaPosFixada({onSalvo,onClose}){
+  const [nome,setNome]=useState("");
+  const [saldoInicial,setSaldoInicial]=useState("");
+  const [percCdi,setPercCdi]=useState("100");
+  const [observacao,setObservacao]=useState("");
+  const [load,setLoad]=useState(false);
+
+  async function salvar(){
+    if(!nome.trim()||!saldoInicial){ alert("Preencha nome e saldo inicial."); return; }
+    setLoad(true);
+    try{
+      const r=await api({action:"criarDividaPosFixada",nome,saldo_inicial:numBR(saldoInicial),
+        percentual_cdi:parseFloat(percCdi)||100,observacao});
+      onSalvo(r);
+    }catch(e){alert(e.message);}
+    setLoad(false);
+  }
+
+  const inp={width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid "+C.border,
+    fontSize:14,fontFamily:"inherit",boxSizing:"border-box",outline:"none"};
+  const lbl={fontSize:11,fontWeight:700,color:C.textSub,textTransform:"uppercase",
+    letterSpacing:".05em",marginBottom:4,display:"block"};
+
+  return <div style={{background:C.surface,borderRadius:14,padding:16,
+    boxShadow:"0 4px 20px rgba(0,0,0,.12)",margin:"0 0 16px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+      <span style={{fontSize:15,fontWeight:800,color:C.text}}>Criar dívida pós-fixada</span>
+      <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,color:C.textMuted,cursor:"pointer"}}>×</button>
+    </div>
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      <div><label style={lbl}>Nome</label>
+        <input value={nome} onChange={e=>setNome(e.target.value)} placeholder="Ex: Empréstimo Tia Márcia" style={inp}/></div>
+      <div><label style={lbl}>Saldo inicial (R$)</label>
+        <input type="text" inputMode="numeric" value={saldoInicial} onChange={e=>setSaldoInicial(formatarMoedaInput(e.target.value))} placeholder="0,00" style={inp}/></div>
+      <div><label style={lbl}>% do CDI</label>
+        <input type="number" step="1" value={percCdi} onChange={e=>setPercCdi(e.target.value)} placeholder="100" style={inp}/>
+        <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Só variação de percentual do CDI (ex: 100, 120) — nunca outro índice.</div></div>
+      <div><label style={lbl}>Observação (opcional)</label>
+        <input value={observacao} onChange={e=>setObservacao(e.target.value)} placeholder="Contexto livre" style={inp}/></div>
+      <button onClick={salvar} disabled={load||!nome.trim()||!saldoInicial}
+        style={{width:"100%",padding:"10px",borderRadius:8,background:C.accent,color:"#fff",
+          fontSize:14,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+        {load?"Salvando...":"Criar dívida"}
+      </button>
+    </div>
+  </div>;
+}
+function CardDividaPosFixada({divida,onUpdate}){
+  const [valorAbate,setValorAbate]=useState("");
+  const [loadAbate,setLoadAbate]=useState(false);
+  const [loadCDI,setLoadCDI]=useState(false);
+  const [resultadoCDI,setResultadoCDI]=useState(null);
+
+  async function atualizar(){
+    setLoadCDI(true);
+    try{
+      const r=await api({action:"atualizarSaldoDividaPosFixada",nome:divida.nome});
+      const res=(r._resultadoAtualizacaoCDI||[])[0];
+      setResultadoCDI(res||null);
+      onUpdate&&onUpdate(r);
+    }catch(e){alert(e.message);}
+    setLoadCDI(false);
+  }
+  async function abater(){
+    const valor=numBR(valorAbate);
+    if(!valor||valor<=0){ alert("Informe um valor de pagamento válido."); return; }
+    setLoadAbate(true);
+    try{
+      const r=await api({action:"abaterSaldoDividaPosFixada",nome:divida.nome,valor});
+      onUpdate&&onUpdate(r);
+      setValorAbate("");
+    }catch(e){alert(e.message);}
+    setLoadAbate(false);
+  }
+
+  return <div style={{background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:10,padding:10,marginBottom:8}}>
+    <div style={{fontSize:13,fontWeight:700,color:C.text}}>{divida.nome} <span style={{fontWeight:500,color:C.textMuted}}>· correção {divida.percentualCdi}% CDI</span></div>
+    <div style={{fontSize:15,fontWeight:800,color:C.accent,marginTop:4}}>{fmt(-divida.saldoAtual)}</div>
+    <div style={{fontSize:11,color:C.textMuted,marginTop:2,marginBottom:8}}>
+      Desde {fmtD(divida.dataAquisicao)} · já pago: {fmt(divida.montantePago)}{divida.observacao?" · "+divida.observacao:""}
+    </div>
+    <button onClick={atualizar} disabled={loadCDI}
+      style={{width:"100%",background:C.accent,color:"#fff",border:"none",borderRadius:6,padding:"7px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+      {loadCDI?"Buscando CDI no Banco Central…":"🔄 Atualizar com CDI real"}
+    </button>
+    {resultadoCDI&&<div style={{fontSize:11,color:resultadoCDI.atualizado?C.textSub:C.textMuted,marginTop:6,fontStyle:resultadoCDI.atualizado?"normal":"italic"}}>
+      {resultadoCDI.atualizado
+        ?`${resultadoCDI.diasUteis} dia(s) útil(eis): +${fmt(resultadoCDI.jurosAcumulado)} de juros`
+        :resultadoCDI.motivo}
+    </div>}
+    <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #FDBA74"}}>
+      <div style={{fontSize:10,color:C.textMuted,fontWeight:700,marginBottom:4}}>REGISTRAR PAGAMENTO (ABATIMENTO)</div>
+      <div style={{display:"flex",gap:6}}>
+        <input type="text" inputMode="numeric" value={valorAbate} onChange={e=>setValorAbate(formatarMoedaInput(e.target.value))}
+          placeholder="0,00" style={{flex:1,padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
+        <button onClick={abater} disabled={loadAbate}
+          style={{background:C.text,color:"#fff",border:"none",borderRadius:6,padding:"0 14px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+          {loadAbate?"…":"Registrar"}
+        </button>
+      </div>
+      <div style={{fontSize:10,color:C.textMuted,marginTop:4,fontStyle:"italic"}}>
+        Reduz o saldo e já lança a saída no Fluxo (categoria Passivo), hoje.
+      </div>
+    </div>
+  </div>;
+}
 function FormCriarEmprestimo({onSalvo,onClose}){
   const [desc,setDesc]=useState("");
   const [valorTotal,setValorTotal]=useState("");
@@ -1518,33 +1633,20 @@ function EmprestimosPassivos({data,onUpdate}){
     return {desl,total};
   }):[];
 
-  const saldoPai=Number(data.pai?.saldo)||0;
-  const [loadCDI,setLoadCDI]=useState(false);
-  const [resultadoCDI,setResultadoCDI]=useState(null);
-  const [valorPagamento,setValorPagamento]=useState("");
-  const [loadPagamento,setLoadPagamento]=useState(false);
+  const dividasAtivas=(data.dividasPosFixadas||[]).filter(d=>d.status==="ATIVA");
+  const dividasQuitadas=(data.dividasPosFixadas||[]).filter(d=>d.status==="QUITADA");
   const [showForm,setShowForm]=useState(false);
+  const [showFormDPF,setShowFormDPF]=useState(false);
+  const [showHistoricoDPF,setShowHistoricoDPF]=useState(false);
+  const [loadTodas,setLoadTodas]=useState(false);
 
-  async function atualizarCDI(){
-    setLoadCDI(true);
+  async function atualizarTodasCDI(){
+    setLoadTodas(true);
     try{
-      const r=await api({action:"atualizarSaldoPai"});
-      setResultadoCDI(r);
+      const r=await api({action:"atualizarSaldoDividaPosFixada",todas:true});
       onUpdate&&onUpdate(r);
     }catch(e){alert(e.message);}
-    setLoadCDI(false);
-  }
-
-  async function registrarPagamento(){
-    const valor=numBR(valorPagamento);
-    if(!valor||valor<=0){ alert("Informe um valor de pagamento válido."); return; }
-    setLoadPagamento(true);
-    try{
-      const r=await api({action:"abaterSaldoPai",valor});
-      onUpdate&&onUpdate(r);
-      setValorPagamento("");
-    }catch(e){alert(e.message);}
-    setLoadPagamento(false);
+    setLoadTodas(false);
   }
 
   return <div style={{padding:12}}>
@@ -1556,7 +1658,7 @@ function EmprestimosPassivos({data,onUpdate}){
       </button>
     </div>
     {showForm&&<FormCriarEmprestimo onSalvo={r=>{onUpdate&&onUpdate(r);setShowForm(false);}} onClose={()=>setShowForm(false)}/>}
-    {!emprestimos.length&&!saldoPai&&<div style={{padding:"30px 16px",textAlign:"center",fontSize:12,color:C.textMuted,fontStyle:"italic"}}>Nenhum item com número de parcelas definido.</div>}
+    {!emprestimos.length&&!dividasAtivas.length&&<div style={{padding:"30px 16px",textAlign:"center",fontSize:12,color:C.textMuted,fontStyle:"italic"}}>Nenhum item com número de parcelas definido.</div>}
     {emprestimos.length>0&&<div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:10,padding:10}}>
       <div style={{fontSize:10,fontWeight:800,color:C.red,letterSpacing:".08em",marginBottom:8}}>EMPRÉSTIMOS PARCELADOS</div>
       <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:10,background:C.redLight,borderRadius:8,padding:"8px 10px"}}>
@@ -1576,37 +1678,36 @@ function EmprestimosPassivos({data,onUpdate}){
         </div>
       </div>)}
     </div>}
-    {saldoPai>0&&<div style={{background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:10,padding:10,marginTop:emprestimos.length?14:0}}>
-      <div style={{fontSize:10,fontWeight:800,color:"#B45309",letterSpacing:".08em",marginBottom:6}}>CRÉDITO PÓS-FIXADO</div>
-      <div style={{fontSize:13,fontWeight:700,color:C.text}}>Pai <span style={{fontWeight:500,color:C.textMuted}}>· correção 100% CDI</span></div>
-      <div style={{fontSize:15,fontWeight:800,color:C.accent,marginTop:4}}>{fmt(-saldoPai)}</div>
-      <div style={{fontSize:11,color:C.textMuted,marginTop:2,marginBottom:8}}>
-        Pagamentos congelados · sem cronograma definido
-      </div>
-      <button onClick={atualizarCDI} disabled={loadCDI}
-        style={{width:"100%",background:C.accent,color:"#fff",border:"none",borderRadius:6,padding:"7px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
-        {loadCDI?"Buscando CDI no Banco Central…":"🔄 Atualizar com CDI real"}
-      </button>
-      {resultadoCDI&&<div style={{fontSize:11,color:resultadoCDI.atualizado?C.textSub:C.textMuted,marginTop:6,fontStyle:resultadoCDI.atualizado?"normal":"italic"}}>
-        {resultadoCDI.atualizado
-          ?`${resultadoCDI.diasUteis} dia(s) útil(eis), de ${resultadoCDI.dataBase} a ${resultadoCDI.dataFinal}: +${fmt(resultadoCDI.jurosAcumulado)} de juros`
-          :resultadoCDI.motivo}
-      </div>}
-      <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #FDBA74"}}>
-        <div style={{fontSize:10,color:C.textMuted,fontWeight:700,marginBottom:4}}>REGISTRAR PAGAMENTO (ABATIMENTO)</div>
+
+    <div style={{marginTop:emprestimos.length?14:0}}>
+      <div style={{fontSize:10,fontWeight:800,color:"#B45309",letterSpacing:".08em",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span>DÍVIDA PÓS-FIXADA</span>
         <div style={{display:"flex",gap:6}}>
-          <input type="text" inputMode="numeric" value={valorPagamento} onChange={e=>setValorPagamento(formatarMoedaInput(e.target.value))}
-            placeholder="0,00" style={{flex:1,padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
-          <button onClick={registrarPagamento} disabled={loadPagamento}
-            style={{background:C.text,color:"#fff",border:"none",borderRadius:6,padding:"0 14px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
-            {loadPagamento?"…":"Registrar"}
+          {dividasAtivas.length>1&&<button onClick={atualizarTodasCDI} disabled={loadTodas}
+            style={{background:"none",border:"1px solid "+C.accent,color:C.accent,borderRadius:6,padding:"4px 8px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
+            {loadTodas?"…":"🔄 Atualizar todas"}
+          </button>}
+          <button onClick={()=>setShowFormDPF(v=>!v)}
+            style={{background:showFormDPF?C.borderLight:C.accent,color:showFormDPF?C.textSub:"#fff",border:"none",borderRadius:6,padding:"4px 8px",fontSize:10,fontWeight:700,cursor:"pointer"}}>
+            {showFormDPF?"Cancelar":"+ Criar dívida"}
           </button>
         </div>
-        <div style={{fontSize:10,color:C.textMuted,marginTop:4,fontStyle:"italic"}}>
-          Reduz o saldo da dívida e já lança a saída no Fluxo (categoria Passivo), hoje.
-        </div>
       </div>
-    </div>}
+      {showFormDPF&&<FormCriarDividaPosFixada onSalvo={r=>{onUpdate&&onUpdate(r);setShowFormDPF(false);}} onClose={()=>setShowFormDPF(false)}/>}
+      {!dividasAtivas.length&&!showFormDPF&&<div style={{padding:"16px",textAlign:"center",fontSize:12,color:C.textMuted,fontStyle:"italic"}}>Nenhuma dívida pós-fixada ativa.</div>}
+      {dividasAtivas.map(d=><CardDividaPosFixada key={d.nome} divida={d} onUpdate={onUpdate}/>)}
+      {dividasQuitadas.length>0&&<div style={{marginTop:6}}>
+        <button onClick={()=>setShowHistoricoDPF(v=>!v)}
+          style={{background:"none",border:"none",color:C.textMuted,fontSize:11,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",padding:"4px 0"}}>
+          🕘 Histórico ({dividasQuitadas.length} quitada{dividasQuitadas.length>1?"s":""})
+        </button>
+        {showHistoricoDPF&&dividasQuitadas.map(d=><div key={d.nome} style={{background:C.borderLight,borderRadius:8,padding:10,marginBottom:6,fontSize:11,color:C.textSub}}>
+          <div style={{fontWeight:700,color:C.text}}>{d.nome}</div>
+          <div>Aquisição: {fmtD(d.dataAquisicao)} · Quitação: {fmtD(d.dataQuitacao)}</div>
+          <div>Valor inicial: {fmt(d.saldoInicial)} · Montante pago: {fmt(d.montantePago)}</div>
+        </div>)}
+      </div>}
+    </div>
   </div>;
 }
 
@@ -2425,6 +2526,191 @@ function EnvelopesCustom({data,onUpdate}){
 // o app) + apelidos de descrição (padrao->apelido, ex: "RDB"->"CAIXINHA
 // NUBANK") -- os dois substituem o que antes eram regras fixas no prompt,
 // especificas de uma pessoa so. Qualquer instancia configura o proprio.
+// [NOVO 20/07] Tela de Configurações -- reune o que era espalhado (botão
+// Servidor no cabeçalho, config de cartão dentro da própria tela Cartões)
+// num lugar só. A edição de cartão em si continua morando na tela Cartões
+// (dentro do painel "⚙️ Configurações de cartão", protegido) -- aqui só
+// mostra um resumo + atalho, pra não duplicar estado/lógica em dois lugares.
+// [NOVO 20/07] Cofres -- etapa 1 da spec (MODELO_COFRES_ESPECIFICACAO_COMPLETA.md):
+// cadastro + aporte/resgate como lançamento comum. Ainda sem vínculo com
+// Envelope (isso é a etapa 2) nem correção CDI (etapa 3) -- o campo % CDI já
+// fica salvo no cadastro pra não precisar migrar depois, mas não faz nada
+// ainda.
+function CardCofre({cofre,onUpdate}){
+  const [tipoAcao,setTipoAcao]=useState("aporte");
+  const [valor,setValor]=useState("");
+  const [load,setLoad]=useState(false);
+  const [loadApagar,setLoadApagar]=useState(false);
+
+  async function lancar(){
+    const v=numBR(valor);
+    if(!v||v<=0){ alert("Informe um valor válido."); return; }
+    setLoad(true);
+    try{
+      const r=await api({action:"lancarCofre",cofreId:cofre.id,tipoCofre:tipoAcao,valor:v});
+      onUpdate&&onUpdate(r);
+      setValor("");
+    }catch(e){alert(e.message);}
+    setLoad(false);
+  }
+  async function apagar(){
+    if(!confirm("Apagar o cofre \""+cofre.nome+"\"? Só funciona se o saldo estiver zerado."))return;
+    setLoadApagar(true);
+    try{ onUpdate&&onUpdate(await api({action:"apagarCofre",id:cofre.id})); }
+    catch(e){alert(e.message);}
+    setLoadApagar(false);
+  }
+
+  return <div style={{background:C.tealLight,border:"1px solid #99F6E4",borderRadius:10,padding:10,marginBottom:8}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+      <div>
+        <div style={{fontSize:13,fontWeight:700,color:C.text}}>🏦 {cofre.nome}</div>
+        <div style={{fontSize:10,color:C.textMuted}}>correção {cofre.percentualCdi}% CDI (ainda não ativa)</div>
+      </div>
+      <div style={{fontSize:16,fontWeight:800,color:C.teal}}>{fmt(cofre.saldo)}</div>
+    </div>
+    <div style={{display:"flex",gap:6,marginTop:8}}>
+      <button onClick={()=>setTipoAcao("aporte")}
+        style={{flex:1,padding:"6px",borderRadius:6,border:"1px solid "+(tipoAcao==="aporte"?C.teal:C.border),
+          background:tipoAcao==="aporte"?C.teal:C.surface,color:tipoAcao==="aporte"?"#fff":C.textSub,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+        ⬇ Guardar
+      </button>
+      <button onClick={()=>setTipoAcao("resgate")}
+        style={{flex:1,padding:"6px",borderRadius:6,border:"1px solid "+(tipoAcao==="resgate"?C.teal:C.border),
+          background:tipoAcao==="resgate"?C.teal:C.surface,color:tipoAcao==="resgate"?"#fff":C.textSub,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+        ⬆ Resgatar
+      </button>
+    </div>
+    <div style={{display:"flex",gap:6,marginTop:6}}>
+      <input type="text" inputMode="numeric" value={valor} onChange={e=>setValor(formatarMoedaInput(e.target.value))}
+        placeholder="0,00" style={{flex:1,padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
+      <button onClick={lancar} disabled={load}
+        style={{background:C.text,color:"#fff",border:"none",borderRadius:6,padding:"0 14px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+        {load?"…":"Confirmar"}
+      </button>
+    </div>
+    <div style={{fontSize:10,color:C.textMuted,marginTop:4,fontStyle:"italic"}}>
+      {tipoAcao==="aporte"?"Sai do saldo da conta, fica guardado aqui.":"Volta pro saldo da conta, livre pra qualquer uso."}
+    </div>
+    <button onClick={apagar} disabled={loadApagar}
+      style={{width:"100%",marginTop:8,padding:"5px",borderRadius:6,background:"transparent",color:C.red,fontSize:10,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
+      🗑 Apagar este cofre
+    </button>
+  </div>;
+}
+
+function Cofres({data,onUpdate}){
+  const cofres=data.cofres||[];
+  const [showForm,setShowForm]=useState(false);
+  const [nome,setNome]=useState("");
+  const [percCdi,setPercCdi]=useState("100");
+  const [load,setLoad]=useState(false);
+
+  async function criar(){
+    if(!nome.trim()){ alert("Informe o nome do cofre."); return; }
+    setLoad(true);
+    try{
+      const r=await api({action:"salvarCofre",nome,percentual_cdi:parseFloat(percCdi)||100});
+      onUpdate&&onUpdate(r);
+      setNome("");setPercCdi("100");setShowForm(false);
+    }catch(e){alert(e.message);}
+    setLoad(false);
+  }
+
+  return <div style={{padding:"12px 16px"}}>
+    <div style={{fontSize:11,color:C.textMuted,background:C.borderLight,borderRadius:8,padding:"8px 10px",marginBottom:12}}>
+      Cofre é uma reserva tipo "caixinha" — guarda dinheiro aqui, resgata quando quiser (o resgate volta livre pra conta, não é preso a nenhum propósito). Vincular a um Envelope específico ainda não está pronto — por enquanto é só a reserva em si.
+    </div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+      <span style={{fontSize:11,fontWeight:800,color:C.textMuted,letterSpacing:".05em"}}>SEUS COFRES</span>
+      <button onClick={()=>setShowForm(v=>!v)}
+        style={{background:showForm?C.borderLight:C.teal,color:showForm?C.textSub:"#fff",border:"none",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+        {showForm?"Cancelar":"+ Criar cofre"}
+      </button>
+    </div>
+    {showForm&&<div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:10,padding:12,marginBottom:12}}>
+      <div style={{marginBottom:8}}>
+        <label style={{fontSize:10,fontWeight:700,color:C.textSub,textTransform:"uppercase"}}>Nome</label>
+        <input value={nome} onChange={e=>setNome(e.target.value)} placeholder="Ex: Viagem final de ano"
+          style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
+      </div>
+      <div style={{marginBottom:10}}>
+        <label style={{fontSize:10,fontWeight:700,color:C.textSub,textTransform:"uppercase"}}>% do CDI (correção — ainda não ativa)</label>
+        <input type="number" step="1" value={percCdi} onChange={e=>setPercCdi(e.target.value)}
+          style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
+      </div>
+      <button onClick={criar} disabled={load||!nome.trim()}
+        style={{width:"100%",padding:"9px",borderRadius:8,background:C.teal,color:"#fff",fontSize:13,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+        {load?"Criando...":"Criar cofre"}
+      </button>
+    </div>}
+    {!cofres.length&&!showForm&&<div style={{padding:"20px",textAlign:"center",fontSize:12,color:C.textMuted,fontStyle:"italic"}}>Nenhum cofre ainda.</div>}
+    {cofres.map(c=><CardCofre key={c.id} cofre={c} onUpdate={onUpdate}/>)}
+  </div>;
+}
+
+function ConfiguracoesGerais({data,onUpdate,onIrPara}){
+  const [servidorUrl,setServidorUrl]=useState(()=>{try{return localStorage.getItem("tesouraria_apps_url")||"";}catch(e){return "";}});
+  const usandoServidorProprio=!!servidorUrl.trim();
+  function salvarServidor(){
+    try{
+      if(servidorUrl.trim()) localStorage.setItem("tesouraria_apps_url",servidorUrl.trim());
+      else localStorage.removeItem("tesouraria_apps_url");
+    }catch(e){}
+    location.reload();
+  }
+  function usarPadraoServidor(){
+    try{ localStorage.removeItem("tesouraria_apps_url"); }catch(e){}
+    location.reload();
+  }
+  const fv=configFatura(data);
+
+  return <div style={{padding:"12px 16px"}}>
+    <Card style={{padding:"14px 16px",marginBottom:14}}>
+      <div style={{fontSize:13,fontWeight:800,color:C.text,marginBottom:6}}>🖥 Servidor</div>
+      <div style={{fontSize:11,color:C.textMuted,marginBottom:8}}>
+        {usandoServidorProprio
+          ? "Usando um servidor próprio (não o padrão)."
+          : "Usando o servidor padrão. Se esta cópia é sua e você já implantou o próprio App da Web, cole a URL abaixo."}
+      </div>
+      <div style={{fontSize:10,color:C.textMuted,marginBottom:8,background:C.borderLight,borderRadius:6,padding:"6px 8px"}}>
+        O que vai aqui: a <b>URL do App da Web</b> do Apps Script (Implantar → Nova implantação → App da Web → copia o link gerado). Não é o link da planilha nem da conta do Google — é o endereço que o app usa pra conversar com o backend.
+      </div>
+      <input value={servidorUrl} onChange={e=>setServidorUrl(e.target.value)}
+        placeholder="https://script.google.com/macros/s/.../exec"
+        style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",marginBottom:8}}/>
+      <div style={{display:"flex",gap:6}}>
+        <button onClick={salvarServidor} style={{flex:1,padding:"8px",borderRadius:6,background:C.blue,color:"#fff",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+          Salvar e recarregar
+        </button>
+        {usandoServidorProprio&&<button onClick={usarPadraoServidor} style={{padding:"8px 12px",borderRadius:6,background:"transparent",color:C.textMuted,fontSize:12,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
+          Usar padrão
+        </button>}
+      </div>
+    </Card>
+
+    <Card style={{padding:"14px 16px",marginBottom:14}}>
+      <div style={{fontSize:13,fontWeight:800,color:C.text,marginBottom:6}}>💳 Cartões</div>
+      <div style={{fontSize:11,color:C.textMuted,marginBottom:10}}>
+        {nomeCartao("PF",data)} e {nomeCartao("PJ",data)} · fecha dia {fv.fechamento} · vence dia {fv.vencimento}
+      </div>
+      <div style={{fontSize:10,color:C.textMuted,marginBottom:10}}>
+        Renomear, mudar dia de fechamento/vencimento, conciliar fatura, reconstruir do zero e importar assinaturas — tudo isso mora dentro da própria tela Cartões, atrás de um botão "⚙️ Configurações de cartão" (área protegida, separada do uso do dia a dia).
+      </div>
+      <button onClick={()=>onIrPara&&onIrPara({tab:"cartoes"})}
+        style={{width:"100%",padding:"8px",borderRadius:6,background:C.accent,color:"#fff",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+        Ir para Cartões
+      </button>
+    </Card>
+
+    <Card style={{padding:"14px 16px"}}>
+      <div style={{fontSize:13,fontWeight:800,color:C.text,marginBottom:6}}>🔄 Ciclo</div>
+      <div style={{fontSize:11,color:C.textMuted}}>
+        Dia de virada de ciclo (hoje fixo em 16) ainda não é configurável — quando isso for construído, o campo entra aqui.
+      </div>
+    </Card>
+  </div>;
+}
 function PerfilApelidos({data,onUpdate}){
   const cfg=data.config||{};
   const [contexto,setContexto]=useState(cfg.CONTEXTO_PESSOAL||"");
@@ -2849,6 +3135,8 @@ function Ferramentas({onIrPara}){
     {id:"envelopes",icone:"💌",titulo:"Envelopes",sub:"Metas por projeto",cor:C.purple,bg:C.purpleLight},
     {id:"conciliacao",icone:"🔄",titulo:"Conciliação",sub:"Cartões e extrato",cor:C.orange,bg:C.orangeLight},
     {id:"perfil",icone:"👤",titulo:"Perfil & Apelidos",sub:"Contexto do Gemini, nomes de descrição",cor:C.blue,bg:C.blueLight},
+    {id:"config",icone:"⚙️",titulo:"Configurações",sub:"Servidor, cartões, dados sensíveis",cor:C.textMuted,bg:C.borderLight},
+    {id:"cofres",icone:"🏦",titulo:"Cofres",sub:"Poupança pra projetos, tipo caixinha",cor:C.teal,bg:C.tealLight||C.blueLight},
   ];
   return <div style={{padding:"4px 4px 16px"}}>
     <div style={{fontSize:11,fontWeight:800,color:C.textMuted,letterSpacing:".1em",padding:"8px 12px"}}>FERRAMENTAS</div>
@@ -4831,6 +5119,9 @@ function ConciliarCartao({cartao, data, onResultado}){
 
       const res=await api({action:"conciliarFatura",cartao,csv:lido.csv,nomeArquivo:lido.nome,acctid:lido.acctid||""});
       onResultado({...res,cartao});
+      if(res.travouAgora){
+        alert("🔒 Fatura "+cartao+" travada automaticamente — conciliada por completo via OFX, sem nenhuma pendência. Valor/data/apagar ficam bloqueados nos itens dela a partir de agora (categoria continua editável). Pra corrigir algo depois, tem um botão de destravar no painel de cada item.");
+      }
     }catch(e){alert("Erro na conciliação: "+e.message);}
     setLoad(false);
   }
@@ -4995,6 +5286,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   const [showForm,setShowForm]=useState(false);
   const [editandoNome,setEditandoNome]=useState(false);
   const [nomeEditado,setNomeEditado]=useState("");
+  const [configCartaoAberta,setConfigCartaoAberta]=useState(false);
   const [editandoFatura,setEditandoFatura]=useState(false);
   const [fechamentoEditado,setFechamentoEditado]=useState("");
   const [vencimentoEditado,setVencimentoEditado]=useState("");
@@ -5345,57 +5637,73 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         {nomeCartao(t,data)}
       </button>)}
     </div>
-    <div style={{textAlign:"right",marginBottom:8}}>
-      {!editandoNome
-        ?<button onClick={()=>{setNomeEditado(data.config&&data.config["NOME_CARTAO_"+cartao]||"");setEditandoNome(true);}}
-          style={{background:"none",border:"none",color:C.textMuted,fontSize:10,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>
-          ✏️ Renomear "{nomeCartao(cartao,data)}"
-        </button>
-        :<div style={{display:"flex",gap:6,alignItems:"center",justifyContent:"flex-end"}}>
-          <input value={nomeEditado} onChange={e=>setNomeEditado(e.target.value)}
-            placeholder={"Cartão "+cartao+" (padrão)"}
-            style={{flex:1,maxWidth:180,padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit"}}/>
-          <button onClick={salvarNomeCartao} disabled={load}
-            style={{padding:"5px 10px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-            Salvar
-          </button>
-          <button onClick={()=>setEditandoNome(false)}
-            style={{padding:"5px 8px",borderRadius:6,background:"none",color:C.textMuted,fontSize:11,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
-            X
-          </button>
-        </div>}
-    </div>
     <div style={{textAlign:"right",marginBottom:12}}>
-      {!editandoFatura
-        ?<button onClick={()=>{const fv=configFatura(data);setFechamentoEditado(String(fv.fechamento));setVencimentoEditado(String(fv.vencimento));setEditandoFatura(true);}}
-          style={{background:"none",border:"none",color:C.textMuted,fontSize:10,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>
-          📅 Dia de fechamento/vencimento da fatura
-        </button>
-        :<div style={{background:C.borderLight,borderRadius:8,padding:"10px 12px",textAlign:"left"}}>
-          <div style={{fontSize:9,color:C.textMuted,marginBottom:6}}>Vale pros dois cartões (PF e PJ) — normalmente vêm do mesmo banco. Padrão sem configurar: fecha no último dia do mês, vence dia 7 do mês seguinte.</div>
-          <div style={{display:"flex",gap:10,marginBottom:8}}>
-            <div style={{flex:1}}>
-              <span style={{fontSize:9,color:C.textMuted}}>FECHA NO DIA</span>
-              <input type="number" min="1" max="31" value={fechamentoEditado} onChange={e=>setFechamentoEditado(e.target.value)}
-                style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"center",fontFamily:"inherit",boxSizing:"border-box"}}/>
-            </div>
-            <div style={{flex:1}}>
-              <span style={{fontSize:9,color:C.textMuted}}>VENCE NO DIA</span>
-              <input type="number" min="1" max="31" value={vencimentoEditado} onChange={e=>setVencimentoEditado(e.target.value)}
-                style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"center",fontFamily:"inherit",boxSizing:"border-box"}}/>
-            </div>
-          </div>
-          <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
-            <button onClick={salvarConfigFatura} disabled={loadFatura}
-              style={{padding:"5px 12px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-              {loadFatura?"…":"Salvar"}
+      <button onClick={()=>setConfigCartaoAberta(v=>!v)}
+        style={{background:"none",border:"none",color:C.textMuted,fontSize:10,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>
+        ⚙️ {configCartaoAberta?"Fechar configurações":"Configurações de cartão"}
+      </button>
+      {configCartaoAberta&&<div style={{background:C.borderLight,borderRadius:10,padding:"12px",textAlign:"left",marginTop:8}}>
+        <div style={{fontSize:9,color:"#92400E",background:"#FEF3C7",borderRadius:6,padding:"6px 8px",marginBottom:10}}>
+          Área protegida — nome do cartão, dia de fechamento/vencimento e as 3 ações abaixo mexem em como o app inteiro calcula faturas. Reconstruir do zero em especial apaga e reescreve a aba inteira.
+        </div>
+
+        <div style={{fontSize:10,fontWeight:700,color:C.textSub,marginBottom:4}}>NOME DESTE CARTÃO</div>
+        {!editandoNome
+          ?<button onClick={()=>{setNomeEditado(data.config&&data.config["NOME_CARTAO_"+cartao]||"");setEditandoNome(true);}}
+            style={{background:"none",border:"1px solid "+C.border,borderRadius:6,color:C.textSub,fontSize:11,padding:"5px 10px",cursor:"pointer",fontFamily:"inherit",marginBottom:12}}>
+            ✏️ Renomear "{nomeCartao(cartao,data)}"
+          </button>
+          :<div style={{display:"flex",gap:6,alignItems:"center",marginBottom:12}}>
+            <input value={nomeEditado} onChange={e=>setNomeEditado(e.target.value)}
+              placeholder={"Cartão "+cartao+" (padrão)"}
+              style={{flex:1,padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit"}}/>
+            <button onClick={salvarNomeCartao} disabled={load}
+              style={{padding:"5px 10px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+              Salvar
             </button>
-            <button onClick={()=>setEditandoFatura(false)}
-              style={{padding:"5px 10px",borderRadius:6,background:"none",color:C.textMuted,fontSize:11,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
-              Cancelar
+            <button onClick={()=>setEditandoNome(false)}
+              style={{padding:"5px 8px",borderRadius:6,background:"none",color:C.textMuted,fontSize:11,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
+              X
             </button>
-          </div>
-        </div>}
+          </div>}
+
+        <div style={{fontSize:10,fontWeight:700,color:C.textSub,marginBottom:4}}>FECHAMENTO E VENCIMENTO (vale pros dois cartões)</div>
+        {!editandoFatura
+          ?<button onClick={()=>{const fv=configFatura(data);setFechamentoEditado(String(fv.fechamento));setVencimentoEditado(String(fv.vencimento));setEditandoFatura(true);}}
+            style={{background:"none",border:"1px solid "+C.border,borderRadius:6,color:C.textSub,fontSize:11,padding:"5px 10px",cursor:"pointer",fontFamily:"inherit",marginBottom:12}}>
+            📅 Editar dia de fechamento/vencimento
+          </button>
+          :<div style={{background:C.surface,borderRadius:8,padding:"10px 12px",marginBottom:12}}>
+            <div style={{fontSize:9,color:C.textMuted,marginBottom:6}}>Padrão sem configurar: fecha no último dia do mês, vence dia 7 do mês seguinte.</div>
+            <div style={{display:"flex",gap:10,marginBottom:8}}>
+              <div style={{flex:1}}>
+                <span style={{fontSize:9,color:C.textMuted}}>FECHA NO DIA</span>
+                <input type="number" min="1" max="31" value={fechamentoEditado} onChange={e=>setFechamentoEditado(e.target.value)}
+                  style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"center",fontFamily:"inherit",boxSizing:"border-box"}}/>
+              </div>
+              <div style={{flex:1}}>
+                <span style={{fontSize:9,color:C.textMuted}}>VENCE NO DIA</span>
+                <input type="number" min="1" max="31" value={vencimentoEditado} onChange={e=>setVencimentoEditado(e.target.value)}
+                  style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"center",fontFamily:"inherit",boxSizing:"border-box"}}/>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+              <button onClick={salvarConfigFatura} disabled={loadFatura}
+                style={{padding:"5px 12px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+                {loadFatura?"…":"Salvar"}
+              </button>
+              <button onClick={()=>setEditandoFatura(false)}
+                style={{padding:"5px 10px",borderRadius:6,background:"none",color:C.textMuted,fontSize:11,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
+                Cancelar
+              </button>
+            </div>
+          </div>}
+
+        <div style={{fontSize:10,fontWeight:700,color:C.textSub,marginBottom:4}}>AÇÕES DE FATURA</div>
+        <ConciliarCartao cartao={cartao} data={data} onResultado={setConciliacao}/>
+        <ResetCartao cartao={cartao} data={data} onUpdate={onUpdate}/>
+        <ImportarAssinaturas onUpdate={onUpdate}/>
+      </div>}
     </div>
 
     {/* Navegação entre faturas */}
@@ -5408,6 +5716,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         {corFaturaAtual===C.orange&&<span style={{fontSize:10,background:C.orangeLight,color:C.orange,padding:"2px 8px",borderRadius:10,fontWeight:700}}>PARCIAL</span>}
         {corFaturaAtual===C.red&&<span style={{fontSize:10,background:"#FEE2E2",color:C.red,padding:"2px 8px",borderRadius:10,fontWeight:700}}>VENCIDA</span>}
         {!corFaturaAtual&&(idxInicial+fatIdx)===idxAberta&&<span style={{fontSize:10,background:C.accentLight,color:C.accent,padding:"2px 8px",borderRadius:10,fontWeight:700}}>ABERTA</span>}
+        {faturaTravada(cartao,faturaAtual.venc,data)&&<span style={{fontSize:10,background:"#DBEAFE",color:"#1E40AF",padding:"2px 8px",borderRadius:10,fontWeight:700,marginLeft:4}}>🔒 TRAVADA</span>}
       </div>
       {navBtn(1,idxInicial+fatIdx>=faturas.length-1)}
     </div>
@@ -5484,11 +5793,6 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         fontFamily:"inherit",marginBottom:8}}>
       {showForm?"Cancelar":"+ Nova compra"}
     </button>
-
-    {/* Botão Reset — reconstruir do zero via upload de 2 CSVs */}
-    <ConciliarCartao cartao={cartao} data={data} onResultado={setConciliacao}/>
-    <ResetCartao cartao={cartao} data={data} onUpdate={onUpdate}/>
-    <ImportarAssinaturas onUpdate={onUpdate}/>
 
     {/* 🔴 Itens que apareceram no CSV mas ainda não têm linha na planilha */}
     {novosDoCSV.length>0&&<div style={{marginBottom:12}}>
@@ -5593,13 +5897,32 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
 // Confirmados e Previstos). Mesmo estilo do painel ⋮ do Fluxo, mas mais
 // simples: só descrição, valor (com toggle de sinal) e apagar.
 function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEData,eNeg,setENeg,eCategoria,setECategoria,eAlias,setEAlias,eApelido,setEApelido,eLoad,motivo,onSalvar,onApagar,onApagarTodos,onCancelar,onUsarCSV,previewCSV,data,abaCartao,onUpdate,onIrPara}){
+  const cartaoSigla=abaCartao==="CARTAO_PJ"?"PJ":"PF";
+  const vencItem=String(r[4]||"").slice(0,10);
+  const travada=data&&faturaTravada(cartaoSigla,vencItem,data);
+  const [loadDestrava,setLoadDestrava]=useState(false);
+  async function destravar(){
+    if(!confirm("Destravar a fatura "+cartaoSigla+" de vencimento "+fmtD(vencItem)+"? Ela foi marcada como conciliada por completo. Só destrave se precisar mesmo corrigir algo nela."))return;
+    setLoadDestrava(true);
+    try{ onUpdate(await api({action:"destravarFatura",cartao:cartaoSigla,vencimento:vencItem})); }
+    catch(e){ alert(e.message); }
+    setLoadDestrava(false);
+  }
   return <div style={{background:C.accentLight,padding:"10px 14px",
     borderBottom:"1px solid "+C.accent,borderLeft:"3px solid "+C.accent}}>
+    {travada&&<div style={{background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:8,padding:"8px 10px",marginBottom:10}}>
+      <div style={{fontSize:11,fontWeight:700,color:"#1E40AF",marginBottom:4}}>🔒 Fatura travada</div>
+      <div style={{fontSize:10,color:"#1E40AF",marginBottom:6}}>Conciliada por completo via OFX — valor, data e apagar ficam bloqueados nesse item. Categoria, alias, apelido e envelope continuam editáveis.</div>
+      <button onClick={destravar} disabled={loadDestrava}
+        style={{width:"100%",padding:"6px",borderRadius:6,background:"#1E40AF",color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+        {loadDestrava?"…":"🔓 Destravar esta fatura"}
+      </button>
+    </div>}
     {motivo&&motivo.tipo==="divergencia"&&<div style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"8px 10px",marginBottom:10,fontSize:11,color:"#92400E"}}>
       <div style={{fontWeight:700,marginBottom:4}}>🟠 Provável mesmo gasto, lançado diferente do CSV:</div>
       <div>CSV: {motivo.dado.csv.date} · {motivo.dado.csv.title} · R$ {motivo.dado.csv.amount}</div>
       {previewCSV&&<div style={{marginTop:6,fontStyle:"italic"}}>Vai virar: "{previewCSV}"{previewCSV.includes("(")?" (nota entre parênteses preservada)":""}</div>}
-      <button onClick={onUsarCSV} disabled={eLoad}
+      <button onClick={onUsarCSV} disabled={eLoad||travada}
         style={{marginTop:6,width:"100%",background:C.accent,color:"#fff",borderRadius:6,padding:"6px",fontSize:11,fontWeight:700,border:"none",cursor:"pointer"}}>
         ✏️ Usar dados do CSV (sobrescreve descrição e valor abaixo)
       </button>
@@ -5607,26 +5930,26 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
     <div style={{display:"flex",gap:8,marginBottom:8}}>
       <div style={{display:"flex",flexDirection:"column",gap:3,flex:2}}>
         <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>DESCRIÇÃO</span>
-        <input value={eDesc} onChange={e=>setEDesc(e.target.value)}
-          style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:13,fontFamily:"inherit",width:"100%"}}/>
+        <input value={eDesc} onChange={e=>setEDesc(e.target.value)} disabled={travada}
+          style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:13,fontFamily:"inherit",width:"100%",background:travada?C.borderLight:C.surface}}/>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:3,flex:1}}>
         <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>VALOR</span>
         <div style={{display:"flex",gap:4}}>
-          <button type="button" onClick={()=>setENeg(n=>!n)}
+          <button type="button" onClick={()=>setENeg(n=>!n)} disabled={travada}
             style={{width:30,flexShrink:0,borderRadius:6,border:"1px solid "+C.accent,
               background:eNeg?C.redLight:C.blueLight,color:eNeg?C.red:C.blue,fontWeight:800,fontSize:14,cursor:"pointer"}}>
             {eNeg?"−":"+"}
           </button>
-          <input type="text" inputMode="numeric" value={eValor} onChange={e=>setEValor(formatarMoedaInput(e.target.value))}
-            style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:13,textAlign:"right",width:"100%"}}/>
+          <input type="text" inputMode="numeric" value={eValor} onChange={e=>setEValor(formatarMoedaInput(e.target.value))} disabled={travada}
+            style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:13,textAlign:"right",width:"100%",background:travada?C.borderLight:C.surface}}/>
         </div>
       </div>
     </div>
     <div style={{display:"flex",flexDirection:"column",gap:3,marginBottom:8}}>
       <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>DATA (da compra/débito real)</span>
-      <input type="date" value={eData||""} onChange={e=>setEData(e.target.value)}
-        style={{padding:"6px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:13,fontFamily:"inherit",background:C.surface}}/>
+      <input type="date" value={eData||""} onChange={e=>setEData(e.target.value)} disabled={travada}
+        style={{padding:"6px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:13,fontFamily:"inherit",background:travada?C.borderLight:C.surface}}/>
     </div>
     <div style={{display:"flex",flexDirection:"column",gap:3,marginBottom:8}}>
       <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA</span>
@@ -5669,11 +5992,11 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
         Cancelar
       </button>
     </div>
-    <button onClick={onApagar} disabled={eLoad}
+    <button onClick={onApagar} disabled={eLoad||travada}
       style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:11,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
       🗑 Apagar este item
     </button>
-    {onApagarTodos&&<button onClick={onApagarTodos} disabled={eLoad}
+    {onApagarTodos&&<button onClick={onApagarTodos} disabled={eLoad||travada}
       style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:10,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
       🗑 Apagar TODOS os "{eDesc}" pendentes neste cartão
     </button>}
@@ -5690,20 +6013,6 @@ function Tesouraria(){
   const [data,setData]=useState(null);const [load,setLoad]=useState(true);const [err,setErr]=useState(null);
   const [tab,setTab]=useState("dashboard");const [chatInit,setChatInit]=useState(null);
   const [destaque,setDestaque]=useState(null); // {tab,row,cartao} -- pra onde "ir pro lancamento" na aba DCP aponta
-  const [servidorAberto,setServidorAberto]=useState(false);
-  const [servidorUrl,setServidorUrl]=useState(()=>{try{return localStorage.getItem("tesouraria_apps_url")||"";}catch(e){return "";}});
-  const usandoServidorProprio=!!servidorUrl.trim();
-  function salvarServidor(){
-    try{
-      if(servidorUrl.trim()) localStorage.setItem("tesouraria_apps_url",servidorUrl.trim());
-      else localStorage.removeItem("tesouraria_apps_url");
-    }catch(e){}
-    location.reload();
-  }
-  function usarPadraoServidor(){
-    try{ localStorage.removeItem("tesouraria_apps_url"); }catch(e){}
-    location.reload();
-  }
 
   // Navegacao com historico do navegador: TODA troca de aba passa por aqui
   // (nunca chamar setTab(...) direto em outro lugar) -- assim o botao
@@ -5765,7 +6074,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260720.1046 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260720.1357 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -5774,28 +6083,7 @@ function Tesouraria(){
             <button onClick={async()=>{await api({action:"reloadCode"});alert("Script recarregado!");}} style={{fontSize:9,color:C.textMuted,background:"none",border:"1px solid "+C.border,borderRadius:5,padding:"3px 7px",cursor:"pointer",fontFamily:"inherit"}}>
               ⟳ Script
             </button>
-            <button onClick={()=>setServidorAberto(a=>!a)} style={{fontSize:9,color:usandoServidorProprio?C.blue:C.textMuted,background:"none",border:"1px solid "+(usandoServidorProprio?C.blue:C.border),borderRadius:5,padding:"3px 7px",cursor:"pointer",fontFamily:"inherit"}}>
-              ⚙ Servidor
-            </button>
           </div>
-          {servidorAberto&&<div style={{marginTop:8,padding:"10px 12px",background:C.surface,border:"1px solid "+C.border,borderRadius:8,textAlign:"left",maxWidth:280}}>
-            <div style={{fontSize:10,color:C.textMuted,marginBottom:6}}>
-              {usandoServidorProprio
-                ? "Usando um servidor próprio (não o padrão)."
-                : "Usando o servidor padrão. Se esta cópia é sua e você já implantou o próprio App da Web, cole a URL abaixo."}
-            </div>
-            <input value={servidorUrl} onChange={e=>setServidorUrl(e.target.value)}
-              placeholder="https://script.google.com/macros/s/.../exec"
-              style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:11,fontFamily:"inherit",boxSizing:"border-box",marginBottom:6}}/>
-            <div style={{display:"flex",gap:6}}>
-              <button onClick={salvarServidor} style={{flex:1,padding:"6px",borderRadius:6,background:C.blue,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-                Salvar e recarregar
-              </button>
-              {usandoServidorProprio&&<button onClick={usarPadraoServidor} style={{padding:"6px 10px",borderRadius:6,background:"transparent",color:C.textMuted,fontSize:11,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
-                Usar padrão
-              </button>}
-            </div>
-          </div>}
         </div>
       </div>
 
@@ -5835,7 +6123,9 @@ function Tesouraria(){
         tab==="receitas"    ? <FontesReceita data={data} onUpdate={setData}/> :
         tab==="envelopes"   ? <EnvelopesCustom data={data} onUpdate={setData}/> :
         tab==="conciliacao" ? <ConciliacaoHub data={data} onUpdate={setData} onIrPara={irPara}/> :
-        tab==="perfil"      ? <PerfilApelidos data={data} onUpdate={setData}/> : null
+        tab==="perfil"      ? <PerfilApelidos data={data} onUpdate={setData}/> :
+        tab==="config"      ? <ConfiguracoesGerais data={data} onUpdate={setData} onIrPara={irPara}/> :
+        tab==="cofres"      ? <Cofres data={data} onUpdate={setData}/> : null
       )}
     </div>
   </div>;
