@@ -73,6 +73,33 @@ function nomeCartao(sigla,data){
   const custom=data&&data.config&&data.config["NOME_CARTAO_"+sigla];
   return custom&&custom.trim()?custom.trim():"Cartão "+sigla;
 }
+// [NOVO 20/07] Fechamento e vencimento de fatura configuraveis, desacoplados
+// um do outro -- mesmo raciocinio do backend (_configFatura/_calcVencimentoFatura
+// em Tesouraria_v3.txt). Padrao sem config: fechamento=31 (ultimo dia real do
+// mes, clampado), vencimento=7 -- reproduz o comportamento fixo de antes.
+function configFatura(data){
+  const cfg=(data&&data.config)||{};
+  const f=parseInt(cfg.CARTAO_DIA_FECHAMENTO);
+  const v=parseInt(cfg.CARTAO_DIA_VENCIMENTO);
+  return { fechamento:(f>=1&&f<=31)?f:31, vencimento:(v>=1&&v<=31)?v:7 };
+}
+// A que mes civil de FECHAMENTO uma data (string YYYY-MM-DD) pertence.
+// Retorna {ano, mes} com mes 1-indexed (jeito mais facil de bater com o
+// zero-padding de string de data sem confundir com Date.getMonth() 0-indexed).
+function mesFechamentoDaData(dataISO,fechamento){
+  const [y,m,d]=dataISO.split("-").map(Number);
+  let ano=y,mes=m;
+  if(d>fechamento){mes++;if(mes>12){mes=1;ano++;}}
+  return {ano,mes};
+}
+// Data de vencimento (string YYYY-MM-DD) pra um mes civil de FECHAMENTO dado.
+function calcVencimentoFaturaISO(anoFechamento,mesFechamento,fechamento,vencimento){
+  let anoVenc=anoFechamento,mesVenc=mesFechamento;
+  if(vencimento<fechamento){mesVenc++;if(mesVenc>12){mesVenc=1;anoVenc++;}}
+  const ultimoDia=new Date(anoVenc,mesVenc,0).getDate();
+  const diaVenc=Math.min(vencimento,ultimoDia);
+  return anoVenc+"-"+String(mesVenc).padStart(2,"0")+"-"+String(diaVenc).padStart(2,"0");
+}
 // Mesma ideia, mas pra quando o texto exibido e o TIPO cru de um item
 // (ex: tag "CARTAO PJ" numa linha do Fluxo/Historico) -- troca pelo nome
 // fantasia se for um dos dois cartoes, senao mostra o tipo como sempre.
@@ -2505,14 +2532,13 @@ function ConciliarExtratoTab({data,onUpdate}){
   function chaveNovo(n){ return n.identificador || (n.data+"|"+n.valor+"|"+n.descricao); }
 
   // Regra confirmada pelo Marcus (13/07): quem escolhe a fatura que um
-  // pagamento abate e a propria DATA do pagamento no extrato -- pagou em
-  // qualquer dia do mes M, o alvo e a fatura que vence dia 07 de M+1 (mesma
-  // regra ja usada em todo o app pra "fatura aberta"). Sem escolha manual.
+  // pagamento abate e a propria DATA do pagamento no extrato -- mesma regra
+  // de fechamento/vencimento usada em toda a tela de Cartões (agora
+  // configurável, ver configFatura/mesFechamentoDaData/calcVencimentoFaturaISO).
   function vencimentoFaturaDoMes(dataISO){
-    const [y,m]=dataISO.split("-").map(Number);
-    let ano=y, mes=m+1;
-    if(mes>12){mes=1;ano++;}
-    return `${ano}-${String(mes).padStart(2,"0")}-07`;
+    const fv=configFatura(data);
+    const mf=mesFechamentoDaData(dataISO,fv.fechamento);
+    return calcVencimentoFaturaISO(mf.ano,mf.mes,fv.fechamento,fv.vencimento);
   }
   // Acha a linha real do FLUXO da fatura (aberta OU fechada, tanto faz --
   // pagarFaturaAvulso nao se importa com o status) pro cartao e vencimento
@@ -3509,7 +3535,7 @@ PROJEÇÃO POR CICLO:
 ${resumoCiclos}
 
 DCP = Despesas Cotidianas Provisionadas (alimentação, farmácia, gasolina, compras do dia). Teto = ${dcpR.numSemanas} semanas x ${fmt(dcpR.base)} = ${fmt(dcpTeto)}/ciclo, ajustado semana a semana por sobra/estouro. Compra parcelada desconta o valor TOTAL de uma vez, na semana da compra original — nunca por parcela.
-Cartão NÃO afeta saldo imediato — só na fatura (dia 7 de cada mês).
+Cartão NÃO afeta saldo imediato — só na fatura (dia ${cfg.CARTAO_DIA_VENCIMENTO||7} de cada mês).
 Executado = apenas o marcado manualmente. Nunca automático por data.
 
 RECORRÊNCIAS ATIVAS (dia_venc, valor, parcela atual/total, tolerância = quantos dias pode atrasar sem risco — 0 ou vazio = não pode atrasar; use isso pra responder sobre o que pode/não pode postergar, e trate cada parcela de empréstimo individualmente, nunca agrupada):
@@ -3548,8 +3574,8 @@ Para FATURA de cartão (CSV Nubank):
 - "Pagamento recebido", "Pagamento efetuado": IGNORAR — é pagamento da fatura, não compra
 - Estorno (valor positivo que não é pagamento): RECEITA
 - CONCILIAÇÃO: o CSV tem a data da COMPRA; o vencimento é ~30 dias depois (ex: compra em junho → vence em julho)
-- PASSO 1: identifique o vencimento desta fatura (geralmente dia 7 do mês seguinte às compras)
-- PASSO 2: nos dados do CARTÃO_PF/PJ acima, localize o bloco "Venc YYYY-MM-07" correspondente
+- PASSO 1: identifique o vencimento desta fatura (dia ${cfg.CARTAO_DIA_VENCIMENTO||7} do mês seguinte ao fechamento, salvo configuração diferente)
+- PASSO 2: nos dados do CARTÃO_PF/PJ acima, localize o bloco de vencimento correspondente (dia ${cfg.CARTAO_DIA_VENCIMENTO||7})
 - PASSO 3: compare CSV com esse bloco — itens com mesma descrição (aproximada) e valor = JÁ LANÇADO
 - PASSO 4: lance só o que NÃO está no bloco
 - Se a pessoa pedir para listar o que já está na planilha: mostre o bloco do vencimento correspondente
@@ -4896,6 +4922,16 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   const [showForm,setShowForm]=useState(false);
   const [editandoNome,setEditandoNome]=useState(false);
   const [nomeEditado,setNomeEditado]=useState("");
+  const [editandoFatura,setEditandoFatura]=useState(false);
+  const [fechamentoEditado,setFechamentoEditado]=useState("");
+  const [vencimentoEditado,setVencimentoEditado]=useState("");
+  const [loadFatura,setLoadFatura]=useState(false);
+  async function salvarConfigFatura(){
+    setLoadFatura(true);
+    try{ onUpdate(await api({action:"editarConfigFatura",fechamento:fechamentoEditado,vencimento:vencimentoEditado})); setEditandoFatura(false); }
+    catch(e){ alert(e.message); }
+    setLoadFatura(false);
+  }
   async function salvarNomeCartao(){
     setLoad(true);
     try{ onUpdate(await api({action:"editarNomeCartao",cartao,nome:nomeEditado})); setEditandoNome(false); }
@@ -5041,18 +5077,18 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   },[rows]);
 
   const hj=hoje();
-  // Fatura ABERTA = a que recebe as compras de hoje. Fechamento é sempre o
-  // mês civil inteiro (dia 1 ao último dia do mês corrente), vencimento
-  // sempre dia 7 do mês SEGUINTE -- fixo, não depende de comparar vencimento
-  // com hoje (isso gerava selo errado: toda fatura futura passava no teste
-  // "venc>=hoje" e ficava marcada como se fosse a aberta). A aberta de hoje
-  // é sempre dia 07 do (mês atual + 1), nao importa em que dia do mês atual
-  // estamos.
+  // Fatura ABERTA = a que recebe as compras de hoje, segundo o fechamento/
+  // vencimento configurados (CARTAO_DIA_FECHAMENTO/CARTAO_DIA_VENCIMENTO em
+  // CONFIG — ver configFatura). Padrao sem nada configurado reproduz o
+  // comportamento fixo de antes (mês civil inteiro, vence dia 7 do mês
+  // seguinte). Nunca depende de comparar vencimento com hoje (isso gerava
+  // selo errado: toda fatura futura passava no teste "venc>=hoje" e ficava
+  // marcada como se fosse a aberta).
   const vencAberta=useMemo(()=>{
-    const [y,m]=hj.split("-").map(Number);
-    const ny=m===12?y+1:y, nm=m===12?1:m+1;
-    return ny+"-"+String(nm).padStart(2,"0")+"-07";
-  },[hj]);
+    const fv=configFatura(data);
+    const mf=mesFechamentoDaData(hj,fv.fechamento);
+    return calcVencimentoFaturaISO(mf.ano,mf.mes,fv.fechamento,fv.vencimento);
+  },[hj,data.config]);
 
   const idxAberta=useMemo(()=>{
     const iExato=faturas.findIndex(f=>f.venc===vencAberta);
@@ -5133,10 +5169,11 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   // que baixa()/pagarFaturaAvulso ja gravam -- nenhum dado novo precisou
   // ser criado.
   const vencAnterior=useMemo(()=>{
-    const [y,m]=faturaAtual.venc.split("-").map(Number);
+    const [y,m,d]=faturaAtual.venc.split("-").map(Number);
     let ano=y,mes=m-1;
     if(mes<1){mes=12;ano--;}
-    return `${ano}-${String(mes).padStart(2,"0")}-07`;
+    const ultimoDia=new Date(ano,mes,0).getDate();
+    return `${ano}-${String(mes).padStart(2,"0")}-${String(Math.min(d,ultimoDia)).padStart(2,"0")}`;
   },[faturaAtual.venc]);
   const pagamentosFaturaAnterior=useMemo(()=>(data.fluxo||[]).filter(r=>{
     if(_tipoNorm(r.tipo)!==_tipoNorm(tipoAlvo)) return false;
@@ -5222,6 +5259,38 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
             style={{padding:"5px 8px",borderRadius:6,background:"none",color:C.textMuted,fontSize:11,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
             X
           </button>
+        </div>}
+    </div>
+    <div style={{textAlign:"right",marginBottom:12}}>
+      {!editandoFatura
+        ?<button onClick={()=>{const fv=configFatura(data);setFechamentoEditado(String(fv.fechamento));setVencimentoEditado(String(fv.vencimento));setEditandoFatura(true);}}
+          style={{background:"none",border:"none",color:C.textMuted,fontSize:10,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>
+          📅 Dia de fechamento/vencimento da fatura
+        </button>
+        :<div style={{background:C.borderLight,borderRadius:8,padding:"10px 12px",textAlign:"left"}}>
+          <div style={{fontSize:9,color:C.textMuted,marginBottom:6}}>Vale pros dois cartões (PF e PJ) — normalmente vêm do mesmo banco. Padrão sem configurar: fecha no último dia do mês, vence dia 7 do mês seguinte.</div>
+          <div style={{display:"flex",gap:10,marginBottom:8}}>
+            <div style={{flex:1}}>
+              <span style={{fontSize:9,color:C.textMuted}}>FECHA NO DIA</span>
+              <input type="number" min="1" max="31" value={fechamentoEditado} onChange={e=>setFechamentoEditado(e.target.value)}
+                style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"center",fontFamily:"inherit",boxSizing:"border-box"}}/>
+            </div>
+            <div style={{flex:1}}>
+              <span style={{fontSize:9,color:C.textMuted}}>VENCE NO DIA</span>
+              <input type="number" min="1" max="31" value={vencimentoEditado} onChange={e=>setVencimentoEditado(e.target.value)}
+                style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"center",fontFamily:"inherit",boxSizing:"border-box"}}/>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+            <button onClick={salvarConfigFatura} disabled={loadFatura}
+              style={{padding:"5px 12px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+              {loadFatura?"…":"Salvar"}
+            </button>
+            <button onClick={()=>setEditandoFatura(false)}
+              style={{padding:"5px 10px",borderRadius:6,background:"none",color:C.textMuted,fontSize:11,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
+              Cancelar
+            </button>
+          </div>
         </div>}
     </div>
 
@@ -5581,7 +5650,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260720.0010 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260720.0042 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
