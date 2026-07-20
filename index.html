@@ -343,8 +343,18 @@ function _obsEnvelopeId(obsRaw){
 function calcularEnvelopesCustom(data){
   const cadastro=parseEnvelopesCustom(data);
   const hj=hoje();
+  // [NOVO 20/07] Etapa 2 de Cofres -- se o envelope tem cofreId vinculado, o
+  // teto deixa de ser o numero fixo gravado e passa a ser SEMPRE o saldo ao
+  // vivo do Cofre (calculado, nunca gravado -- mesmo espirito de
+  // "encerrado" nos envelopes renovaveis). Resto da funcao nao muda nada:
+  // gasto/saldo continuam batendo em cima de e.teto normalmente.
+  const cofresPorId={};
+  (data.cofres||[]).forEach(c=>{cofresPorId[c.id]=c;});
   const porEnvelope={};
-  cadastro.forEach(e=>{ porEnvelope[e.id]={...e,itens:[]}; });
+  cadastro.forEach(e=>{
+    const teto=(e.cofreId&&cofresPorId[e.cofreId])?cofresPorId[e.cofreId].saldo:e.teto;
+    porEnvelope[e.id]={...e,teto,itens:[]};
+  });
 
   (data.fluxo||[]).forEach(r=>{
     const envId=_obsEnvelopeId(r.obs);
@@ -2325,11 +2335,21 @@ function EnvelopesCustom({data,onUpdate}){
   const [expandido,setExpandido]=useState(null);
   const [load,setLoad]=useState(false);
 
-  function abrirNovo(){ setForm({id:"",nome:"",teto:"",dataIni:hoje(),dataFim:hoje(),periodicidade:"",ancoraDia:1,ativo:"S"}); }
+  function abrirNovo(){ setForm({id:"",nome:"",teto:"",dataIni:hoje(),dataFim:hoje(),periodicidade:"",ancoraDia:1,ativo:"S",cofreId:""}); }
   function abrirEdicao(env){
     setForm({id:env.id,nome:env.nome,teto:formatarValorInicial(env.teto),dataIni:env.dataIni,
       dataFim:env.dataFim||hoje(),periodicidade:env.periodicidade||"",
-      ancoraDia:env.ancoraDia!=null?env.ancoraDia:1,ativo:env.ativo||"S"});
+      ancoraDia:env.ancoraDia!=null?env.ancoraDia:1,ativo:env.ativo||"S",cofreId:env.cofreId||""});
+  }
+
+  async function vincularCofre(novoCofreId){
+    setLoad(true);
+    try{
+      const r=await api({action:"vincularCofreEnvelope",envelopeId:form.id,cofreId:novoCofreId});
+      onUpdate(r);
+      setForm(f=>({...f,cofreId:novoCofreId}));
+    }catch(e){alert(e.message);}
+    setLoad(false);
   }
 
   async function salvar(){
@@ -2375,7 +2395,28 @@ function EnvelopesCustom({data,onUpdate}){
       <input value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} placeholder="Nome (ex: Festa de aniversário da filha)"
         style={{width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",marginBottom:8}}/>
       <input type="text" inputMode="numeric" value={form.teto} onChange={e=>setForm({...form,teto:formatarMoedaInput(e.target.value)})} placeholder="Teto (R$)"
-        style={{width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",marginBottom:8}}/>
+        disabled={!!form.cofreId}
+        style={{width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",marginBottom:8,background:form.cofreId?C.borderLight:C.surface}}/>
+
+      {form.id&&<div style={{background:C.surface,borderRadius:8,padding:"8px 10px",marginBottom:8}}>
+        <div style={{fontSize:9,color:C.textMuted,marginBottom:4}}>VINCULAR A UM COFRE (teto passa a ser o saldo dele, sempre)</div>
+        {form.cofreId
+          ?<div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:12,color:C.teal,fontWeight:700}}>
+              🏦 {(data.cofres||[]).find(c=>c.id===form.cofreId)?.nome||"(cofre removido)"}
+            </span>
+            <button onClick={()=>vincularCofre("")} disabled={load}
+              style={{fontSize:11,color:C.textMuted,background:"none",border:"1px solid "+C.border,borderRadius:6,padding:"4px 8px",cursor:"pointer",fontFamily:"inherit"}}>
+              Desvincular
+            </button>
+          </div>
+          :<select onChange={e=>{if(e.target.value)vincularCofre(e.target.value);}} value=""
+            style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",background:C.surface}} disabled={load}>
+            <option value="">Nenhum (teto fixo, como hoje)</option>
+            {(data.cofres||[]).map(c=><option key={c.id} value={c.id}>{c.nome} · {fmt(c.saldo)}</option>)}
+          </select>}
+        {!(data.cofres||[]).length&&!form.cofreId&&<div style={{fontSize:10,color:C.textMuted,marginTop:4,fontStyle:"italic"}}>Nenhum cofre criado ainda (Ferramentas → Cofres).</div>}
+      </div>}
 
       <div style={{fontSize:9,color:C.textMuted,marginBottom:3}}>TIPO</div>
       <select value={form.periodicidade} onChange={e=>setForm({...form,periodicidade:e.target.value})}
@@ -2541,6 +2582,35 @@ function CardCofre({cofre,onUpdate}){
   const [valor,setValor]=useState("");
   const [load,setLoad]=useState(false);
   const [loadApagar,setLoadApagar]=useState(false);
+  const [loadRendimento,setLoadRendimento]=useState(false);
+  const [resultadoRendimento,setResultadoRendimento]=useState(null);
+  const [ajustando,setAjustando]=useState(false);
+  const [saldoReal,setSaldoReal]=useState("");
+  const [loadAjuste,setLoadAjuste]=useState(false);
+
+  async function ajustar(){
+    const v=numBR(saldoReal);
+    if(saldoReal===""||isNaN(v)){ alert("Informe o saldo real que você vê no banco."); return; }
+    setLoadAjuste(true);
+    try{
+      const r=await api({action:"ajustarSaldoCofre",cofreId:cofre.id,saldoReal:v});
+      onUpdate&&onUpdate(r);
+      setAjustando(false);setSaldoReal("");
+      const res=r._resultadoAjusteCofre;
+      if(res) alert((res.diferenca>=0?"Corrigido: +":"Corrigido: ")+fmt(res.diferenca)+" em relação ao que o app tinha calculado.");
+    }catch(e){alert(e.message);}
+    setLoadAjuste(false);
+  }
+
+  async function atualizarRendimento(){
+    setLoadRendimento(true);
+    try{
+      const r=await api({action:"atualizarRendimentoCofre",cofreId:cofre.id});
+      setResultadoRendimento(r._resultadoRendimentoCofre||null);
+      onUpdate&&onUpdate(r);
+    }catch(e){alert(e.message);}
+    setLoadRendimento(false);
+  }
 
   async function lancar(){
     const v=numBR(valor);
@@ -2565,10 +2635,41 @@ function CardCofre({cofre,onUpdate}){
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
       <div>
         <div style={{fontSize:13,fontWeight:700,color:C.text}}>🏦 {cofre.nome}</div>
-        <div style={{fontSize:10,color:C.textMuted}}>correção {cofre.percentualCdi}% CDI (ainda não ativa)</div>
+        <div style={{fontSize:10,color:C.textMuted}}>correção {cofre.percentualCdi}% CDI · rendimento acumulado: {fmt(cofre.rendimentoAcumulado||0)}</div>
       </div>
       <div style={{fontSize:16,fontWeight:800,color:C.teal}}>{fmt(cofre.saldo)}</div>
     </div>
+    <button onClick={atualizarRendimento} disabled={loadRendimento}
+      style={{width:"100%",marginTop:6,background:"none",border:"1px solid "+C.teal,color:C.teal,borderRadius:6,padding:"5px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+      {loadRendimento?"Buscando CDI no Banco Central…":"🔄 Atualizar rendimento agora"}
+    </button>
+    {resultadoRendimento&&<div style={{fontSize:10,color:resultadoRendimento.atualizado?C.textSub:C.textMuted,marginTop:4,fontStyle:resultadoRendimento.atualizado?"normal":"italic"}}>
+      {resultadoRendimento.atualizado
+        ?`${resultadoRendimento.diasUteis} dia(s) útil(eis): +${fmt(resultadoRendimento.jurosAcumulado)} de rendimento`
+        :resultadoRendimento.motivo}
+    </div>}
+    <div style={{fontSize:9,color:C.textMuted,marginTop:4,fontStyle:"italic"}}>Também roda sozinho, automaticamente, na virada de ciclo (dia 16).</div>
+
+    {!ajustando
+      ?<button onClick={()=>{setSaldoReal(formatarValorInicial(cofre.saldo));setAjustando(true);}}
+        style={{width:"100%",marginTop:6,background:"none",border:"none",color:C.textMuted,fontSize:10,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>
+        ✏️ Corrigir com o saldo real do banco
+      </button>
+      :<div style={{background:C.surface,borderRadius:8,padding:10,marginTop:6}}>
+        <div style={{fontSize:9,color:C.textMuted,marginBottom:6}}>Estimativa por CDI pode divergir do real (não tem extrato de caixinha exportável, e não desconta IR). Cola aqui o saldo que você vê de verdade no banco — a correção automática continua rodando a partir desse valor.</div>
+        <div style={{display:"flex",gap:6}}>
+          <input type="text" inputMode="numeric" value={saldoReal} onChange={e=>setSaldoReal(formatarMoedaInput(e.target.value))}
+            style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
+          <button onClick={ajustar} disabled={loadAjuste}
+            style={{background:C.teal,color:"#fff",border:"none",borderRadius:6,padding:"0 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+            {loadAjuste?"…":"Corrigir"}
+          </button>
+          <button onClick={()=>setAjustando(false)}
+            style={{background:"none",color:C.textMuted,border:"1px solid "+C.border,borderRadius:6,padding:"0 10px",fontSize:12,cursor:"pointer"}}>
+            X
+          </button>
+        </div>
+      </div>}
     <div style={{display:"flex",gap:6,marginTop:8}}>
       <button onClick={()=>setTipoAcao("aporte")}
         style={{flex:1,padding:"6px",borderRadius:6,border:"1px solid "+(tipoAcao==="aporte"?C.teal:C.border),
@@ -2635,7 +2736,7 @@ function Cofres({data,onUpdate}){
           style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
       </div>
       <div style={{marginBottom:10}}>
-        <label style={{fontSize:10,fontWeight:700,color:C.textSub,textTransform:"uppercase"}}>% do CDI (correção — ainda não ativa)</label>
+        <label style={{fontSize:10,fontWeight:700,color:C.textSub,textTransform:"uppercase"}}>% do CDI (correção automática na virada de ciclo)</label>
         <input type="number" step="1" value={percCdi} onChange={e=>setPercCdi(e.target.value)}
           style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
       </div>
@@ -3034,6 +3135,29 @@ function ConciliarExtratoTab({data,onUpdate}){
         </div>)}
       </div>}
 
+      {(()=>{
+        const comAviso=(resultado.confirmados||[]).filter(c=>c.avisoClassificacao)
+          .map(c=>({...c,item:(data.fluxo||[]).find(f=>f.row===c.row)})).filter(c=>c.item);
+        return comAviso.length>0&&<div style={{marginBottom:20}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#B45309",marginBottom:6,letterSpacing:".05em"}}>
+            ⚠️ POSSÍVEL CLASSIFICAÇÃO ERRADA ({comAviso.length})
+          </div>
+          {comAviso.map(c=><div key={c.row} style={{background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:8,padding:"10px 12px",marginBottom:6}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+              <span style={{fontSize:13,fontWeight:600,color:C.text}}>{c.item.descricao}</span>
+              <span style={{fontSize:13,fontWeight:700,color:C.red}}>{fmt(c.item.valor)}</span>
+            </div>
+            <div style={{fontSize:11,color:"#92400E",marginBottom:8}}>
+              Está como <b>{CAT_LABEL[c.avisoClassificacao.categoriaAtual]||c.avisoClassificacao.categoriaAtual}</b>, mas o texto bate com uma regra que espera <b>{CAT_LABEL[c.avisoClassificacao.categoriaEsperada]||c.avisoClassificacao.categoriaEsperada}</b>.
+            </div>
+            <button onClick={async()=>{setLoad(true);try{onUpdate(await api({action:"editar",row:c.row,campo:"CATEGORIA",valor:c.avisoClassificacao.categoriaEsperada}));}catch(e){alert(e.message);}setLoad(false);}} disabled={load}
+              style={{width:"100%",padding:"7px",borderRadius:6,background:"#B45309",color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+              Corrigir para {CAT_LABEL[c.avisoClassificacao.categoriaEsperada]||c.avisoClassificacao.categoriaEsperada}
+            </button>
+          </div>)}
+        </div>;
+      })()}
+
       {resultado.novos.length>0&&<div style={{marginBottom:20}}>
         <div style={{fontSize:11,fontWeight:700,color:"#C2410C",marginBottom:6,letterSpacing:".05em"}}>
           🔴 NOVOS NO EXTRATO ({resultado.novos.length})
@@ -3231,6 +3355,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
   const [apelidoInput,setApelidoInput]=useState("");
   const [loadApelido,setLoadApelido]=useState(false);
   const [busca,setBusca]=useState("");
+  const [mostrarCofres,setMostrarCofres]=useState(false);
   const hj=hoje();
 
   // Envelopes customizados: nome pra cada lancamento classificado + o
@@ -3427,8 +3552,34 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
     {gruposExibidos.map(({gdt,itensExibir,cartaoExibir,spIni},gi)=>{const at=gdt<hj,sp=spIni,ehPrimeiro=!busca.trim()&&gi===primeiroIdxComSaldo;return <div key={gdt}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 14px 4px",background:"#F9FAFB",borderBottom:"1px solid "+C.border,borderLeft:at?"3px solid "+C.red:"none"}}>
         <span style={{fontSize:12,fontWeight:700,color:at?C.red:C.accent}}>{at?"⚠ ATRASADO · ":""}{fmtD(gdt)} · {diaSemana(gdt)}</span>
-        {sp!=null&&isFinite(sp)&&<span style={sp<0?{fontSize:ehPrimeiro?18:15,fontWeight:800,fontStyle:ehPrimeiro?"italic":"normal",color:C.red,background:C.redLight,padding:"2px 7px",borderRadius:5}:{fontSize:ehPrimeiro?17:14,fontWeight:ehPrimeiro?800:700,fontStyle:ehPrimeiro?"italic":"normal",color:C.blue}}>{"→ "+fmt(sp)}</span>}
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          {ehPrimeiro&&(data.cofres||[]).length>0&&<button onClick={()=>setMostrarCofres(v=>!v)}
+            style={{background:"none",border:"none",fontSize:14,cursor:"pointer",padding:2,lineHeight:1}} title="Ver Cofres">
+            🏦
+          </button>}
+          {sp!=null&&isFinite(sp)&&<span style={sp<0?{fontSize:ehPrimeiro?18:15,fontWeight:800,fontStyle:ehPrimeiro?"italic":"normal",color:C.red,background:C.redLight,padding:"2px 7px",borderRadius:5}:{fontSize:ehPrimeiro?17:14,fontWeight:ehPrimeiro?800:700,fontStyle:ehPrimeiro?"italic":"normal",color:C.blue}}>{"→ "+fmt(sp)}</span>}
+        </div>
       </div>
+      {ehPrimeiro&&mostrarCofres&&(data.cofres||[]).length>0&&(()=>{
+        const totalCofres=(data.cofres||[]).reduce((s,c)=>s+c.saldo,0);
+        return <div style={{background:C.tealLight,padding:"10px 14px",borderBottom:"1px solid #99F6E4"}}>
+          <div style={{fontSize:10,fontWeight:800,color:C.teal,letterSpacing:".05em",marginBottom:6}}>🏦 SEUS COFRES</div>
+          {(data.cofres||[]).map(c=><div key={c.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,color:C.text,padding:"2px 0"}}>
+            <span>{c.nome}</span><span style={{fontWeight:700}}>{fmt(c.saldo)}</span>
+          </div>)}
+          <div style={{borderTop:"1px solid #99F6E4",marginTop:6,paddingTop:6}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:C.textMuted}}>
+              <span>Saldo na conta (já mostrado acima)</span><span>{fmt(sp)}</span>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:C.textMuted}}>
+              <span>Total guardado nos Cofres</span><span>{fmt(totalCofres)}</span>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:800,color:C.teal,marginTop:4}}>
+              <span>Patrimônio total</span><span>{fmt(sp+totalCofres)}</span>
+            </div>
+          </div>
+        </div>;
+      })()}
       {itensExibir.map(item=>{const isOpen=conf===item.row;
         const ehFatura=item.tipo==="CARTAO PF"||item.tipo==="CARTAO PJ";
         const {cor:corItem,selo,bg:bgItem,descCor}=corDoItem(item,hj);
@@ -3582,6 +3733,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
   const [neg,setNeg]=useState(true);
   const [dt,setDt]=useState("");
   const [categoria,setCategoria]=useState("");
+  const [vincularRegraCategoria,setVincularRegraCategoria]=useState(false);
   const [load,setLoad]=useState(false);
   const [busca,setBusca]=useState("");
   const [limite,setLimite]=useState(30);
@@ -3667,6 +3819,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
     setConf(item.row); setDesc(item.descricao);
     setVal(formatarValorInicial(item.valor)); setNeg(item.valor<0);
     setDt(item.data); setCategoria(item.categoria||"");
+    setVincularRegraCategoria(false);
   }
 
   async function salvar(item){
@@ -3687,6 +3840,12 @@ function Historico({data,onUpdate,destaque,onIrPara}){
         // lancamento reclassificado de DCP pra outra categoria continuava
         // contando no orcamento semanal por baixo (TIPO antigo nunca mudava).
         r=await api({action:"editar",row:item.row,campo:"TIPO",valor:tipoDaCategoria(categoria)});
+        // [NOVO 20/07] Vincula esse texto a essa categoria como regra
+        // permanente, se marcado -- Conciliação de Extrato passa a avisar
+        // se um item futuro com o mesmo texto vier classificado diferente.
+        if(vincularRegraCategoria){
+          r=await api({action:"vincularCategoriaRegra",descricao:item.descricao,categoria:categoria});
+        }
       }
       if(r) onUpdate(r);
       setConf(null);
@@ -3749,6 +3908,10 @@ function Historico({data,onUpdate,destaque,onIrPara}){
                 <option value="">Escolha uma categoria...</option>
                 {CATEGORIAS.map(c=><option key={c} value={c}>{CAT_LABEL[c]||c}</option>)}
               </select>
+              {categoria&&categoria!==(item.categoria||"")&&<label style={{display:"flex",alignItems:"center",gap:5,marginTop:6,fontSize:10,color:C.textMuted,cursor:"pointer"}}>
+                <input type="checkbox" checked={vincularRegraCategoria} onChange={e=>setVincularRegraCategoria(e.target.checked)}/>
+                Vincular esse texto a essa categoria também (avisa se aparecer classificado diferente de novo)
+              </label>}
             </div>}
             {item.categoria!=="DCP_PROVISAO"&&String(item.obs||"").indexOf("FONTE_RECEITA")<0&&
               <SeletorEnvelopeItem aba="FLUXO" row={item.row} obsAtual={item.obs} data={data} onUpdate={onUpdate}/>}
@@ -4736,6 +4899,7 @@ function BotaoLancar({data,onUpdate}){
   const [parc,setParc]=useState("1");
   const [vencAlvo,setVencAlvo]=useState("");
   const [envelopeId,setEnvelopeId]=useState("");
+  const [apelido,setApelido]=useState("");
   // Sinal explicito, independente da categoria -- ANTES o valor so saia
   // positivo se categoria===RECEITA, senao era sempre forcado negativo (bug
   // real: nao dava pra lancar credito/aporte/estorno em nenhuma categoria
@@ -4858,11 +5022,11 @@ function BotaoLancar({data,onUpdate}){
       const descFinal=desc.trim()||cat;
       if(dest==="conta"){
         const v=(vNeg?-1:1)*Math.abs(numBR(valor));
-        r=await api({action:"lancar",data:data_,descricao:descFinal.toUpperCase(),valor:v,tipo:tipoDaCategoria(cat),categoria:cat,forma:"CONTA",status:data_<=hoje()?"EXECUTADO":"PROGRAMADO",obs:"",envelopeId});
+        r=await api({action:"lancar",data:data_,descricao:descFinal.toUpperCase(),valor:v,tipo:tipoDaCategoria(cat),categoria:cat,forma:"CONTA",status:data_<=hoje()?"EXECUTADO":"PROGRAMADO",obs:"",envelopeId,apelido});
       } else {
         const cartao=dest==="pj"?"PJ":"PF";
         const v=(vNeg?-1:1)*Math.abs(numBR(valor));
-        r=await api({action:"lancarCartao",cartao,descricao:descFinal.toUpperCase(),valor:v,parcelas:parseInt(parc)||1,categoria:cat,dcp:cat==="DCP"?"S":"N",data_compra:data_,envelopeId});
+        r=await api({action:"lancarCartao",cartao,descricao:descFinal.toUpperCase(),valor:v,parcelas:parseInt(parc)||1,categoria:cat,dcp:cat==="DCP"?"S":"N",data_compra:data_,envelopeId,apelido});
       }
       onUpdate(r);setOpen(false);setDesc("");setValor("");setParc("1");setData_(hoje());setEnvelopeId("");setVNeg(true);
     }catch(e){alert(e.message);}
@@ -4966,6 +5130,7 @@ function BotaoLancar({data,onUpdate}){
         const v=e.target.value.toUpperCase();
         setDesc(v);
         if(!envelopeId){const sug=envelopeRegraSugerido(v,data);if(sug)setEnvelopeId(sug);}
+        if(!apelido){const cands=apelidosCandidatos(v,data);if(cands.length===1)setApelido(cands[0].apelido);}
       }} placeholder="Descrição (opcional)"
       style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",marginBottom:10,textTransform:"uppercase"}}/>}
     <div style={{display:"flex",gap:8,marginBottom:8}}>
@@ -4990,6 +5155,20 @@ function BotaoLancar({data,onUpdate}){
       <option value="">Envelope (opcional)</option>
       {envelopesAbertos.map(env=><option key={env.id} value={env.id}>💌 {env.nome}</option>)}
     </select>}
+    {!ehPagamento&&<div style={{marginBottom:10}}>
+      <input value={apelido} onChange={e=>setApelido(e.target.value.toUpperCase())}
+        placeholder="Nome de exibição (opcional)"
+        style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
+      {(()=>{const cands=apelidosCandidatos(desc,data);
+        return cands.length>1&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:5}}>
+          <span style={{fontSize:9,color:C.textMuted,width:"100%"}}>Bate com mais de uma regra salva — escolhe qual vale aqui:</span>
+          {cands.map((c,ci)=><button key={ci} type="button" onClick={()=>setApelido(c.apelido)}
+            style={{fontSize:10,padding:"3px 8px",borderRadius:12,border:"1px solid "+C.accent,background:apelido===c.apelido?C.accent:"transparent",color:apelido===c.apelido?"#fff":C.accent,cursor:"pointer",fontFamily:"inherit"}}>
+            {c.apelido}
+          </button>)}
+        </div>;
+      })()}
+    </div>}
     {/* Parcelas (só compra nova no cartão) */}
     {dest!=="conta"&&!ehPagamento&&<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
       <span style={{fontSize:13,color:C.textSub}}>Parcelas:</span>
@@ -6074,7 +6253,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260720.1357 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260720.1753 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
