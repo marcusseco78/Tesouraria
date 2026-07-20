@@ -25,7 +25,16 @@ body{font-family:'Inter','Segoe UI',sans-serif;background:#F7F8FA;color:#111827}
 <div style="width:28px;height:28px;border:3px solid #E5E7EB;border-top-color:#D97706;border-radius:50%;animation:spin .8s linear infinite"></div>
 Carregando...</div></div>
 <script type="text/plain" id="app-source">
-const APPS_URL="https://script.google.com/macros/s/AKfycbzWLTDLglaG1wKYzQ-6hk0SgVcp18KDAUTUw-dIcFmcXQbGXBmaz4NqU1YawlgfUYYO/exec";
+// [NOVO 19/07] URL do Web App configuravel, pra permitir que uma copia deste
+// mesmo arquivo aponte pra outro backend (outra pessoa, outra instancia)
+// sem precisar editar codigo -- so colar a URL certa no proprio app (botao
+// "⚙ Servidor" no cabecalho). Sem nenhuma configuracao salva, usa o padrao
+// abaixo (o Web App do Marcus) -- comportamento identico ao de antes.
+const APPS_URL_PADRAO="https://script.google.com/macros/s/AKfycbzWLTDLglaG1wKYzQ-6hk0SgVcp18KDAUTUw-dIcFmcXQbGXBmaz4NqU1YawlgfUYYO/exec";
+function getApiUrl(){
+  try{ return localStorage.getItem("tesouraria_apps_url")||APPS_URL_PADRAO; }
+  catch(e){ return APPS_URL_PADRAO; }
+}
 
 
 const C={bg:"#F3F1EA",surface:"#FFF",border:"#E5E7EB",borderLight:"#F3F4F6",
@@ -56,6 +65,23 @@ function janelaCiclo(cicloInicioStr,deslocamento){
   return {inicio:toISO(inicio),fim:toISO(fim)};
 }
 const fmtD=s=>{const m=String(s||"").match(/^(\d{4})-(\d{2})-(\d{2})/);return m?m[3]+"/"+m[2]+"/"+m[1].slice(2):""};
+// [NOVO 19/07] "Nome fantasia" do cartao -- so exibicao, nunca muda o TIPO
+// interno ("CARTAO PF"/"CARTAO PJ" continuam sendo os mesmos em toda
+// comparacao/calculo). Cai pro nome padrao "Cartão PF/PJ" se nao
+// configurado em CONFIG.NOME_CARTAO_PF / NOME_CARTAO_PJ.
+function nomeCartao(sigla,data){
+  const custom=data&&data.config&&data.config["NOME_CARTAO_"+sigla];
+  return custom&&custom.trim()?custom.trim():"Cartão "+sigla;
+}
+// Mesma ideia, mas pra quando o texto exibido e o TIPO cru de um item
+// (ex: tag "CARTAO PJ" numa linha do Fluxo/Historico) -- troca pelo nome
+// fantasia se for um dos dois cartoes, senao mostra o tipo como sempre.
+function tipoDisplay(tipo,data){
+  const t=String(tipo||"").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  if(t==="CARTAO PF") return nomeCartao("PF",data);
+  if(t==="CARTAO PJ") return nomeCartao("PJ",data);
+  return tipo;
+}
 const DOW_PT=["DOM","SEG","TER","QUA","QUI","SEX","SAB"];
 const diaSemana=s=>{const m=String(s||"").match(/^(\d{4})-(\d{2})-(\d{2})/);if(!m)return"";const d=new Date(Number(m[1]),Number(m[2])-1,Number(m[3]),12,0,0);return DOW_PT[d.getDay()];};
 // Nome de exibicao: linha de provisao "DCP N" aparece como "Saldo Despesas
@@ -68,8 +94,47 @@ const CAT_LABEL={DCP:"Despesas Cotidianas Semanais",DEPOSITO_AVULSO:"Outras Entr
 // precisa ser derivado de uma categoria escolhida (lancamento novo ou edicao).
 const TIPO_POR_CATEGORIA={DIVIDA_PARCELADA:"PASSIVO",DIVIDA_NAO_PARCELADA:"PASSIVO"};
 const tipoDaCategoria=cat=>TIPO_POR_CATEGORIA[cat]||cat;
-const nomeExibicao=item=>(item.categoria==="DCP_PROVISAO"&&/^DCP (\d+)$/.test(item.descricao||""))
-  ?String(item.descricao).replace(/^DCP (\d+)$/,"O Envelope semanal $1 ainda tem:"):item.descricao;
+const nomeExibicao=(item,data)=>{
+  if(item.categoria==="DCP_PROVISAO"&&/^DCP (\d+)$/.test(item.descricao||""))
+    return String(item.descricao).replace(/^DCP (\d+)$/,"O Envelope semanal $1 ainda tem:");
+  // [NOVO 19/07] Apelido de exibicao -- ordem de prioridade:
+  // 1. apelido preso NESTE lancamento (obs.apelido, editado no proprio item)
+  // 2. se o texto cru bater com o alias de EXATAMENTE UMA recorrencia
+  //    ativa, mostra o nome dela (ja existe, so passou a valer pra exibicao)
+  // 3. se bater com EXATAMENTE UMA regra global (CONFIG.APELIDOS_JSON)
+  // Se bater com MAIS DE UMA fonte ao mesmo tempo (ambiguo -- ex: mesmo
+  // texto de banco usado por duas coisas diferentes), NUNCA adivinha --
+  // mostra o texto cru e deixa a pessoa resolver manualmente no item.
+  if(!data) return item.descricao;
+  let obsItem={};
+  try{obsItem=JSON.parse(item.obs||"{}");}catch(e){}
+  if(obsItem.apelido) return obsItem.apelido;
+  const candidatos=apelidosCandidatos(item.descricao,data);
+  return candidatos.length===1?candidatos[0].apelido:item.descricao;
+};
+// Lista de candidatos a apelido pra uma descricao crua (recorrencias com
+// alias batendo + regras globais batendo) -- usado tanto por nomeExibicao
+// (so aplica se sobrar exatamente 1) quanto pelo painel de edicao do item
+// (mostra todos como sugestao clicavel quando for ambiguo).
+function apelidosCandidatos(descricaoCrua,data){
+  const desc=String(descricaoCrua||"").toUpperCase();
+  const out=[];
+  (data.recorr||[]).forEach(r=>{
+    if(String(r[6]).toUpperCase()!=="S") return;
+    const aliasStr=r[11];
+    if(!aliasStr) return;
+    String(aliasStr).split(/[;|]/).map(s=>s.trim()).filter(Boolean).forEach(termo=>{
+      if(desc.indexOf(termo.toUpperCase())>=0) out.push({apelido:r[0],origem:"recorrencia"});
+    });
+  });
+  try{
+    const ap=JSON.parse((data.config&&data.config.APELIDOS_JSON)||"[]");
+    ap.forEach(a=>{ if(a.padrao&&desc.indexOf(a.padrao)>=0) out.push({apelido:a.apelido,origem:"regra"}); });
+  }catch(e){}
+  // dedup por apelido (duas fontes podem coincidir no mesmo nome -- conta como 1)
+  const vistos=new Set();
+  return out.filter(c=>{ if(vistos.has(c.apelido)) return false; vistos.add(c.apelido); return true; });
+}
 // Periodo que uma provisao DCP cobre: a data do envelope e sempre a
 // segunda-feira que FECHA a semana; a semana comeca 6 dias antes (terca).
 // So matematica de data em cima do que ja temos -- nenhum dado novo.
@@ -197,6 +262,12 @@ function _obsCartaoRaw(r){ return r&&r.length>8?r[8]:null; }
 // descricao exibida em nenhuma tela.
 function _obsAliasCartao(obsRaw){
   try{ const o=JSON.parse(obsRaw||"{}"); return o.alias||""; }catch(e){ return ""; }
+}
+// [NOVO 19/07] Mesma ideia, mas pro apelido de exibicao (diferente do
+// alias -- alias serve pra RECONHECER na conciliacao, apelido serve pra
+// MOSTRAR em vez do texto cru, so isso).
+function _obsApelidoCartao(obsRaw){
+  try{ const o=JSON.parse(obsRaw||"{}"); return o.apelido||""; }catch(e){ return ""; }
 }
 function parseEnvelopesCustom(data){
   try{ return data?.config?.ENVELOPES_JSON ? JSON.parse(data.config.ENVELOPES_JSON) : []; }
@@ -641,7 +712,7 @@ function corDoItem(item, hj){
 }
 
 async function api(payload){
-  const r=await fetch(APPS_URL,{method:"POST",redirect:"follow",
+  const r=await fetch(getApiUrl(),{method:"POST",redirect:"follow",
     headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(payload)});
   const j=await r.json();
   if(!j.ok) throw new Error(j.error||"Erro");
@@ -2305,6 +2376,83 @@ function EnvelopesCustom({data,onUpdate}){
 // pular pro lançamento certo -- só que sem `row`, então só troca de cartão,
 // não rola a tela). Extrato mostra a tela de conciliação de extrato embutida
 // aqui mesmo, sem navegar pra lugar nenhum.
+// [NOVO 19/07] Contexto pessoal (o que o Gemini sabe sobre quem está usando
+// o app) + apelidos de descrição (padrao->apelido, ex: "RDB"->"CAIXINHA
+// NUBANK") -- os dois substituem o que antes eram regras fixas no prompt,
+// especificas de uma pessoa so. Qualquer instancia configura o proprio.
+function PerfilApelidos({data,onUpdate}){
+  const cfg=data.config||{};
+  const [contexto,setContexto]=useState(cfg.CONTEXTO_PESSOAL||"");
+  const [loadCtx,setLoadCtx]=useState(false);
+  const apelidosSalvos=useMemo(()=>{try{return JSON.parse(cfg.APELIDOS_JSON||"[]");}catch(e){return [];}},[cfg.APELIDOS_JSON]);
+  const [apelidos,setApelidos]=useState(apelidosSalvos);
+  const [loadApe,setLoadApe]=useState(false);
+
+  async function salvarContexto(){
+    setLoadCtx(true);
+    try{ onUpdate(await api({action:"salvarContextoPessoal",texto:contexto})); }
+    catch(e){ alert(e.message); }
+    setLoadCtx(false);
+  }
+  function atualizarApelido(i,campo,val){
+    setApelidos(as=>as.map((a,idx)=>idx===i?{...a,[campo]:val}:a));
+  }
+  function removerApelido(i){ setApelidos(as=>as.filter((_,idx)=>idx!==i)); }
+  function adicionarApelido(){ setApelidos(as=>[...as,{padrao:"",apelido:""}]); }
+  async function salvarApelidosLista(){
+    setLoadApe(true);
+    try{ onUpdate(await api({action:"salvarApelidos",apelidos})); }
+    catch(e){ alert(e.message); }
+    setLoadApe(false);
+  }
+
+  return <div style={{padding:"12px 16px"}}>
+    <Card style={{padding:"14px 16px",marginBottom:14}}>
+      <div style={{fontSize:13,fontWeight:800,color:C.text,marginBottom:6}}>👤 Contexto pessoal</div>
+      <div style={{fontSize:11,color:C.textMuted,marginBottom:8}}>
+        O que o Gemini sabe sobre você — nome, profissão, situação financeira, regras especiais. Se deixar em branco, o Gemini pergunta sozinho na próxima conversa e salva aqui automaticamente.
+      </div>
+      <textarea value={contexto} onChange={e=>setContexto(e.target.value)} rows={5}
+        placeholder="Ex: Marcus, médico, tem PF e uma empresa PJ (Intensiva). Renda de plantões hospitalares em ciclos de dia 16 a 15..."
+        style={{width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box",resize:"vertical"}}/>
+      <button onClick={salvarContexto} disabled={loadCtx}
+        style={{marginTop:8,padding:"7px 14px",borderRadius:8,background:C.blue,color:"#fff",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+        {loadCtx?"…":"Salvar"}
+      </button>
+    </Card>
+
+    <Card style={{padding:"14px 16px"}}>
+      <div style={{fontSize:13,fontWeight:800,color:C.text,marginBottom:6}}>🏷 Apelidos de descrição</div>
+      <div style={{fontSize:11,color:C.textMuted,marginBottom:10}}>
+        Quando um texto do banco/CSV bater com o padrão, tanto o app quanto o Gemini passam a chamar pelo apelido. Ex: padrão "RDB" → apelido "CAIXINHA NUBANK".
+      </div>
+      {apelidos.map((a,i)=>
+        <div key={i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
+          <input value={a.padrao} onChange={e=>atualizarApelido(i,"padrao",e.target.value.toUpperCase())}
+            placeholder="PADRÃO (ex: RDB)"
+            style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit"}}/>
+          <span style={{color:C.textMuted,fontSize:12}}>→</span>
+          <input value={a.apelido} onChange={e=>atualizarApelido(i,"apelido",e.target.value.toUpperCase())}
+            placeholder="APELIDO"
+            style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit"}}/>
+          <button onClick={()=>removerApelido(i)}
+            style={{background:"none",border:"none",color:C.red,fontSize:16,cursor:"pointer",padding:"0 4px"}}>×</button>
+        </div>
+      )}
+      <button onClick={adicionarApelido}
+        style={{fontSize:11,color:C.blue,background:"none",border:"1px dashed "+C.blue,borderRadius:6,padding:"5px 10px",cursor:"pointer",fontFamily:"inherit",marginBottom:10}}>
+        + adicionar apelido
+      </button>
+      <div>
+        <button onClick={salvarApelidosLista} disabled={loadApe}
+          style={{padding:"7px 14px",borderRadius:8,background:C.blue,color:"#fff",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+          {loadApe?"…":"Salvar apelidos"}
+        </button>
+      </div>
+    </Card>
+  </div>;
+}
+
 function ConciliacaoHub({data,onUpdate,onIrPara}){
   const [modo,setModo]=useState(null); // null=hub, "extrato"=mostra a tela embutida
 
@@ -2319,8 +2467,8 @@ function ConciliacaoHub({data,onUpdate,onIrPara}){
   }
 
   const opcoes=[
-    {titulo:"💳 Cartão PF",sub:"Conciliar fatura (CSV ou OFX) — abre a aba Cartões",onClick:()=>onIrPara&&onIrPara({tab:"cartoes",cartao:"PF"})},
-    {titulo:"💳 Cartão PJ",sub:"Conciliar fatura (CSV ou OFX) — abre a aba Cartões",onClick:()=>onIrPara&&onIrPara({tab:"cartoes",cartao:"PJ"})},
+    {titulo:"💳 "+nomeCartao("PF",data),sub:"Conciliar fatura (CSV ou OFX) — abre a aba Cartões",onClick:()=>onIrPara&&onIrPara({tab:"cartoes",cartao:"PF"})},
+    {titulo:"💳 "+nomeCartao("PJ",data),sub:"Conciliar fatura (CSV ou OFX) — abre a aba Cartões",onClick:()=>onIrPara&&onIrPara({tab:"cartoes",cartao:"PJ"})},
     {titulo:"🧾 Extrato (conta corrente)",sub:"Conciliar extrato bancário (CSV ou OFX)",onClick:()=>setModo("extrato")}
   ];
 
@@ -2643,6 +2791,7 @@ function Ferramentas({onIrPara}){
     {id:"receitas",icone:"🏥",titulo:"Receitas",sub:"HSA, HSI e outras fontes",cor:C.teal,bg:C.tealLight},
     {id:"envelopes",icone:"💌",titulo:"Envelopes",sub:"Metas por projeto",cor:C.purple,bg:C.purpleLight},
     {id:"conciliacao",icone:"🔄",titulo:"Conciliação",sub:"Cartões e extrato",cor:C.orange,bg:C.orangeLight},
+    {id:"perfil",icone:"👤",titulo:"Perfil & Apelidos",sub:"Contexto do Gemini, nomes de descrição",cor:C.blue,bg:C.blueLight},
   ];
   return <div style={{padding:"4px 4px 16px"}}>
     <div style={{fontSize:11,fontWeight:800,color:C.textMuted,letterSpacing:".1em",padding:"8px 12px"}}>FERRAMENTAS</div>
@@ -2713,7 +2862,7 @@ function DCPTab({data,onUpdate,onIrPara}){
               style={{display:"flex",alignItems:"center",gap:8,padding:"8px 14px 8px 26px",borderBottom:"1px solid "+C.borderLight,background:"#FAFAFA",cursor:"pointer"}}>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:12,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.descricao}</div>
-                <div style={{fontSize:9,color:C.textMuted,marginTop:1}}>{fmtD(t.data)} · {t.origem==="fluxo"?"Fluxo":t.origem==="cartaoPF"?"Cartão PF":"Cartão PJ"} · {t.status}</div>
+                <div style={{fontSize:9,color:C.textMuted,marginTop:1}}>{fmtD(t.data)} · {t.origem==="fluxo"?"Fluxo":t.origem==="cartaoPF"?nomeCartao("PF",data):nomeCartao("PJ",data)} · {t.status}</div>
               </div>
               <span style={{fontSize:12,fontWeight:700,color:t.valor<0?C.red:C.blue}}>{fmt(t.valor)}</span>
               <span style={{fontSize:13,color:C.accent,flexShrink:0}}>→</span>
@@ -2734,6 +2883,8 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
   const [load,setLoad]=useState(null);
   const [novoPlantoes,setNovoPlantoes]=useState("");
   const [loadPlantoes,setLoadPlantoes]=useState(false);
+  const [apelidoInput,setApelidoInput]=useState("");
+  const [loadApelido,setLoadApelido]=useState(false);
   const [busca,setBusca]=useState("");
   const hj=hoje();
 
@@ -2846,7 +2997,16 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
       .filter(g=>g.itensExibir.length||g.cartaoExibir.length);
   },[gruposComSaldo,cartaoPorData,busca]);
 
-  function abrir(item){setConf(item.row);setVal(formatarValorInicial(item.valor));setDt(item.data);setNeg(item.valor<0);setNovoPlantoes("");}
+  function abrir(item){setConf(item.row);setVal(formatarValorInicial(item.valor));setDt(item.data);setNeg(item.valor<0);setNovoPlantoes("");
+    let obsI={};try{obsI=JSON.parse(item.obs||"{}");}catch(e){}
+    setApelidoInput(obsI.apelido||"");
+  }
+  async function salvarApelidoFluxo(item){
+    setLoadApelido(true);
+    try{ onUpdate(await api({action:"editarApelidoItem",aba:"FLUXO",row:item.row,apelido:apelidoInput})); }
+    catch(e){ alert(e.message); }
+    setLoadApelido(false);
+  }
 
   async function confirmar(){
     setLoad(conf);
@@ -2932,8 +3092,8 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
         <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 14px",borderBottom:"1px solid "+C.borderLight,background:destacado?"#FEF3C7":(bgItem||C.surface),transition:"background 1s",
           borderLeft:corItem?"3px solid "+corItem:"none"}}>
           <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:12,fontWeight:600,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item)}{selo&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,color:corItem}}>{selo}</span>}</div>
-            <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{item.categoria==="DCP_PROVISAO"?periodoDCP(item.data):(<>{item.tipo}{item.categoria&&item.categoria!==item.tipo?" · "+item.categoria:""} · {item.forma}</>)}<TagEnvelopeDCP envelope={item.categoria!=="DCP_PROVISAO"?item.dcpEnvelope:null} futuro={item.status==="PROGRAMADO"}/>{(()=>{const ie=infoEnvelopeItem(item);return ie?<TagEnvelopeCustom nome={ie.nome} saldo={ie.saldo}/>:null;})()}</div>
+            <div style={{fontSize:12,fontWeight:600,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}{selo&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,color:corItem}}>{selo}</span>}</div>
+            <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{item.categoria==="DCP_PROVISAO"?periodoDCP(item.data):(<>{tipoDisplay(item.tipo,data)}{item.categoria&&item.categoria!==item.tipo?" · "+item.categoria:""} · {item.forma}</>)}<TagEnvelopeDCP envelope={item.categoria!=="DCP_PROVISAO"?item.dcpEnvelope:null} futuro={item.status==="PROGRAMADO"}/>{(()=>{const ie=infoEnvelopeItem(item);return ie?<TagEnvelopeCustom nome={ie.nome} saldo={ie.saldo}/>:null;})()}</div>
           </div>
           {item.categoria==="DCP_PROVISAO"?<ValorDCPProvisao valor={item.valor} dataEnvelope={item.data}/>:<span style={{fontWeight:700,color:item.valor<0?C.red:C.blue,flexShrink:0,fontSize:12}}>{fmt(item.valor)}</span>}
           <button onClick={()=>abrir(item)} disabled={!!load}
@@ -2997,6 +3157,27 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
           </div>
           {item.categoria!=="DCP_PROVISAO"&&String(item.obs||"").indexOf("FONTE_RECEITA")<0&&
             <SeletorEnvelopeItem aba="FLUXO" row={item.row} obsAtual={item.obs} data={data} onUpdate={onUpdate}/>}
+          {item.categoria!=="DCP_PROVISAO"&&<div style={{marginTop:8,marginBottom:4}}>
+            <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME DE EXIBIÇÃO (opcional)</span>
+            <div style={{display:"flex",gap:6,marginTop:3}}>
+              <input value={apelidoInput} onChange={e=>setApelidoInput(e.target.value.toUpperCase())}
+                placeholder={item.descricao}
+                style={{flex:1,padding:"5px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:12,fontFamily:"inherit"}}/>
+              <button onClick={()=>salvarApelidoFluxo(item)} disabled={loadApelido}
+                style={{padding:"5px 10px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+                {loadApelido?"…":"Salvar"}
+              </button>
+            </div>
+            {(()=>{const cands=apelidosCandidatos(item.descricao,data);
+              return cands.length>1&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:5}}>
+                <span style={{fontSize:9,color:C.textMuted,width:"100%"}}>Esse texto bate com mais de uma regra salva — escolhe qual vale aqui:</span>
+                {cands.map((c,ci)=><button key={ci} onClick={()=>setApelidoInput(c.apelido)}
+                  style={{fontSize:10,padding:"3px 8px",borderRadius:12,border:"1px solid "+C.accent,background:apelidoInput===c.apelido?C.accent:"transparent",color:apelidoInput===c.apelido?"#fff":C.accent,cursor:"pointer",fontFamily:"inherit"}}>
+                  {c.apelido}
+                </button>)}
+              </div>;
+            })()}
+          </div>}
           {ehFatura&&<button onClick={async()=>{setLoad(item.row);try{onUpdate(await api({action:"mesclarFaturaComSeguinte",row:item.row}));}catch(e){alert(e.message);}setLoad(null);setConf(null);}} disabled={!!load}
             style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:"#92400E",fontSize:11,border:"1px dashed #FED7AA",cursor:"pointer",fontFamily:"inherit"}}>
             🔀 Em vez disso, somar esse valor direto na próxima fatura
@@ -3196,8 +3377,8 @@ function Historico({data,onUpdate,destaque,onIrPara}){
           <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 14px",borderBottom:isOpen?"none":"1px solid "+C.borderLight,background:destacado?"#FEF3C7":(bgItem||C.surface),transition:"background 1s",
             borderLeft:corItem?"3px solid "+corItem:"none"}}>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:12,fontWeight:600,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item)}{selo&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,color:corItem}}>{selo}</span>}</div>
-              <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{item.categoria==="DCP_PROVISAO"?periodoDCP(item.data):(<>{item.tipo}{item.categoria&&item.categoria!==item.tipo?" · "+item.categoria:""}</>)}<TagEnvelopeDCP envelope={item.categoria!=="DCP_PROVISAO"?item.dcpEnvelope:null} futuro={false}/>{(()=>{const ie=infoEnvelopeItem(item);return ie?<TagEnvelopeCustom nome={ie.nome} saldo={ie.saldo}/>:null;})()}</div>
+              <div style={{fontSize:12,fontWeight:600,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}{selo&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,color:corItem}}>{selo}</span>}</div>
+              <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{item.categoria==="DCP_PROVISAO"?periodoDCP(item.data):(<>{tipoDisplay(item.tipo,data)}{item.categoria&&item.categoria!==item.tipo?" · "+item.categoria:""}</>)}<TagEnvelopeDCP envelope={item.categoria!=="DCP_PROVISAO"?item.dcpEnvelope:null} futuro={false}/>{(()=>{const ie=infoEnvelopeItem(item);return ie?<TagEnvelopeCustom nome={ie.nome} saldo={ie.saldo}/>:null;})()}</div>
             </div>
             {item.categoria==="DCP_PROVISAO"?<ValorDCPProvisao valor={item.valor} dataEnvelope={item.data}/>:<span style={{fontWeight:700,color:item.valor<0?C.red:C.blue,flexShrink:0,fontSize:12}}>{fmt(item.valor)}</span>}
             <button onClick={()=>isOpen?setConf(null):abrir(item)}
@@ -3308,13 +3489,15 @@ function buildPrompt(data){
   if(ml&&ml.saldoProjetado>0&&ml.saldoProjetado<1000) alertas.push("⚠ LIQUIDEZ CRÍTICA: "+fmt(ml.saldoProjetado)+" em "+fmtD(ml.data));
   if(dcpTeto>0&&dcpR.totalGasto>dcpTeto*0.8) alertas.push("⚠ DCP em "+fmt(dcpR.totalGasto)+" de "+fmt(dcpTeto)+" — restam "+fmt(dcpRestante));
 
-  return `Você é o assistente financeiro pessoal de Marcus Vinícius, médico em Blumenau/SC.
-Marcus tem PF e empresa médica PJ (Intensiva Cuidados Críticos Neonatais). Banco: Nubank.
-Renda principal: plantões HSA (~R$35k), HDWC (R$9k fixo), HSI (~R$4k) — tudo por ciclo (dia 16 a dia 15).
+  return `Você é o assistente financeiro pessoal de quem está usando este app.
 
 FORMATAÇÃO: Texto simples, sem markdown, sem asteriscos, sem hashtags. "•" para listas se necessário. JSON em linha isolada, nunca misturado com texto. Quando a resposta for puramente conversacional, responda SEM JSON.
 
-SEU PERFIL: Você é o parceiro financeiro pessoal do Marcus. Trate-o pelo nome às vezes. Seja direto, humano, opinativo quando fizer sentido. Não é um relatório — é uma conversa. Celebre melhorias, aponte riscos com clareza, mas sem dramatizar. Se a situação estiver boa, diga. Se tiver arriscada, diga também. Pense em voz alta quando útil. Não use listas numeradas para tudo — prose natural quando couber.
+SEU PERFIL: Você é o parceiro financeiro pessoal da pessoa. Trate-a pelo nome às vezes, quando souber. Seja direto, humano, opinativo quando fizer sentido. Não é um relatório — é uma conversa. Celebre melhorias, aponte riscos com clareza, mas sem dramatizar. Se a situação estiver boa, diga. Se tiver arriscada, diga também. Pense em voz alta quando útil. Não use listas numeradas para tudo — prose natural quando couber.
+
+CONTEXTO PESSOAL: ${cfg.CONTEXTO_PESSOAL?cfg.CONTEXTO_PESSOAL:'(ainda não configurado.) Se esta é a primeira mensagem da conversa (histórico vazio), ANTES de qualquer outra coisa, se apresente brevemente e peça pra pessoa contar sobre a vida financeira dela — nome, profissão, se tem PF e/ou PJ, principais fontes de renda, e qualquer regra ou situação especial que ela ache importante você saber daqui pra frente (ex: alguém específico que ela paga com frequência, uma dívida com regra própria, etc). Depois que ela responder, emita a ação salvarContextoPessoal com um resumo do que ela contou (2-4 frases, objetivo) — isso fica salvo e você não pergunta de novo. Enquanto ela não responder essa apresentação, funcione normalmente com o que já sabe pelos dados abaixo, só não invente fatos pessoais que não estão nem no contexto nem na planilha.'}
+
+APELIDOS DE DESCRIÇÃO (a pessoa configurou nomes mais claros pra esses padrões — use o apelido ao se referir a eles, tanto pra ler quanto pra reconhecer no extrato/CSV): ${(()=>{try{const ap=JSON.parse(cfg.APELIDOS_JSON||"[]");return ap.length?ap.map(a=>a.padrao+" = "+a.apelido).join(" | "):"(nenhum cadastrado)";}catch(e){return "(nenhum cadastrado)";}})()}
 
 SITUAÇÃO HOJE (${hj}):
 Saldo em conta: ${fmt(saldo)}
@@ -3325,15 +3508,12 @@ ${alertas.length?"ALERTAS:\n"+alertas.join("\n"):""}
 PROJEÇÃO POR CICLO:
 ${resumoCiclos}
 
-BASAIS MENSAIS (fixos recorrentes): ~R$33.623
-Componentes: Rose (faxina), condomínio, aluguel, MEOO (carro), pensão filhas, saúde André, Omint, INSS/contador PJ, Angela Prust, Benevix, Celesc, Adhering.
-Empréstimos ativos: quitam progressivamente até AGO/SET 2026.
 DCP = Despesas Cotidianas Provisionadas (alimentação, farmácia, gasolina, compras do dia). Teto = ${dcpR.numSemanas} semanas x ${fmt(dcpR.base)} = ${fmt(dcpTeto)}/ciclo, ajustado semana a semana por sobra/estouro. Compra parcelada desconta o valor TOTAL de uma vez, na semana da compra original — nunca por parcela.
 Cartão NÃO afeta saldo imediato — só na fatura (dia 7 de cada mês).
 Executado = apenas o marcado manualmente. Nunca automático por data.
 
-RECORRÊNCIAS ATIVAS:
-\${(data.recorr||[]).filter(r=>r[6]==="S").map(r=>r[0]+" | dia_venc:"+r[3]+" | "+fmt(r[1])+" | parc:"+r[4]+"/"+r[5]).join("\n")}
+RECORRÊNCIAS ATIVAS (dia_venc, valor, parcela atual/total, tolerância = quantos dias pode atrasar sem risco — 0 ou vazio = não pode atrasar; use isso pra responder sobre o que pode/não pode postergar, e trate cada parcela de empréstimo individualmente, nunca agrupada):
+${(data.recorr||[]).filter(r=>r[6]==="S").map(r=>r[0]+" | dia_venc:"+r[3]+" | "+fmt(r[1])+" | parc:"+r[4]+"/"+r[5]+(r[10]!=null&&r[10]!==""?" | tolerancia:"+r[10]+"d":"")).join("\n")}
 
 CARTÃO PF — aba CARTAO_PF — por fatura (vencimento). Cada item mostra "linha:N" = numero real da linha na aba CARTAO_PF:
 ${(()=>{const its=data.cartaoPF||[];const vs=[...new Set(its.map(r=>r[4]).filter(Boolean))].sort();return vs.map(v=>{const gr=its.filter(r=>r[4]===v);return "Fatura "+v+" ("+gr.filter(r=>r[7]==="PENDENTE").length+"p/"+gr.filter(r=>r[7]==="PAGO").length+"pg):\n"+gr.map(r=>"["+r[7]+"] linha:"+_linhaCartao(r)+" "+r[0]+" "+r[1]+" "+fmt(r[2])+" parc:"+r[3]).join("\n");}).join("\n\n");})()}
@@ -3361,16 +3541,8 @@ Para EXTRATO de conta corrente:
 - Já existente no FLUXO com valor correto: confirme, não relance
 - Existe mas valor diferente: sugira editar
 - Não existe: sugira lancar como EXECUTADO
-- INFERÊNCIAS AUTOMÁTICAS (não perguntar):
-  - Rose = Roselaine Marques de Oliveira, R$135, DESPESA FIXA, terças e sábados
-  - André Ferrera Seco = DESPESA FIXA (a identificação de André agora é pelo envelope "André", não mais categoria própria — se o item já tiver o envelope selecionado, mantenha; senão, avise o Marcus pra marcar)
-  - Boletos do dia 16 (Adhering, Benevix, Celesc, Condomínio/Arboris, Aluguel/PJBank, Omint) = dar baixa nos PROGRAMADOS do ciclo atual
-  - Resgates de empréstimo do dia 16 = dar baixa nos empréstimos correspondentes pelo valor
-  - Transferências para Intensiva Cuidados Criticos Neonatais = aporte PJ, NÃO lançar no FLUXO PF
-  - Aplicações e resgates RDB = investimentos, não lançar no FLUXO corrente
-  - Bianca Gabriela Gomes = Acordo judicial R$2.166,66
-  - Transferência entre contas do próprio Marcus = não lançar
-- Pergunte APENAS sobre itens que realmente não dá para inferir
+- INFERÊNCIAS AUTOMÁTICAS (não perguntar): use as RECORRÊNCIAS ATIVAS listadas acima (nome, valor, dia) e o CONTEXTO PESSOAL pra reconhecer sem perguntar. Transferência entre contas da própria pessoa, aplicação/resgate de investimento (categoria INVESTIMENTO) e aporte pra empresa PJ dela mesma: não lançar no Fluxo, são movimentação patrimonial, não gasto/receita real.
+- Pergunte APENAS sobre itens que realmente não dá para inferir dessas fontes
 
 Para FATURA de cartão (CSV Nubank):
 - "Pagamento recebido", "Pagamento efetuado": IGNORAR — é pagamento da fatura, não compra
@@ -3380,7 +3552,7 @@ Para FATURA de cartão (CSV Nubank):
 - PASSO 2: nos dados do CARTÃO_PF/PJ acima, localize o bloco "Venc YYYY-MM-07" correspondente
 - PASSO 3: compare CSV com esse bloco — itens com mesma descrição (aproximada) e valor = JÁ LANÇADO
 - PASSO 4: lance só o que NÃO está no bloco
-- Se Marcus pedir para listar o que já está na planilha: mostre o bloco do vencimento correspondente
+- Se a pessoa pedir para listar o que já está na planilha: mostre o bloco do vencimento correspondente
 - Cartão PF = cartao="PF", Cartão PJ = cartao="PJ"
 - Parcelados: informe total de parcelas
 - "RECEITA FED" ou "DARF" = tipo="IMPOSTO", dcp="N"
@@ -3396,34 +3568,22 @@ Para FATURA de cartão (CSV Nubank):
 CATEGORIAS:
 - DCP (Despesas Cotidianas Provisionadas): gasolina, alimentação, farmácia, compras do dia. Gasolina é SEMPRE DCP. Teto = num. de segundas do ciclo x valor base (editável, padrão R$1.250/semana), ajustado semana a semana. Parcelada desconta o total uma vez só, na compra original.
 - DESPESA FIXA: assinaturas recorrentes (YouTube, Claude, ChatGPT, Jusbrasil, Serasa etc), condomínio, aluguel, seguros, empréstimos, gastos com André. NÃO entram no DCP. [ANDRÉ deixou de ser categoria em 19/07 — gastos com André agora são DESPESA FIXA + envelope "André" pra rastreio, nunca categoria própria.]
-- EXTRAORDINÁRIA: viagens, eventos, presentes maiores. Fora do DCP se Marcus determinar.
+- EXTRAORDINÁRIA: viagens, eventos, presentes maiores. Fora do DCP se a pessoa determinar.
 
-POSTERGAÇÕES — o que pode atrasar sem risco:
-✓ PODEM atrasar: Benevix, Adhering, Celesc, Condomínio, INSS (sem risco imediato a curto prazo)
-✗ NÃO podem atrasar: Acordo judicial (dia 2, R$2.166 — prioridade máxima), faturas de cartão, Rose (se trabalhou), itens com risco jurídico ou bloqueio
-✗ MEOO: débito automático — não há como atrasar
-Ao sugerir postergar, sempre recalcular fundo do poço e alertar sobre data limite.
-
-EMPRÉSTIMOS:
-Nunca agrupar — sempre identificar parcela individualmente (ex: EMPRÉSTIMO 3 5/6).
-Nubank: Empréstimo 1, 2, 3, 4, Ponte, Renegociação PJ — sempre separados.
-
-CSLL+IRPJ: trimestral, aprox. R$7.000 nos dias 30/01, 30/04, 30/07, 30/10.
+POSTERGAÇÕES — o que pode atrasar sem risco: use o campo tolerância de cada recorrência (listado acima em RECORRÊNCIAS ATIVAS). Tolerância 0 ou vazia = não pode atrasar (trate como prioridade, principalmente fatura de cartão e qualquer item com risco jurídico/bloqueio). Ao sugerir postergar, sempre recalcular fundo do poço e alertar sobre data limite.
 
 RECEITAS: sempre pelo valor líquido real (NF ou cálculo bruto − retenção). Nunca usar estimativa se houver valor real disponível.
-
-DÍVIDA PAI: passivo administrável (100% CDI, ~R$87.500). NÃO entra no fluxo automático — só se houver amortização programada. Não confundir com fluxo pessoal.
 
 REGRAS DE OPERAÇÃO:
 - Despesas = valor negativo. Receitas = valor positivo.
 - Tipos: RECEITA | DCP | DESPESA FIXA | EMPRESTIMO | CARTÃO PF | CARTÃO PJ | FAMÍLIA | EXTRAORDINÁRIA
 - Formas: CONTA | DÉBITO | CARTÃO PF | CARTÃO PJ
 
-AÇÕES (use quando Marcus pedir operações na planilha):
+AÇÕES (use quando a pessoa pedir operações na planilha):
 Coloque o JSON em linha isolada, ANTES da explicação. NUNCA misture JSON com texto corrido.
 
 DESTINO AMBÍGUO (conta ou cartão) — pergunte antes de agir:
-Se Marcus mencionar um gasto novo em texto livre (ex: "gastei 45 na farmácia") sem dizer se foi na conta ou em qual cartão (PF/PJ), NÃO adivinhe e NÃO proponha JSON nenhum ainda — pergunte primeiro, em texto simples, algo como "Foi na conta, no cartão PF ou no cartão PJ?". Só monte o JSON de lancar/lancarCartao depois que Marcus responder. Isso vale só pra lançamento novo mencionado em texto solto — não se aplica à conciliação de CSV (que já tem suas próprias regras acima) nem quando Marcus já disse explicitamente onde foi.
+Se a pessoa mencionar um gasto novo em texto livre (ex: "gastei 45 na farmácia") sem dizer se foi na conta ou em qual cartão (PF/PJ), NÃO adivinhe e NÃO proponha JSON nenhum ainda — pergunte primeiro, em texto simples, algo como "Foi na conta, no cartão PF ou no cartão PJ?". Só monte o JSON de lancar/lancarCartao depois que ela responder. Isso vale só pra lançamento novo mencionado em texto solto — não se aplica à conciliação de CSV (que já tem suas próprias regras acima) nem quando ela já disse explicitamente onde foi.
 
 Lancar conta: {"acao":"lancar","lancamentos":[{"data":"YYYY-MM-DD","descricao":"DESC","valor":-100,"tipo":"DCP","categoria":"DCP","forma":"CONTA","status":"EXECUTADO","obs":""}],"resumo":"texto"}
 Lancar cartao: {"acao":"lancarCartao","cartao":"PF","descricao":"DESC","valor":-300,"parcelas":3,"categoria":"DCP","dcp":"S","data_compra":"YYYY-MM-DD","resumo":"texto"}
@@ -3458,7 +3618,7 @@ function Conversar({data,onUpdate,initTxt,onInitDone,msgs,setMsgs}){
   useEffect(()=>{if(initTxt){setInput(initTxt);onInitDone();inputRef.current?.focus();}},[initTxt]);
   useEffect(()=>{scrollRef.current?.scrollTo(0,scrollRef.current.scrollHeight);},[msgs,pend]);
 
-  const ACOES_VALIDAS=["lancar","baixa","editar","deletar","lancarCartao","baixaFatura","editarLote","editarRecorrencia","lancarRecorrencia","editarCartaoItem","deletarCartaoItem"];
+  const ACOES_VALIDAS=["lancar","baixa","editar","deletar","lancarCartao","baixaFatura","editarLote","editarRecorrencia","lancarRecorrencia","editarCartaoItem","deletarCartaoItem","deletarPorDescricao","deletarRecorrencia","salvarContextoPessoal"];
   function parseOp(text){
     try{
       let depth=0,start=-1;
@@ -3509,6 +3669,7 @@ function Conversar({data,onUpdate,initTxt,onInitDone,msgs,setMsgs}){
       else if(pend.acao==="editarRecorrencia") r=await api({action:"editarRecorrencia",descricao:pend.descricao,campo:pend.campo,valor:pend.valor});
       else if(pend.acao==="lancarRecorrencia") r=await api({action:"lancarRecorrencia",...pend});
       else if(pend.acao==="deletarRecorrencia") r=await api({action:"deletarRecorrencia",descricao:pend.descricao});
+      else if(pend.acao==="salvarContextoPessoal") r=await api({action:"salvarContextoPessoal",texto:pend.texto});
       if(r)onUpdate(r);
       setMsgs(m=>[...m,{role:"model",parts:[{text:"Feito: "+pend.resumo}]}]);
     }catch(e){setMsgs(m=>[...m,{role:"model",parts:[{text:"Erro: "+e.message}]}]);}
@@ -4026,7 +4187,7 @@ function Recorrencias({data,onUpdate}){
       </button>
     </div>
     {showForm&&<div style={{padding:"8px 16px 0"}}>
-      <FormNovaRecorr
+      <FormNovaRecorr data={data}
         onSalvo={async()=>{setShowForm(false);const d=await api({action:"getData"});if(d)onUpdate(d);}}
         onClose={()=>setShowForm(false)}/>
     </div>}
@@ -4101,7 +4262,7 @@ function Recorrencias({data,onUpdate}){
 
 
 // ── FORM NOVA RECORRENCIA ─────────────────────────────────────────────────────
-function FormNovaRecorr({onSalvo,onClose}){
+function FormNovaRecorr({onSalvo,onClose,data}){
   const [desc,setDesc]=useState("");
   const [valor,setValor]=useState("");
   const [tipo,setTipo]=useState("DESPESA FIXA");
@@ -4174,8 +4335,8 @@ function FormNovaRecorr({onSalvo,onClose}){
       <div><label style={lbl}>Destino</label>
         <select value={destino} onChange={e=>{setDestino(e.target.value);if(e.target.value!=="FLUXO"&&isWeekly)setFreq("mensal");}} style={sel}>
           <option value="FLUXO">Fluxo (conta corrente)</option>
-          <option value="CARTAO_PF">Cartão PF</option>
-          <option value="CARTAO_PJ">Cartão PJ</option>
+          <option value="CARTAO_PF">{nomeCartao("PF",data)}</option>
+          <option value="CARTAO_PJ">{nomeCartao("PJ",data)}</option>
         </select></div>
       {!ehCartao&&<div style={{display:"flex",gap:8}}>
         <div style={{flex:1}}><label style={lbl}>Forma</label>
@@ -4363,13 +4524,13 @@ function BotaoLancar({data,onUpdate}){
     </div>
     {/* Destino */}
     <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
-      {[["conta","Conta"],["pj","Cartão PJ"],["pf","Cartão PF"],["recorrente","Recorrente"],["pagpj","Pagar fat. PJ"],["pagpf","Pagar fat. PF"],["receita","Receitas"]].map(([id,l])=>
+      {[["conta","Conta"],["pj",nomeCartao("PJ",data)],["pf",nomeCartao("PF",data)],["recorrente","Recorrente"],["pagpj","Pagar fat. "+nomeCartao("PJ",data)],["pagpf","Pagar fat. "+nomeCartao("PF",data)],["receita","Receitas"]].map(([id,l])=>
         <button key={id} onClick={()=>{setDest(id);setVencAlvo("");}} style={{flex:"1 1 30%",padding:"7px 4px",borderRadius:8,border:"1px solid "+(dest===id?C.accent:C.border),
           background:dest===id?C.accentLight:"transparent",color:dest===id?C.accent:C.textSub,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
       )}
     </div>
     {dest==="recorrente"?
-      <FormNovaRecorr
+      <FormNovaRecorr data={data}
         onSalvo={async()=>{setOpen(false);setDest("conta");const d=await api({action:"getData"});if(d)onUpdate(d);}}
         onClose={()=>setDest("conta")}/>
     :ehReceita?<>
@@ -4733,6 +4894,14 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   const [fatIdx,setFatIdx]=useState(0); // 0=vigente, 1=próxima, etc
   const [load,setLoad]=useState(false);
   const [showForm,setShowForm]=useState(false);
+  const [editandoNome,setEditandoNome]=useState(false);
+  const [nomeEditado,setNomeEditado]=useState("");
+  async function salvarNomeCartao(){
+    setLoad(true);
+    try{ onUpdate(await api({action:"editarNomeCartao",cartao,nome:nomeEditado})); setEditandoNome(false); }
+    catch(e){ alert(e.message); }
+    setLoad(false);
+  }
   // form novo lançamento
   const [nDesc,setNDesc]=useState("");
   const [nValor,setNValor]=useState("");
@@ -4747,6 +4916,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   const [eCategoria,setECategoria]=useState("DCP");
   const [eNeg,setENeg]=useState(true);
   const [eAlias,setEAlias]=useState("");
+  const [eApelido,setEApelido]=useState("");
   const [eLoad,setELoad]=useState(false);
   // resultado da última conciliação de CSV rodada nesta aba (sem Gemini)
   const [conciliacao,setConciliacao]=useState(null); // {cartao, vencimentoAlvo, foraDaPlanilha, aguardandoFatura, possiveisDivergencias}
@@ -4757,6 +4927,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   function abrirEdicaoItem(r){
     setEditRow(_linhaCartao(r));setEDesc(r[1]);setEValor(formatarValorInicial(r[2]));setENeg(r[2]<0);setECategoria(r[5]||"DCP");setEData(String(r[0]||"").slice(0,10));
     setEAlias(_obsAliasCartao(_obsCartaoRaw(r)));
+    setEApelido(_obsApelidoCartao(_obsCartaoRaw(r)));
   }
 
   async function salvarEdicaoItem(origValor){
@@ -4786,6 +4957,10 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
       const aliasNovo=eAlias.trim().toUpperCase();
       if(aliasNovo!==String(origValor.alias||"").trim().toUpperCase()){
         res=await api({action:"editarAliasCartao",aba:abaCartao,row:editRow,alias:aliasNovo});
+      }
+      const apelidoNovo=eApelido.trim().toUpperCase();
+      if(apelidoNovo!==String(origValor.apelido||"").trim().toUpperCase()){
+        res=await api({action:"editarApelidoItem",aba:abaCartao,row:editRow,apelido:apelidoNovo});
       }
       onUpdate(res||await api({action:"getData"}));
       setEditRow(null);
@@ -5021,13 +5196,33 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
 
   return <div style={{paddingBottom:80}}>
     {/* Seletor PF/PJ */}
-    <div style={{display:"flex",gap:6,marginBottom:14}}>
+    <div style={{display:"flex",gap:6,marginBottom:6}}>
       {["PJ","PF"].map(t=><button key={t} onClick={()=>{setCartao(t);setFatIdx(0);setConciliacao(null);}}
         style={{flex:1,padding:"9px",borderRadius:9,border:"1px solid "+(cartao===t?C.accent:C.border),
           background:cartao===t?C.accentLight:"transparent",color:cartao===t?C.accent:C.textSub,
           fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-        Cartão {t}
+        {nomeCartao(t,data)}
       </button>)}
+    </div>
+    <div style={{textAlign:"right",marginBottom:8}}>
+      {!editandoNome
+        ?<button onClick={()=>{setNomeEditado(data.config&&data.config["NOME_CARTAO_"+cartao]||"");setEditandoNome(true);}}
+          style={{background:"none",border:"none",color:C.textMuted,fontSize:10,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>
+          ✏️ Renomear "{nomeCartao(cartao,data)}"
+        </button>
+        :<div style={{display:"flex",gap:6,alignItems:"center",justifyContent:"flex-end"}}>
+          <input value={nomeEditado} onChange={e=>setNomeEditado(e.target.value)}
+            placeholder={"Cartão "+cartao+" (padrão)"}
+            style={{flex:1,maxWidth:180,padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit"}}/>
+          <button onClick={salvarNomeCartao} disabled={load}
+            style={{padding:"5px 10px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+            Salvar
+          </button>
+          <button onClick={()=>setEditandoNome(false)}
+            style={{padding:"5px 8px",borderRadius:6,background:"none",color:C.textMuted,fontSize:11,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
+            X
+          </button>
+        </div>}
     </div>
 
     {/* Navegação entre faturas */}
@@ -5202,8 +5397,8 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         {isOpen&&<PainelEdicaoItemCartao r={r} eDesc={eDesc} setEDesc={setEDesc} eValor={eValor} setEValor={setEValor}
           eData={eData} setEData={setEData}
           eNeg={eNeg} setENeg={setENeg} eCategoria={eCategoria} setECategoria={setECategoria}
-          eAlias={eAlias} setEAlias={setEAlias} eLoad={eLoad} motivo={motivo}
-          onSalvar={()=>salvarEdicaoItem({desc:r[1],valor:r[2],categoria:r[5],data:r[0],alias:_obsAliasCartao(_obsCartaoRaw(r))})} onApagar={apagarItem} onApagarTodos={()=>apagarTodosItemComEssaDescricao(r[1])} onCancelar={()=>setEditRow(null)}
+          eAlias={eAlias} setEAlias={setEAlias} eApelido={eApelido} setEApelido={setEApelido} eLoad={eLoad} motivo={motivo}
+          onSalvar={()=>salvarEdicaoItem({desc:r[1],valor:r[2],categoria:r[5],data:r[0],alias:_obsAliasCartao(_obsCartaoRaw(r)),apelido:_obsApelidoCartao(_obsCartaoRaw(r))})} onApagar={apagarItem} onApagarTodos={()=>apagarTodosItemComEssaDescricao(r[1])} onCancelar={()=>setEditRow(null)}
           onUsarCSV={divergencia?()=>usarDadosDoCSV(divergencia):null} previewCSV={divergencia?descComNotaPreservada(divergencia):null}
           data={data} abaCartao={abaCartao} onUpdate={onUpdate} onIrPara={onIrPara}/>}
       </div>;})}
@@ -5214,7 +5409,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
 // Painel inline de edição/exclusão de um item de CARTAO_PF/PJ (usado em
 // Confirmados e Previstos). Mesmo estilo do painel ⋮ do Fluxo, mas mais
 // simples: só descrição, valor (com toggle de sinal) e apagar.
-function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEData,eNeg,setENeg,eCategoria,setECategoria,eAlias,setEAlias,eLoad,motivo,onSalvar,onApagar,onApagarTodos,onCancelar,onUsarCSV,previewCSV,data,abaCartao,onUpdate,onIrPara}){
+function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEData,eNeg,setENeg,eCategoria,setECategoria,eAlias,setEAlias,eApelido,setEApelido,eLoad,motivo,onSalvar,onApagar,onApagarTodos,onCancelar,onUsarCSV,previewCSV,data,abaCartao,onUpdate,onIrPara}){
   return <div style={{background:C.accentLight,padding:"10px 14px",
     borderBottom:"1px solid "+C.accent,borderLeft:"3px solid "+C.accent}}>
     {motivo&&motivo.tipo==="divergencia"&&<div style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"8px 10px",marginBottom:10,fontSize:11,color:"#92400E"}}>
@@ -5264,6 +5459,21 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
         style={{padding:"6px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:12,fontFamily:"inherit",background:C.surface}}/>
       <span style={{fontSize:9,color:"#92400E"}}>Separe vários com ";". Ajuda a conciliação a reconhecer o mesmo gasto com nome diferente no CSV.</span>
     </div>
+    <div style={{display:"flex",flexDirection:"column",gap:3,marginBottom:8}}>
+      <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME DE EXIBIÇÃO (opcional)</span>
+      <input value={eApelido} onChange={e=>setEApelido(e.target.value.toUpperCase())}
+        placeholder={r[1]}
+        style={{padding:"6px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:12,fontFamily:"inherit",background:C.surface}}/>
+      {data&&(()=>{const cands=apelidosCandidatos(r[1],data);
+        return cands.length>1&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:2}}>
+          <span style={{fontSize:9,color:"#92400E",width:"100%"}}>Esse texto bate com mais de uma regra salva — escolhe qual vale aqui:</span>
+          {cands.map((c,ci)=><button key={ci} type="button" onClick={()=>setEApelido(c.apelido)}
+            style={{fontSize:10,padding:"3px 8px",borderRadius:12,border:"1px solid "+C.accent,background:eApelido===c.apelido?C.accent:"transparent",color:eApelido===c.apelido?"#fff":C.accent,cursor:"pointer",fontFamily:"inherit"}}>
+            {c.apelido}
+          </button>)}
+        </div>;
+      })()}
+    </div>
     {data&&onUpdate&&<SeletorEnvelopeItem aba={abaCartao} row={_linhaCartao(r)} obsAtual={_obsCartaoRaw(r)} data={data} onUpdate={onUpdate}/>}
     <div style={{display:"flex",gap:8}}>
       <button onClick={onSalvar} disabled={eLoad||!eDesc.trim()||!eValor}
@@ -5296,6 +5506,20 @@ function Tesouraria(){
   const [data,setData]=useState(null);const [load,setLoad]=useState(true);const [err,setErr]=useState(null);
   const [tab,setTab]=useState("dashboard");const [chatInit,setChatInit]=useState(null);
   const [destaque,setDestaque]=useState(null); // {tab,row,cartao} -- pra onde "ir pro lancamento" na aba DCP aponta
+  const [servidorAberto,setServidorAberto]=useState(false);
+  const [servidorUrl,setServidorUrl]=useState(()=>{try{return localStorage.getItem("tesouraria_apps_url")||"";}catch(e){return "";}});
+  const usandoServidorProprio=!!servidorUrl.trim();
+  function salvarServidor(){
+    try{
+      if(servidorUrl.trim()) localStorage.setItem("tesouraria_apps_url",servidorUrl.trim());
+      else localStorage.removeItem("tesouraria_apps_url");
+    }catch(e){}
+    location.reload();
+  }
+  function usarPadraoServidor(){
+    try{ localStorage.removeItem("tesouraria_apps_url"); }catch(e){}
+    location.reload();
+  }
 
   // Navegacao com historico do navegador: TODA troca de aba passa por aqui
   // (nunca chamar setTab(...) direto em outro lugar) -- assim o botao
@@ -5357,7 +5581,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260719.1150 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260720.0010 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -5366,7 +5590,28 @@ function Tesouraria(){
             <button onClick={async()=>{await api({action:"reloadCode"});alert("Script recarregado!");}} style={{fontSize:9,color:C.textMuted,background:"none",border:"1px solid "+C.border,borderRadius:5,padding:"3px 7px",cursor:"pointer",fontFamily:"inherit"}}>
               ⟳ Script
             </button>
+            <button onClick={()=>setServidorAberto(a=>!a)} style={{fontSize:9,color:usandoServidorProprio?C.blue:C.textMuted,background:"none",border:"1px solid "+(usandoServidorProprio?C.blue:C.border),borderRadius:5,padding:"3px 7px",cursor:"pointer",fontFamily:"inherit"}}>
+              ⚙ Servidor
+            </button>
           </div>
+          {servidorAberto&&<div style={{marginTop:8,padding:"10px 12px",background:C.surface,border:"1px solid "+C.border,borderRadius:8,textAlign:"left",maxWidth:280}}>
+            <div style={{fontSize:10,color:C.textMuted,marginBottom:6}}>
+              {usandoServidorProprio
+                ? "Usando um servidor próprio (não o padrão)."
+                : "Usando o servidor padrão. Se esta cópia é sua e você já implantou o próprio App da Web, cole a URL abaixo."}
+            </div>
+            <input value={servidorUrl} onChange={e=>setServidorUrl(e.target.value)}
+              placeholder="https://script.google.com/macros/s/.../exec"
+              style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:11,fontFamily:"inherit",boxSizing:"border-box",marginBottom:6}}/>
+            <div style={{display:"flex",gap:6}}>
+              <button onClick={salvarServidor} style={{flex:1,padding:"6px",borderRadius:6,background:C.blue,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+                Salvar e recarregar
+              </button>
+              {usandoServidorProprio&&<button onClick={usarPadraoServidor} style={{padding:"6px 10px",borderRadius:6,background:"transparent",color:C.textMuted,fontSize:11,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
+                Usar padrão
+              </button>}
+            </div>
+          </div>}
         </div>
       </div>
 
@@ -5405,7 +5650,8 @@ function Tesouraria(){
         tab==="parcelas"    ? <ComprasParceladas data={data}/> :
         tab==="receitas"    ? <FontesReceita data={data} onUpdate={setData}/> :
         tab==="envelopes"   ? <EnvelopesCustom data={data} onUpdate={setData}/> :
-        tab==="conciliacao" ? <ConciliacaoHub data={data} onUpdate={setData} onIrPara={irPara}/> : null
+        tab==="conciliacao" ? <ConciliacaoHub data={data} onUpdate={setData} onIrPara={irPara}/> :
+        tab==="perfil"      ? <PerfilApelidos data={data} onUpdate={setData}/> : null
       )}
     </div>
   </div>;
