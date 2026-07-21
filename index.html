@@ -4071,16 +4071,19 @@ function Timeline({data}){
       if(!node) return;
       const r=node.getBoundingClientRect();
       const itemCenter=r.top+r.height/2;
-      const dist=Math.abs(itemCenter-centerY);
-      const norm=Math.min(dist/(rect.height/2),1);
-      const scale=1-norm*0.32;
+      const signedNorm=Math.max(-1,Math.min(1,(itemCenter-centerY)/(rect.height/2)));
+      const norm=Math.abs(signedNorm);
+      const scale=1-norm*0.28;
       const opacity=1-norm*0.75;
-      node.style.transform="scale("+scale.toFixed(3)+")";
-      // [21/07] Opacidade so no CONTEUDO (texto), nunca na linha inteira --
-      // aplicar no node inteiro esmaecia junto o fundo zebra/DCP, que ficava
-      // quase invisivel fora do centro (bug reportado pelo Marcus). O fundo
-      // zebra/tag DCP precisa ficar sempre visivel pra servir de guia de
-      // leitura da lista inteira, não só do item central.
+      // [21/07] Curvatura tipo seletor do iPhone, mas com raio bem maior
+      // (menos pronunciada) -- pedido do Marcus. rotateX pequeno + perspective
+      // grande = curva sutil em vez do efeito "cilindro apertado" do iOS.
+      const anguloMax=9; // graus -- raio grande = ângulo máximo pequeno
+      const angulo=-signedNorm*anguloMax;
+      node.style.transform="perspective(1400px) rotateX("+angulo.toFixed(2)+"deg) scale("+scale.toFixed(3)+")";
+      // Opacidade so no CONTEUDO (texto), nunca na linha inteira -- aplicar
+      // no node inteiro esmaecia junto o fundo/pauta, que ficava quase
+      // invisivel fora do centro (bug reportado pelo Marcus).
       const fade=node.querySelector("[data-fade]");
       if(fade) fade.style.opacity=Math.max(opacity,0.35).toFixed(3);
     });
@@ -4161,6 +4164,9 @@ function Timeline({data}){
         })}
         <div style={{height:alturaContainer/2-28}}/>
       </div>
+      <div style={{position:"absolute",top:"50%",left:0,right:0,height:56,transform:"translateY(-50%)",
+        borderTop:"2px solid "+C.accent,borderBottom:"2px solid "+C.accent,background:C.accentLight,
+        opacity:0.35,pointerEvents:"none"}}/>
       <button onClick={voltarHoje} style={{position:"absolute",bottom:10,right:10,background:C.accent,color:"#fff",
         border:"none",borderRadius:20,padding:"8px 14px",fontSize:12,fontWeight:700,cursor:"pointer",boxShadow:"0 2px 6px rgba(0,0,0,.2)"}}>
         📍 Hoje
@@ -6472,7 +6478,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260721.1148 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260721.1215 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -6554,7 +6560,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260721.1148
+      // HTML v3.20260721.1215
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
