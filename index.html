@@ -3987,6 +3987,178 @@ function Historico({data,onUpdate,destaque,onIrPara}){
   </div>;
 }
 
+// ── TIMELINE (aba nova, em construção) ───────────────────────────────────────
+// [21/07] Etapa 1: esqueleto do scroll-snap com destaque central, dado
+// MOCKADO (nao le a planilha ainda). Objetivo desta etapa e so validar a
+// sensacao de rolagem/encaixe/escala antes de plugar o dado real. Convive
+// em paralelo com Previsao e Historico, que continuam 100% intocadas --
+// so quando o Marcus aprovar o formato e que elas saem (ver alinhamento
+// de 21/07). Proximas etapas: dado real (janela +-30 dias com infinite
+// scroll), busca/filtro, reagendar + categoria editavel nos dois lados.
+
+// Gera uma janela de dias mockados em volta de hoje, pro teste de rolagem.
+// Mistura linha de saldo-do-dia + 0-2 lancamentos por dia, so pra ter
+// altura/variedade parecida com o uso real (~1 saldo + ~1 lancamento a
+// cada poucos dias, como vimos na planilha real: ~38 lancamentos/mes).
+function _gerarMockTimeline(){
+  const hj=new Date();
+  const linhas=[];
+  let saldo=26545.46;
+  const descs=[
+    {d:"ROSE (FAXINA)",c:"DESPESA FIXA · DOMÉSTICO · CONTA",v:-135,cat:null},
+    {d:"MEOO (VW NIVUS)",c:"DESPESA FIXA · VEÍCULO · CONTA",v:-3726,cat:null},
+    {d:"FATURA CARTÃO PJ",c:"Nubank INTENSIVA! · CARTÃO · CONTA",v:-9299.58,cat:null},
+    {d:"CELESC (ENERGIA)",c:"DESPESA FIXA · MORADIA · CONTA",v:-350,cat:null},
+    {d:"BENEVIX (PLANO SAÚDE)",c:"DESPESA FIXA · SAÚDE · CONTA",v:-1900,cat:null},
+    {d:"PLANTÃO HSA",c:"RECEITA · ESTRUTURADA",v:4800,cat:null},
+    {d:"IFOOD",c:"ALIMENTAÇÃO · CONTA",v:-68.9,cat:"DCP"},
+    {d:"PADARIA",c:"ALIMENTAÇÃO · CONTA",v:-42.3,cat:"DCP"},
+  ];
+  for(let i=-20;i<=25;i++){
+    const dt=new Date(hj); dt.setDate(dt.getDate()+i);
+    const iso=dt.toISOString().slice(0,10);
+    const ehHoje=i===0;
+    const ehSeg=dt.getDay()===1;
+    // pula uns dias sem nada, igual ao comportamento real (só aparece dia
+    // com lançamento OU o próprio dia de hoje).
+    const temAlgo = ehHoje || ehSeg || (Math.abs(i)%3===0);
+    if(!temAlgo) continue;
+    const n = ehHoje?1:(Math.abs(i)%5===0?2:1);
+    const itens=[];
+    for(let k=0;k<n;k++){
+      const pick=descs[Math.floor(Math.random()*descs.length)];
+      saldo+=pick.v;
+      itens.push({tipo:"item",descricao:pick.d,categoriaTxt:pick.c,valor:pick.v,cat:pick.cat});
+    }
+    linhas.push({tipo:"dia",data:iso,dataObj:new Date(dt),saldo,hoje:ehHoje,seg:ehSeg,itens});
+  }
+  return linhas;
+}
+
+function _fmtDataCurta(d){
+  const dias=["DOM","SEG","TER","QUA","QUI","SEX","SAB"];
+  return String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+String(d.getFullYear()).slice(2)+" · "+dias[d.getDay()];
+}
+
+function Timeline({data}){
+  const containerRef=useRef(null);
+  const nodeRefs=useRef([]);
+  const [busca,setBusca]=useState("");
+  const [filtro,setFiltro]=useState("todos"); // todos|previsao|historico -- so visual nesta etapa (mock nao tem status real ainda)
+  const linhas=useMemo(()=>_gerarMockTimeline(),[]);
+  const hojeIdx=useMemo(()=>linhas.findIndex(l=>l.hoje),[linhas]);
+
+  // Achata em "slots" (1 slot = 1 linha de saldo OU 1 item), pra cada um
+  // virar um elemento centralizavel no scroll-snap.
+  const slots=useMemo(()=>{
+    const out=[];
+    linhas.forEach((l,li)=>{
+      out.push({tipo:"saldo",linha:l,linhaIdx:li});
+      l.itens.forEach((it,ii)=>out.push({tipo:"item",linha:l,item:it,linhaIdx:li,itemIdx:ii}));
+    });
+    return out;
+  },[linhas]);
+
+  const hojeSlotIdx=useMemo(()=>slots.findIndex(s=>s.tipo==="saldo"&&s.linha.hoje),[slots]);
+
+  function atualizarDestaque(){
+    const cont=containerRef.current;
+    if(!cont) return;
+    const rect=cont.getBoundingClientRect();
+    const centerY=rect.top+rect.height/2;
+    nodeRefs.current.forEach(node=>{
+      if(!node) return;
+      const r=node.getBoundingClientRect();
+      const itemCenter=r.top+r.height/2;
+      const dist=Math.abs(itemCenter-centerY);
+      const norm=Math.min(dist/(rect.height/2),1);
+      const scale=1-norm*0.32;
+      const opacity=1-norm*0.75;
+      node.style.transform="scale("+scale.toFixed(3)+")";
+      node.style.opacity=Math.max(opacity,0.2).toFixed(3);
+    });
+  }
+
+  useEffect(()=>{
+    const cont=containerRef.current;
+    if(!cont) return;
+    let raf=null;
+    function onScroll(){
+      if(raf) return;
+      raf=requestAnimationFrame(()=>{raf=null;atualizarDestaque();});
+    }
+    cont.addEventListener("scroll",onScroll,{passive:true});
+    // centraliza em "hoje" assim que monta
+    const alvo=nodeRefs.current[hojeSlotIdx];
+    if(alvo) alvo.scrollIntoView({block:"center"});
+    atualizarDestaque();
+    return ()=>cont.removeEventListener("scroll",onScroll);
+  },[slots]);
+
+  function voltarHoje(){
+    const alvo=nodeRefs.current[hojeSlotIdx];
+    if(alvo) alvo.scrollIntoView({behavior:"smooth",block:"center"});
+  }
+
+  const alturaContainer=440;
+
+  return <div>
+    <Card style={{padding:"10px 12px",marginBottom:12}}>
+      <div style={{fontSize:11,color:C.textMuted,marginBottom:6,lineHeight:1.4}}>
+        🧪 Protótipo em construção — dado ainda é mockado (não é a planilha real). Etapa 1: só validar a sensação de rolagem.
+      </div>
+      <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar (visual só, ainda não filtra)"
+        style={{width:"100%",padding:"9px 12px",border:"1px solid "+C.border,borderRadius:9,fontSize:13,fontFamily:"inherit",marginBottom:8}}/>
+      <div style={{display:"flex",gap:6}}>
+        {[["todos","Todos"],["previsao","Só Previsão"],["historico","Só Histórico"]].map(([id,l])=>
+          <button key={id} onClick={()=>setFiltro(id)} style={{flex:1,padding:"6px 4px",borderRadius:7,border:"none",cursor:"pointer",
+            fontFamily:"inherit",fontSize:11,fontWeight:700,
+            background:filtro===id?C.accentLight:C.borderLight,color:filtro===id?C.accent:C.textSub}}>{l}</button>)}
+      </div>
+    </Card>
+
+    <div style={{position:"relative"}}>
+      <div ref={containerRef} style={{height:alturaContainer,overflowY:"auto",scrollSnapType:"y mandatory",
+        WebkitOverflowScrolling:"touch",borderRadius:16,background:C.surface,border:"1px solid "+C.border}}>
+        <div style={{height:alturaContainer/2-28}}/>
+        {slots.map((s,i)=>{
+          const isHoje=s.tipo==="saldo"&&s.linha.hoje;
+          return <div key={i} ref={n=>nodeRefs.current[i]=n}
+            style={{scrollSnapAlign:"center",transition:"transform .06s linear,opacity .06s linear",padding:"9px 16px"}}>
+            {s.tipo==="saldo" ? (
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontWeight:800,color:C.accent,fontSize:isHoje?15:13}}>{_fmtDataCurta(s.linha.dataObj)}{isHoje&&<span style={{marginLeft:6,fontSize:10,background:C.accentLight,color:C.accent,padding:"2px 6px",borderRadius:5}}>HOJE</span>}</div>
+                  {(isHoje||s.linha.seg)&&<div style={{fontSize:10,color:C.textMuted,marginTop:2}}>DCP semanal · 28/07 a 03/08</div>}
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{color:C.blue,fontWeight:900,fontSize:isHoje?20:15}}>→ {fmt(s.linha.saldo)}</div>
+                  {(isHoje||s.linha.seg)&&<div style={{color:C.green,fontWeight:800,fontSize:13}}>Envelope: R$ 1.283,24</div>}
+                </div>
+              </div>
+            ) : (
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+                background:s.item.cat==="DCP"?C.yellowLight:"transparent",borderRadius:8,
+                borderLeft:s.item.cat==="DCP"?"3px solid #D97706":"3px solid transparent",padding:"6px 8px"}}>
+                <div>
+                  <div style={{fontWeight:700,fontSize:14}}>{s.item.descricao}</div>
+                  <div style={{fontSize:10,color:C.textMuted}}>{s.item.categoriaTxt}</div>
+                </div>
+                <div style={{fontWeight:800,fontSize:14,color:s.item.valor<0?C.red:C.green}}>{fmt(s.item.valor)}</div>
+              </div>
+            )}
+          </div>;
+        })}
+        <div style={{height:alturaContainer/2-28}}/>
+      </div>
+      <button onClick={voltarHoje} style={{position:"absolute",bottom:10,right:10,background:C.accent,color:"#fff",
+        border:"none",borderRadius:20,padding:"8px 14px",fontSize:12,fontWeight:700,cursor:"pointer",boxShadow:"0 2px 6px rgba(0,0,0,.2)"}}>
+        📍 Hoje
+      </button>
+    </div>
+  </div>;
+}
+
 // ── SYSTEM PROMPT GEMINI ──────────────────────────────────────────────────────
 function buildPrompt(data){
   const hj=hoje(),fluxo=data.fluxo||[],cfg=data.config||{};
@@ -6271,11 +6443,12 @@ function Tesouraria(){
 
   function goChat(txt){setChatInit(txt);navegar("conversar");}
 
-  const TABS=[{id:"dashboard",l:"Dashboard"},{id:"fluxo",l:"Previsão"},{id:"historico",l:"Histórico"},{id:"ferramentas",l:"Ferramentas"}];
+  const TABS=[{id:"dashboard",l:"Dashboard"},{id:"fluxo",l:"Previsão"},{id:"historico",l:"Histórico"},{id:"timeline",l:"🧪 Timeline"},{id:"ferramentas",l:"Ferramentas"}];
   const TAB_CORES={
     dashboard:{cor:C.blue,bg:C.blueLight},
     fluxo:{cor:C.accent,bg:C.accentLight},
     historico:{cor:C.green,bg:C.greenLight},
+    timeline:{cor:C.teal,bg:C.tealLight},
     ferramentas:{cor:C.purple,bg:C.purpleLight},
   };
 
@@ -6289,7 +6462,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260720.2239 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260721.0830 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -6328,6 +6501,7 @@ function Tesouraria(){
         tab==="dashboard"   ? <Dashboard data={data}/> :
         tab==="fluxo"       ? <Fluxo data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
         tab==="historico"   ? <Historico data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
+        tab==="timeline"    ? <Timeline data={data}/> :
         tab==="ferramentas" ? <Ferramentas onIrPara={t=>{navegar(t);}}/> :
         tab==="recorr"      ? <Recorrencias data={data} onUpdate={setData}/> :
         tab==="cartoes"     ? <Cartoes data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
@@ -6370,6 +6544,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
+      // HTML v3.20260721.0830
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
