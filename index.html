@@ -1063,15 +1063,21 @@ function Dashboard({data}){
         // gastar" na semana e no mês/ciclo, junto das outras informações
         // mais práticas do app (menor liquidez, projeções). Antes só
         // existia dentro da barra, em texto pequeno ("Disponível do
-        // ciclo") -- agora ganha o mesmo destaque visual dos outros KPIs.
+        // ciclo"). [AUMENTADO 20/07] Bloco próprio, bem maior que o KPI
+        // padrão -- pedido explícito pra ficar mais evidente que qualquer
+        // outro número da tela.
         const semAtual=dcpResumo.semanas.find(w=>w.status==="PROGRAMADO")||dcpResumo.semanas[dcpResumo.semanas.length-1];
         const dispSemana=semAtual?semAtual.meta-semAtual.gasto:null;
         const tetoMes=dcpResumo.base*Math.max(dcpResumo.semanas.length,1);
         const gastoMes=dcpResumo.semanas.reduce((s,w)=>s+w.gasto,0);
         const dispMes=tetoMes-gastoMes;
-        return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-          {dispSemana!=null&&<KPI label="Disponível esta semana" value={fmt(dispSemana)} color={dispSemana<0?C.red:C.text} bg={dispSemana<0?C.redLight:"#FEF3C7"} raw={dispSemana}/>}
-          <KPI label="Disponível no ciclo (mês)" value={fmt(dispMes)} color={dispMes<0?C.red:C.text} bg={dispMes<0?C.redLight:"#FEF3C7"} raw={dispMes}/>
+        const Bloco=({label,valor})=><div style={{flex:1,background:valor<0?C.redLight:"#FEF3C7",borderRadius:14,padding:"14px 12px",textAlign:"center"}}>
+          <div style={{fontSize:11,fontWeight:700,color:valor<0?C.red:"#92400E",textTransform:"uppercase",letterSpacing:".05em",marginBottom:4}}>{label}</div>
+          <div style={{fontSize:30,fontWeight:900,color:valor<0?C.red:"#92400E",lineHeight:1.05,fontVariantNumeric:"tabular-nums"}}>{fmt(valor)}</div>
+        </div>;
+        return <div style={{display:"flex",gap:8,marginBottom:12}}>
+          {dispSemana!=null&&<Bloco label="Disponível esta semana" valor={dispSemana}/>}
+          <Bloco label="Disponível no ciclo (mês)" valor={dispMes}/>
         </div>;
       })()}
       <BarraDCP semanas={dcpResumo.semanas} base={dcpResumo.base}/>
@@ -6281,7 +6287,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260720.2137 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260720.2212 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
