@@ -4076,7 +4076,13 @@ function Timeline({data}){
       const scale=1-norm*0.32;
       const opacity=1-norm*0.75;
       node.style.transform="scale("+scale.toFixed(3)+")";
-      node.style.opacity=Math.max(opacity,0.2).toFixed(3);
+      // [21/07] Opacidade so no CONTEUDO (texto), nunca na linha inteira --
+      // aplicar no node inteiro esmaecia junto o fundo zebra/DCP, que ficava
+      // quase invisivel fora do centro (bug reportado pelo Marcus). O fundo
+      // zebra/tag DCP precisa ficar sempre visivel pra servir de guia de
+      // leitura da lista inteira, não só do item central.
+      const fade=node.querySelector("[data-fade]");
+      if(fade) fade.style.opacity=Math.max(opacity,0.35).toFixed(3);
     });
   }
 
@@ -4125,9 +4131,9 @@ function Timeline({data}){
         {slots.map((s,i)=>{
           const isHoje=s.tipo==="saldo"&&s.linha.hoje;
           return <div key={i} ref={n=>nodeRefs.current[i]=n}
-            style={{scrollSnapAlign:"center",transition:"transform .06s linear,opacity .06s linear",padding:"9px 16px"}}>
+            style={{scrollSnapAlign:"center",transition:"transform .06s linear",padding:"9px 16px"}}>
             {s.tipo==="saldo" ? (
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div data-fade style={{display:"flex",justifyContent:"space-between",alignItems:"center",transition:"opacity .06s linear"}}>
                 <div>
                   <div style={{fontWeight:800,color:C.accent,fontSize:isHoje?15:13}}>{_fmtDataCurta(s.linha.dataObj)}{isHoje&&<span style={{marginLeft:6,fontSize:10,background:C.accentLight,color:C.accent,padding:"2px 6px",borderRadius:5}}>HOJE</span>}</div>
                   {(isHoje||s.linha.seg)&&<div style={{fontSize:10,color:C.textMuted,marginTop:2}}>DCP semanal · 28/07 a 03/08</div>}
@@ -4141,11 +4147,13 @@ function Timeline({data}){
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
                 background:s.item.cat==="DCP"?C.yellowLight:(s.itemOrdinal%2===0?C.borderLight:"transparent"),borderRadius:8,
                 borderLeft:s.item.cat==="DCP"?"3px solid #D97706":"3px solid transparent",padding:"6px 8px"}}>
-                <div>
-                  <div style={{fontWeight:700,fontSize:14}}>{s.item.descricao}</div>
-                  <div style={{fontSize:10,color:C.textMuted}}>{s.item.categoriaTxt}</div>
+                <div data-fade style={{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%",transition:"opacity .06s linear"}}>
+                  <div>
+                    <div style={{fontWeight:700,fontSize:14}}>{s.item.descricao}</div>
+                    <div style={{fontSize:10,color:C.textMuted}}>{s.item.categoriaTxt}</div>
+                  </div>
+                  <div style={{fontWeight:800,fontSize:14,color:s.item.valor<0?C.red:C.green}}>{fmt(s.item.valor)}</div>
                 </div>
-                <div style={{fontWeight:800,fontSize:14,color:s.item.valor<0?C.red:C.green}}>{fmt(s.item.valor)}</div>
               </div>
             )}
           </div>;
@@ -6463,7 +6471,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260721.0855 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260721.1130 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -6545,7 +6553,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260721.0855
+      // HTML v3.20260721.1130
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
