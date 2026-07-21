@@ -455,9 +455,10 @@ function SeletorEnvelopeItem({aba,row,obsAtual,data,onUpdate}){
 }
 function TagEnvelopeDCP({envelope,futuro}){
   if(!envelope) return null;
-  return <span style={{fontSize:9,fontWeight:600,marginLeft:6,padding:"1px 5px",borderRadius:4,
-    color:futuro?C.textMuted:C.accent,background:futuro?C.borderLight:C.accentLight,
-    fontStyle:futuro?"italic":"normal"}}>{futuro?"→ ":""}{envelope}</span>;
+  return <span style={{fontSize:10,fontWeight:800,marginLeft:6,padding:"2px 7px",borderRadius:5,
+    color:futuro?C.textMuted:"#B45309",background:futuro?C.borderLight:"#FEF3C7",
+    border:futuro?"none":"1px solid #FCD34D",
+    fontStyle:futuro?"italic":"normal"}}>{futuro?"→ ":"🧺 "}{envelope}</span>;
 }
 
 // Valor de uma linha DCP_PROVISAO: quando positivo, a semana estourou e a
@@ -746,6 +747,11 @@ function corDoItem(item, hj){
   const ehFatura=item.tipo==="CARTAO PF"||item.tipo==="CARTAO PJ";
   let obs={};
   try{ obs=JSON.parse(item.obs||"{}"); }catch(e){}
+  // [NOVO 20/07] Confirmado contra extrato de conta real (conciliarExtrato
+  // ja grava obs.extratoId sozinho, so nunca tinha selo visual pra isso --
+  // selo ADICIONAL, nunca substitui o selo normal de status (PAGO/VENCIDO
+  // etc), os dois podem aparecer juntos.
+  const confirmadoExtrato=!!obs.extratoId;
 
   // Cor de fundo por categoria DCP -- clarinha e semi-transparente, so pra
   // diferenciar visualmente provisao semanal (laranja) de gasto real (amarelo),
@@ -761,18 +767,24 @@ function corDoItem(item, hj){
 
   if(ehFatura){
     if(item.status==="EXECUTADO"){
-      return obs.pagamentoParcial?{cor:C.orange,selo:"● PARCIAL",bg:bgCat,descCor}:{cor:C.green,selo:"● PAGO",bg:bgCat,descCor};
+      return obs.pagamentoParcial?{cor:C.orange,selo:"● PARCIAL",bg:bgCat,descCor,confirmadoExtrato}:{cor:C.green,selo:"● PAGO",bg:bgCat,descCor,confirmadoExtrato};
     }
-    if(item.data<hj) return {cor:C.red,selo:"● VENCIDA",bg:bgCat,descCor};
-    if(obs.restanteDeFatura) return {cor:C.orange,selo:"● RESTANTE",bg:bgCat,descCor};
-    return {cor:C.green,selo:null,bg:bgCat,descCor};
+    if(item.data<hj) return {cor:C.red,selo:"● VENCIDA",bg:bgCat,descCor,confirmadoExtrato};
+    if(obs.restanteDeFatura) return {cor:C.orange,selo:"● RESTANTE",bg:bgCat,descCor,confirmadoExtrato};
+    return {cor:C.green,selo:null,bg:bgCat,descCor,confirmadoExtrato};
   }
 
   if(item.status==="PROGRAMADO"){
-    if(item.data<hj) return {cor:C.red,selo:"● VENCIDO",bg:bgCat,descCor};
-    if(obs.dataOriginal&&item.data>obs.dataOriginal) return {cor:C.orange,selo:"● REAGENDADO",bg:bgCat,descCor};
+    if(item.data<hj) return {cor:C.red,selo:"● VENCIDO",bg:bgCat,descCor,confirmadoExtrato};
+    if(obs.dataOriginal&&item.data>obs.dataOriginal) return {cor:C.orange,selo:"● REAGENDADO",bg:bgCat,descCor,confirmadoExtrato};
   }
-  return {cor:null,selo:null,bg:bgCat,descCor};
+  // [NOVO 20/07] Aumenta a visibilidade de gasto DCP no dia a dia -- antes
+  // só o fundo amarelo clarinho diferenciava, sem nenhuma borda; agora ganha
+  // a mesma borda lateral colorida que os outros selos já usam, mesmo sem
+  // nenhum problema de status (vencido/reagendado). Nunca sobrescreve um
+  // selo de status real -- só se aplica no caso "sem problema nenhum".
+  if(cat==="DCP") return {cor:"#D97706",selo:null,bg:bgCat,descCor,confirmadoExtrato};
+  return {cor:null,selo:null,bg:bgCat,descCor,confirmadoExtrato};
 }
 
 async function api(payload){
@@ -1046,6 +1058,22 @@ function Dashboard({data}){
     </div>
     {dcpResumo.semanas.length>0&&<Card>
       <div style={{marginBottom:8}}><Label>Saldo p/ Despesas Cotidianas (DCP)</Label></div>
+      {(()=>{
+        // [NOVO 20/07] Destaque pedido pelo Marcus -- "quanto tenho pra
+        // gastar" na semana e no mês/ciclo, junto das outras informações
+        // mais práticas do app (menor liquidez, projeções). Antes só
+        // existia dentro da barra, em texto pequeno ("Disponível do
+        // ciclo") -- agora ganha o mesmo destaque visual dos outros KPIs.
+        const semAtual=dcpResumo.semanas.find(w=>w.status==="PROGRAMADO")||dcpResumo.semanas[dcpResumo.semanas.length-1];
+        const dispSemana=semAtual?semAtual.meta-semAtual.gasto:null;
+        const tetoMes=dcpResumo.base*Math.max(dcpResumo.semanas.length,1);
+        const gastoMes=dcpResumo.semanas.reduce((s,w)=>s+w.gasto,0);
+        const dispMes=tetoMes-gastoMes;
+        return <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+          {dispSemana!=null&&<KPI label="Disponível esta semana" value={fmt(dispSemana)} color={dispSemana<0?C.red:C.text} bg={dispSemana<0?C.redLight:"#FEF3C7"} raw={dispSemana}/>}
+          <KPI label="Disponível no ciclo (mês)" value={fmt(dispMes)} color={dispMes<0?C.red:C.text} bg={dispMes<0?C.redLight:"#FEF3C7"} raw={dispMes}/>
+        </div>;
+      })()}
       <BarraDCP semanas={dcpResumo.semanas} base={dcpResumo.base}/>
     </Card>}
     <Card style={{padding:"14px 12px 10px"}}>
@@ -3582,13 +3610,13 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
       })()}
       {itensExibir.map(item=>{const isOpen=conf===item.row;
         const ehFatura=item.tipo==="CARTAO PF"||item.tipo==="CARTAO PJ";
-        const {cor:corItem,selo,bg:bgItem,descCor}=corDoItem(item,hj);
+        const {cor:corItem,selo,bg:bgItem,descCor,confirmadoExtrato}=corDoItem(item,hj);
         const destacado=destaque?.tab==="fluxo"&&destaque.row===item.row;
         return <div key={item.row} id={"fluxo-item-"+item.row}>
         <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 14px",borderBottom:"1px solid "+C.borderLight,background:destacado?"#FEF3C7":(bgItem||C.surface),transition:"background 1s",
           borderLeft:corItem?"3px solid "+corItem:"none"}}>
           <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:12,fontWeight:600,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}{selo&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,color:corItem}}>{selo}</span>}</div>
+            <div style={{fontSize:12,fontWeight:600,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}{selo&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,color:corItem}}>{selo}</span>}{confirmadoExtrato&&<span style={{marginLeft:6,fontSize:9,background:C.greenLight,color:C.green,padding:"1px 6px",borderRadius:8,fontWeight:700}}>✅ Extrato</span>}</div>
             <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{item.categoria==="DCP_PROVISAO"?periodoDCP(item.data):(<>{tipoDisplay(item.tipo,data)}{item.categoria&&item.categoria!==item.tipo?" · "+item.categoria:""} · {item.forma}</>)}<TagEnvelopeDCP envelope={item.categoria!=="DCP_PROVISAO"?item.dcpEnvelope:null} futuro={item.status==="PROGRAMADO"}/>{(()=>{const ie=infoEnvelopeItem(item);return ie?<TagEnvelopeCustom nome={ie.nome} saldo={ie.saldo}/>:null;})()}</div>
           </div>
           {item.categoria==="DCP_PROVISAO"?<ValorDCPProvisao valor={item.valor} dataEnvelope={item.data}/>:<span style={{fontWeight:700,color:item.valor<0?C.red:C.blue,flexShrink:0,fontSize:12}}>{fmt(item.valor)}</span>}
@@ -3877,11 +3905,11 @@ function Historico({data,onUpdate,destaque,onIrPara}){
           <span style={{fontSize:12,fontWeight:700,color:C.accent}}>{fmtD(gdt)} · {diaSemana(gdt)}</span>
           {spIni!=null&&isFinite(spIni)&&<span style={spIni<0?{fontSize:15,fontWeight:800,color:C.red,background:C.redLight,padding:"2px 7px",borderRadius:5}:{fontSize:14,fontWeight:700,color:C.blue}}>{"→ "+fmt(spIni)}</span>}
         </div>
-        {itens.map(item=>{const {cor:corItem,selo,bg:bgItem,descCor}=corDoItem(item,hj);const isOpen=conf===item.row;const destacado=destaque?.tab==="historico"&&destaque.row===item.row;return <div key={item.row} id={"hist-item-"+item.row}>
+        {itens.map(item=>{const {cor:corItem,selo,bg:bgItem,descCor,confirmadoExtrato}=corDoItem(item,hj);const isOpen=conf===item.row;const destacado=destaque?.tab==="historico"&&destaque.row===item.row;return <div key={item.row} id={"hist-item-"+item.row}>
           <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 14px",borderBottom:isOpen?"none":"1px solid "+C.borderLight,background:destacado?"#FEF3C7":(bgItem||C.surface),transition:"background 1s",
             borderLeft:corItem?"3px solid "+corItem:"none"}}>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:12,fontWeight:600,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}{selo&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,color:corItem}}>{selo}</span>}</div>
+              <div style={{fontSize:12,fontWeight:600,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}{selo&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,color:corItem}}>{selo}</span>}{confirmadoExtrato&&<span style={{marginLeft:6,fontSize:9,background:C.greenLight,color:C.green,padding:"1px 6px",borderRadius:8,fontWeight:700}}>✅ Extrato</span>}</div>
               <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{item.categoria==="DCP_PROVISAO"?periodoDCP(item.data):(<>{tipoDisplay(item.tipo,data)}{item.categoria&&item.categoria!==item.tipo?" · "+item.categoria:""}</>)}<TagEnvelopeDCP envelope={item.categoria!=="DCP_PROVISAO"?item.dcpEnvelope:null} futuro={false}/>{(()=>{const ie=infoEnvelopeItem(item);return ie?<TagEnvelopeCustom nome={ie.nome} saldo={ie.saldo}/>:null;})()}</div>
             </div>
             {item.categoria==="DCP_PROVISAO"?<ValorDCPProvisao valor={item.valor} dataEnvelope={item.data}/>:<span style={{fontWeight:700,color:item.valor<0?C.red:C.blue,flexShrink:0,fontSize:12}}>{fmt(item.valor)}</span>}
@@ -6253,7 +6281,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260720.1753 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260720.2137 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
