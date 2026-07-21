@@ -471,12 +471,14 @@ function ValorDCPProvisao({valor, dataEnvelope}){
   const cor=adiantado?"#B45309":C.green;
   const periodo=dataEnvelope?periodoDCPCompacto(dataEnvelope):"";
   const rotulo=(adiantado?"Adiantado":"Disponível")+(periodo?" de "+periodo:"");
+  // [AUMENTADO 20/07] Pedido do Marcus: mesmo tamanho/peso do saldo diário
+  // (o "→ R$ X" do topo de cada dia), não o de 13px que tinha antes.
   return <span style={{display:"flex",flexDirection:"column",alignItems:"flex-end",flexShrink:0}}>
-    <span style={{fontSize:13,fontWeight:700,color:cor,
+    <span style={{fontSize:18,fontWeight:800,color:cor,
       textDecoration:adiantado?"none":"underline",textDecorationColor:C.green,textUnderlineOffset:3}}>
       {adiantado?"🔄 ":""}{fmt(Math.abs(valor))}
     </span>
-    <span style={{fontSize:8,fontWeight:600,color:cor,marginTop:1,whiteSpace:"nowrap"}}>{rotulo}</span>
+    <span style={{fontSize:9,fontWeight:600,color:cor,marginTop:1,whiteSpace:"nowrap"}}>{rotulo}</span>
   </span>;
 }
 const corZ=v=>v<1000?C.red:v<5000?C.orange:C.blue;
@@ -1071,13 +1073,13 @@ function Dashboard({data}){
         const tetoMes=dcpResumo.base*Math.max(dcpResumo.semanas.length,1);
         const gastoMes=dcpResumo.semanas.reduce((s,w)=>s+w.gasto,0);
         const dispMes=tetoMes-gastoMes;
-        const Bloco=({label,valor})=><div style={{flex:1,background:valor<0?C.redLight:"#FEF3C7",borderRadius:14,padding:"14px 12px",textAlign:"center"}}>
-          <div style={{fontSize:11,fontWeight:700,color:valor<0?C.red:"#92400E",textTransform:"uppercase",letterSpacing:".05em",marginBottom:4}}>{label}</div>
-          <div style={{fontSize:30,fontWeight:900,color:valor<0?C.red:"#92400E",lineHeight:1.05,fontVariantNumeric:"tabular-nums"}}>{fmt(valor)}</div>
+        const Bloco=({label,valor})=><div style={{flex:1,minWidth:0,background:valor<0?C.redLight:"#FEF3C7",borderRadius:14,padding:"12px 8px",textAlign:"center",boxSizing:"border-box"}}>
+          <div style={{fontSize:10,fontWeight:700,color:valor<0?C.red:"#92400E",textTransform:"uppercase",letterSpacing:".03em",marginBottom:4,lineHeight:1.2}}>{label}</div>
+          <div style={{fontSize:22,fontWeight:900,color:valor<0?C.red:"#92400E",lineHeight:1.05,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fmt(valor)}</div>
         </div>;
         return <div style={{display:"flex",gap:8,marginBottom:12}}>
-          {dispSemana!=null&&<Bloco label="Disponível esta semana" valor={dispSemana}/>}
-          <Bloco label="Disponível no ciclo (mês)" valor={dispMes}/>
+          {dispSemana!=null&&<Bloco label="Esta semana" valor={dispSemana}/>}
+          <Bloco label="No ciclo (mês)" valor={dispMes}/>
         </div>;
       })()}
       <BarraDCP semanas={dcpResumo.semanas} base={dcpResumo.base}/>
@@ -6287,7 +6289,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260720.2212 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260720.2239 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
