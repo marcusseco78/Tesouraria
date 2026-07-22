@@ -5472,25 +5472,26 @@ function BotaoLancar({data,onUpdate,onIrPara}){
       })()}
     </>
     :ehReceita?<>
-      {!fontesEsporadicas.length
-        ?<div style={{fontSize:12,color:C.textMuted,padding:"12px 0",textAlign:"center"}}>
-            Nenhuma fonte esporádica cadastrada ainda. Vá em Ferramentas → Receitas e cadastre uma (Variável, não-calculada, Esporádica).
-          </div>
-        :<>
-          <select value={modoEspId} onChange={e=>{
-              setModoEspId(e.target.value);
-              const x=fontesEsporadicas.find(y=>y.modo.id===e.target.value);
-              const m=x&&x.modo;
-              setPercDescReceita(m?String(m.percDesconto||0):"");
-              setValorEstavel(m&&m.tipoValor==="ESTAVEL"?formatarValorInicial(m.valorFixo):"");
-              setBruto(m&&m.tipoValor==="VARIAVEL"&&!m.calculada&&m.valorReferencia?formatarValorInicial(m.valorReferencia):"");
-              setPlantoesEsp("");
-            }}
-            style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",marginBottom:10,background:C.surface}}>
-            <option value="">Qual fonte esporádica?</option>
-            {fontesEsporadicas.map(x=><option key={x.modo.id} value={x.modo.id}>{x.fonteNome}{x.modo.obs?" — "+x.modo.obs:""}</option>)}
-          </select>
-          {modoEspId&&<>
+      <select value={modoEspId} onChange={e=>{
+          const v=e.target.value;
+          if(v==="__criar__"){ fecharTudo(); onIrPara&&onIrPara({tab:"receitas"}); return; }
+          setModoEspId(v);
+          const x=fontesEsporadicas.find(y=>y.modo.id===v);
+          const m=x&&x.modo;
+          setPercDescReceita(m?String(m.percDesconto||0):"");
+          setValorEstavel(m&&m.tipoValor==="ESTAVEL"?formatarValorInicial(m.valorFixo):"");
+          setBruto(m&&m.tipoValor==="VARIAVEL"&&!m.calculada&&m.valorReferencia?formatarValorInicial(m.valorReferencia):"");
+          setPlantoesEsp("");
+        }}
+        style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",marginBottom:10,background:C.surface}}>
+        <option value="">Qual fonte esporádica?</option>
+        {fontesEsporadicas.map(x=><option key={x.modo.id} value={x.modo.id}>{x.fonteNome}{x.modo.obs?" — "+x.modo.obs:""}</option>)}
+        <option value="__criar__">+ Criar nova fonte de receita (regular ou esporádica)</option>
+      </select>
+      {!fontesEsporadicas.length&&<div style={{fontSize:11,color:C.textMuted,marginBottom:10,textAlign:"center"}}>
+        Nenhuma fonte esporádica cadastrada ainda.
+      </div>}
+      {modoEspId&&<>
             {fonteEspSelecionada.modo.tipoValor==="ESTAVEL"?
               <div style={{marginBottom:10}}>
                 <label style={{fontSize:9,color:C.textMuted}}>VALOR</label>
@@ -5524,7 +5525,6 @@ function BotaoLancar({data,onUpdate,onIrPara}){
               Líquido: {fmt(liquidoPreview)}
             </div>
           </>}
-        </>}
       <button onClick={salvar} disabled={load||!modoEspId||!receitaEspValida}
         style={{width:"100%",padding:"12px",borderRadius:10,background:receitaEspValida?C.accent:C.borderLight,color:receitaEspValida?"#fff":C.textMuted,fontSize:14,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
         {load?"Salvando…":"Salvar lançamento"}
@@ -6673,7 +6673,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260722.1345 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260722.1400 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -6755,7 +6755,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260722.1345
+      // HTML v3.20260722.1400
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
