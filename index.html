@@ -5447,14 +5447,30 @@ function BotaoLancar({data,onUpdate,onIrPara}){
     {ehPagamento&&faturasAbertas.length===0&&<div style={{fontSize:11,color:C.textMuted,marginBottom:10,fontStyle:"italic"}}>
       Nenhuma fatura em aberto encontrada nesse cartão.
     </div>}
-    {/* Descrição (opcional em pagamento) */}
-    {!ehPagamento&&<input value={desc} onChange={e=>{
-        const v=e.target.value.toUpperCase();
-        setDesc(v);
-        if(!envelopeId){const sug=envelopeRegraSugerido(v,data);if(sug)setEnvelopeId(sug);}
-        if(!apelido){const cands=apelidosCandidatos(v,data);if(cands.length===1)setApelido(cands[0].apelido);}
-      }} placeholder="Descrição (opcional)"
-      style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",marginBottom:10,textTransform:"uppercase"}}/>}
+    {/* [22/07] Nome de exibicao SEMPRE primeiro, nome no extrato/conciliacao
+       logo abaixo -- ordem combinada com o Marcus (apelido e o campo
+       principal, nome real e so referencia pra bater com CSV/OFX depois). */}
+    {!ehPagamento&&<div style={{marginBottom:10}}>
+      <input value={apelido} onChange={e=>setApelido(e.target.value.toUpperCase())}
+        placeholder="Nome de exibição (opcional)"
+        style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",boxSizing:"border-box",marginBottom:8}}/>
+      <input value={desc} onChange={e=>{
+          const v=e.target.value.toUpperCase();
+          setDesc(v);
+          if(!envelopeId){const sug=envelopeRegraSugerido(v,data);if(sug)setEnvelopeId(sug);}
+          if(!apelido){const cands=apelidosCandidatos(v,data);if(cands.length===1)setApelido(cands[0].apelido);}
+        }} placeholder="Nome no extrato/conciliação (opcional)"
+        style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",textTransform:"uppercase",boxSizing:"border-box"}}/>
+      {(()=>{const cands=apelidosCandidatos(desc,data);
+        return cands.length>1&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:5}}>
+          <span style={{fontSize:9,color:C.textMuted,width:"100%"}}>Bate com mais de uma regra salva — escolhe qual vale aqui:</span>
+          {cands.map((c,ci)=><button key={ci} type="button" onClick={()=>setApelido(c.apelido)}
+            style={{fontSize:10,padding:"3px 8px",borderRadius:12,border:"1px solid "+C.accent,background:apelido===c.apelido?C.accent:"transparent",color:apelido===c.apelido?"#fff":C.accent,cursor:"pointer",fontFamily:"inherit"}}>
+            {c.apelido}
+          </button>)}
+        </div>;
+      })()}
+    </div>}
     <div style={{display:"flex",gap:8,marginBottom:8}}>
       <button type="button" onClick={()=>setVNeg(n=>!n)}
         style={{width:38,flexShrink:0,borderRadius:8,border:"1px solid "+C.accent,
@@ -5475,20 +5491,6 @@ function BotaoLancar({data,onUpdate,onIrPara}){
       <option value="">Envelope (opcional)</option>
       {envelopesAbertos.map(env=><option key={env.id} value={env.id}>💌 {env.nome}</option>)}
     </select>}
-    {!ehPagamento&&<div style={{marginBottom:10}}>
-      <input value={apelido} onChange={e=>setApelido(e.target.value.toUpperCase())}
-        placeholder="Nome de exibição (opcional)"
-        style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
-      {(()=>{const cands=apelidosCandidatos(desc,data);
-        return cands.length>1&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:5}}>
-          <span style={{fontSize:9,color:C.textMuted,width:"100%"}}>Bate com mais de uma regra salva — escolhe qual vale aqui:</span>
-          {cands.map((c,ci)=><button key={ci} type="button" onClick={()=>setApelido(c.apelido)}
-            style={{fontSize:10,padding:"3px 8px",borderRadius:12,border:"1px solid "+C.accent,background:apelido===c.apelido?C.accent:"transparent",color:apelido===c.apelido?"#fff":C.accent,cursor:"pointer",fontFamily:"inherit"}}>
-            {c.apelido}
-          </button>)}
-        </div>;
-      })()}
-    </div>}
     {/* Parcelas (só compra nova no cartão) */}
     {dest!=="conta"&&!ehPagamento&&<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
       <span style={{fontSize:13,color:C.textSub}}>Parcelas:</span>
@@ -6574,7 +6576,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260722.1015 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260722.1045 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -6656,7 +6658,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260722.1015
+      // HTML v3.20260722.1045
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
