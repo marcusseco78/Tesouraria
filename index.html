@@ -5230,6 +5230,7 @@ function BotaoLancar({data,onUpdate,onIrPara}){
     setDest("conta");setCat("");setDesc("");setValor("");setParc("1");setData_(hoje());
     setEnvelopeId("");setApelido("");setVNeg(true);setVencAlvo("");
     setModoEspId("");setBruto("");setPercDescReceita("");setValorEstavel("");setPlantoesEsp("");
+    setEmpEscolhido("");
   }
   function voltarTrilha(){
     if(formAberto){setFormAberto(false);return;}
@@ -5240,20 +5241,16 @@ function BotaoLancar({data,onUpdate,onIrPara}){
   // [22/07] Helpers pra "antecipar" -- NUNCA criam lancamento novo, so acham
   // a ocorrencia JA EXISTENTE (linha PROGRAMADO) e mandam pro item real via
   // onIrPara+destaque.antecipar (que abre o painel de edicao com data=hoje).
-  function recorrenciasAtivas(destino){
-    return (data.recorr||[]).map(r=>({desc:r[0],parcTotal:Number(r[5])||0,ativo:r[6],destino:r[9]}))
-      .filter(r=>String(r.ativo).toUpperCase()!=="N"&&r.destino===destino&&!(r.parcTotal>0));
+  // DESTINO na planilha real e "FLUXO" (conta) ou "CARTAO_PF"/"CARTAO_PJ" --
+  // nunca "CONTA" (bug corrigido em 22/07, lista vinha sempre vazia).
+  function recorrenciasAtivas(destino,tipo){
+    return (data.recorr||[]).map(r=>({desc:r[0],parcTotal:Number(r[5])||0,ativo:r[6],tipo:r[7],destino:r[9]}))
+      .filter(r=>String(r.ativo).toUpperCase()!=="N"&&r.destino===destino&&!(r.parcTotal>0)
+        &&(!tipo||String(r.tipo||"").toUpperCase()===tipo));
   }
   function acharProximaFixaConta(desc){
     const cand=(data.fluxo||[]).filter(r=>String(r.descricao||"").toUpperCase()===String(desc).toUpperCase()&&r.status==="PROGRAMADO")
       .sort((a,b)=>a.data>b.data?1:-1);
-    return cand[0]||null;
-  }
-  function acharProximaFixaCartao(sigla,desc){
-    const rows=sigla==="PF"?(data.cartaoPF||[]):(data.cartaoPJ||[]);
-    const hj=hoje();
-    const cand=rows.filter(r=>String(r[1]||"").toUpperCase()===String(desc).toUpperCase()&&String(r[0]||"").slice(0,10)>=hj)
-      .sort((a,b)=>String(a[0]).slice(0,10)>String(b[0]).slice(0,10)?1:-1);
     return cand[0]||null;
   }
   function proximaFaturaGenuina(sigla){
@@ -5275,10 +5272,10 @@ function BotaoLancar({data,onUpdate,onIrPara}){
       &&r.categoria==="DIVIDA_PARCELADA"&&r.status==="PROGRAMADO").sort((a,b)=>a.data>b.data?1:-1);
   }
 
-  // Arvore de navegacao do "+". Cada opcao tem ou (a) um NODES[id] -- vira
-  // GALHO, empurra na trilha -- ou (b) uma acao (funcao propria, pra listas
-  // dinamicas tipo "qual despesa fixa") -- ou (c) cai em LEAF_ACOES[id] pras
-  // folhas estaticas mais simples.
+  // Arvore de navegacao do "+" -- so PILULAS pra escolher categoria/destino.
+  // "Qual despesa fixa/qual emprestimo/qual parcela" NUNCA vira pilula --
+  // vira select dentro da bandeja classica (mesmo padrao ja usado em Fatura
+  // Avulsa e Receita Esporadica), porque sao listas de dados, nao categorias.
   const NODES={
     raiz:[{id:"gastos",label:"Gastos"},{id:"ganhos",label:"Ganhos"}],
     gastos:[{id:"gastos_cartao",label:"Cartão"},{id:"gastos_conta",label:"Conta"}],
@@ -5293,44 +5290,14 @@ function BotaoLancar({data,onUpdate,onIrPara}){
     gastos_conta_credito:[{id:"cred_parcelados",label:"Parcelados"},{id:"cred_posfixados",label:"Pós-Fixados"}],
     ganhos:[{id:"ganhos_receitas",label:"Receitas"},{id:"ganhos_emprestimos",label:"Empréstimos"},
       {id:"ganhos_cofre",label:"Cofre/Invest. (Resgate)"},{id:"ganhos_avulso",label:"Avulso"}],
-    // Picker de qual Despesa Fixa antecipar -- Conta e cada Cartao
-    fixa_conta:(()=>{const l=recorrenciasAtivas("CONTA");
-      return l.length?l.map(r=>({label:r.desc,acao:()=>{
-          const alvo=acharProximaFixaConta(r.desc);
-          if(!alvo){alert("Nenhuma ocorrência futura encontrada pra essa despesa fixa.");return;}
-          irAntecipar("fluxo",alvo.row);
-        }}))
-      :[{label:"Nenhuma despesa fixa ativa na Conta",acao:()=>{fecharTudo();onIrPara&&onIrPara({tab:"recorr"});}}];
-    })(),
-    fixa_pf:(()=>{const l=recorrenciasAtivas("CARTAO_PF");
-      return l.length?l.map(r=>({label:r.desc,acao:()=>{
-          const alvo=acharProximaFixaCartao("PF",r.desc);
-          if(!alvo){alert("Nenhuma ocorrência futura encontrada pra essa despesa fixa.");return;}
-          irAntecipar("cartoes",_linhaCartao(alvo),{cartao:"PF"});
-        }}))
-      :[{label:"Nenhuma despesa fixa ativa nesse cartão",acao:()=>{fecharTudo();onIrPara&&onIrPara({tab:"recorr"});}}];
-    })(),
-    fixa_pj:(()=>{const l=recorrenciasAtivas("CARTAO_PJ");
-      return l.length?l.map(r=>({label:r.desc,acao:()=>{
-          const alvo=acharProximaFixaCartao("PJ",r.desc);
-          if(!alvo){alert("Nenhuma ocorrência futura encontrada pra essa despesa fixa.");return;}
-          irAntecipar("cartoes",_linhaCartao(alvo),{cartao:"PJ"});
-        }}))
-      :[{label:"Nenhuma despesa fixa ativa nesse cartão",acao:()=>{fecharTudo();onIrPara&&onIrPara({tab:"recorr"});}}];
-    })(),
-    // Picker de qual Emprestimo, depois qual Parcela em aberto
-    cred_parcelados:(()=>{const l=emprestimosAtivos();
-      return l.length?l.map((e,i)=>({id:"emp_"+i,label:e.desc}))
-      :[{label:"Nenhum empréstimo parcelado cadastrado",acao:()=>{fecharTudo();onIrPara&&onIrPara({tab:"emprestimos"});}}];
-    })(),
   };
-  emprestimosAtivos().forEach((e,i)=>{
-    const parcelas=parcelasAbertas(e.desc);
-    NODES["emp_"+i]=parcelas.length?parcelas.map(p=>({label:"Venc. "+fmtD(p.data)+" · "+fmt(Math.abs(p.valor)),
-      acao:()=>irAntecipar("fluxo",p.row)}))
-      :[{label:"Nenhuma parcela em aberto",acao:()=>{fecharTudo();onIrPara&&onIrPara({tab:"emprestimos"});}}];
-  });
   const LEAF_ACOES={
+    // [22/07] Despesa Fixa em CARTAO nunca antecipa individualmente -- vem
+    // junto da fatura inteira. So resta criar nova, na aba especializada.
+    fixa_pf:()=>{fecharTudo();onIrPara&&onIrPara({tab:"recorr"});},
+    fixa_pj:()=>{fecharTudo();onIrPara&&onIrPara({tab:"recorr"});},
+    // Despesa Fixa em CONTA -- abre a bandeja com o select de qual antecipar
+    fixa_conta:()=>{setDest("fixaconta");setFormAberto(true);},
     dcp_pf:()=>{setDest("pf");setCat("DCP");setVNeg(true);setFormAberto(true);},
     extra_pf:()=>{setDest("pf");setCat("EXTRAORDINARIA");setVNeg(true);setFormAberto(true);},
     dcp_pj:()=>{setDest("pj");setCat("DCP");setVNeg(true);setFormAberto(true);},
@@ -5345,6 +5312,8 @@ function BotaoLancar({data,onUpdate,onIrPara}){
     fat_pj_proxima:()=>{const alvo=proximaFaturaGenuina("PJ");
       if(!alvo){alert("Nenhuma fatura em aberto encontrada nesse cartão.");return;}
       irAntecipar("fluxo",alvo.row);},
+    // Parcelados: abre a bandeja com os 2 selects em cascata (emprestimo -> parcela)
+    cred_parcelados:()=>{setDest("emprestimoparc");setFormAberto(true);},
     // [22/07] Pos-Fixados/Cofre (Aporte/Resgate)/contratar Emprestimo ainda
     // nao tem um atalho rapido construido (amortizar/aportar sao valor
     // livre, nao uma ocorrencia pra antecipar) -- por ora redireciona pra
@@ -5356,6 +5325,9 @@ function BotaoLancar({data,onUpdate,onIrPara}){
     ganhos_cofre:()=>{fecharTudo();onIrPara&&onIrPara({tab:"cofres"});},
     ganhos_avulso:()=>{setDest("conta");setCat("DEPOSITO_AVULSO");setVNeg(false);setFormAberto(true);},
   };
+  const ehFixaConta=dest==="fixaconta";
+  const ehEmprestimoParc=dest==="emprestimoparc";
+  const [empEscolhido,setEmpEscolhido]=useState("");
 
   async function salvar(){
     if(ehPagamento){
@@ -5432,8 +5404,8 @@ function BotaoLancar({data,onUpdate,onIrPara}){
             style={ehRaizAtual?
               {padding:"13px 20px",borderRadius:26,border:"none",background:C.accent,color:"#fff",
                 fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px rgba(0,0,0,.12)"}
-              :{padding:"11px 17px",borderRadius:22,border:"1px solid #E5E7EB",background:"#F3F4F6",color:"#6B7280",
-                fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px rgba(0,0,0,.1)"}}>
+              :{padding:"11px 17px",borderRadius:22,border:"none",background:C.accent,color:"#fff",
+                fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px rgba(0,0,0,.12)"}}>
             {ehRaizAtual&&<span style={{fontWeight:900,marginRight:5,color:it.id==="gastos"?"#F87171":"#60A5FA"}}>{it.id==="gastos"?"▼":"▲"}</span>}
             {it.label}
           </button>;
@@ -5457,7 +5429,48 @@ function BotaoLancar({data,onUpdate,onIrPara}){
       <span style={{fontSize:15,fontWeight:800,color:C.text}}>Novo lançamento{tituloForm()?" — "+tituloForm():""}</span>
       <button onClick={fecharTudo} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:C.textMuted}}>✕</button>
     </div>
-    {ehReceita?<>
+    {ehFixaConta?<>
+      {(()=>{const lista=recorrenciasAtivas("FLUXO","DESPESA FIXA");
+        return <select onChange={e=>{
+            const v=e.target.value;
+            if(!v) return;
+            if(v==="__criar__"){ fecharTudo(); onIrPara&&onIrPara({tab:"recorr"}); return; }
+            const alvo=acharProximaFixaConta(v);
+            if(!alvo){ alert("Nenhuma ocorrência futura encontrada pra essa despesa fixa."); return; }
+            irAntecipar("fluxo",alvo.row);
+          }}
+          style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",marginBottom:10,background:C.surface}}>
+          <option value="">Qual despesa fixa antecipar?</option>
+          {lista.map(r=><option key={r.desc} value={r.desc}>{r.desc}</option>)}
+          <option value="__criar__">+ Criar nova despesa fixa</option>
+        </select>;
+      })()}
+    </>
+    :ehEmprestimoParc?<>
+      {(()=>{const emprestimos=emprestimosAtivos();
+        if(!emprestimos.length) return <div style={{fontSize:12,color:C.textMuted,padding:"12px 0",textAlign:"center"}}>
+          Nenhum empréstimo parcelado cadastrado ainda. Vá em Empréstimos e Passivos e cadastre um.
+        </div>;
+        const parcelas=empEscolhido?parcelasAbertas(empEscolhido):[];
+        return <>
+          <select value={empEscolhido} onChange={e=>setEmpEscolhido(e.target.value)}
+            style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",marginBottom:10,background:C.surface}}>
+            <option value="">Qual empréstimo?</option>
+            {emprestimos.map(e=><option key={e.desc} value={e.desc}>{e.desc}</option>)}
+          </select>
+          {empEscolhido&&<select onChange={e=>{
+              const idx=e.target.value; if(idx==="") return;
+              irAntecipar("fluxo",parcelas[Number(idx)].row);
+            }}
+            style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",marginBottom:10,background:C.surface}}>
+            <option value="">Qual parcela antecipar?</option>
+            {parcelas.map((p,i)=><option key={p.row} value={i}>Venc. {fmtD(p.data)} · {fmt(Math.abs(p.valor))}</option>)}
+          </select>}
+          {empEscolhido&&!parcelas.length&&<div style={{fontSize:12,color:C.textMuted,padding:"6px 0"}}>Nenhuma parcela em aberto pra esse empréstimo.</div>}
+        </>;
+      })()}
+    </>
+    :ehReceita?<>
       {!fontesEsporadicas.length
         ?<div style={{fontSize:12,color:C.textMuted,padding:"12px 0",textAlign:"center"}}>
             Nenhuma fonte esporádica cadastrada ainda. Vá em Ferramentas → Receitas e cadastre uma (Variável, não-calculada, Esporádica).
@@ -5517,7 +5530,7 @@ function BotaoLancar({data,onUpdate,onIrPara}){
       </button>
     </>
     :null}
-    {formAberto&&!ehReceita&&<>
+    {formAberto&&!ehReceita&&!ehFixaConta&&!ehEmprestimoParc&&<>
     {/* Seletor de fatura alvo (so pagamento) */}
     {ehPagamento&&<select value={vencAlvo} onChange={e=>setVencAlvo(e.target.value)}
       style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",marginBottom:10,background:C.surface}}>
@@ -6659,7 +6672,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260722.1230 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260722.1330 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -6741,7 +6754,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260722.1230
+      // HTML v3.20260722.1330
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
