@@ -3573,7 +3573,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
   if(!prog.length) return <div>
     <div style={{padding:"40px 20px",textAlign:"center",color:C.textMuted,fontSize:14}}>
       Nenhum lançamento programado.
-      <BotaoLancar data={data} onUpdate={onUpdate}/>
+      <BotaoLancar data={data} onUpdate={onUpdate} onIrPara={onIrPara}/>
     </div>
   </div>;
 
@@ -3749,7 +3749,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
         <span style={{fontSize:12,color:C.textMuted,flexShrink:0}}>→</span>
       </div>)}
     </div>;})}
-    <BotaoLancar data={data} onUpdate={onUpdate}/>
+    <BotaoLancar data={data} onUpdate={onUpdate} onIrPara={onIrPara}/>
   </div>;
 }
 
@@ -3983,7 +3983,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
         Carregar mais 30 (mostrando {ex.length} de {filtrados.length})
       </button>
     </div>}
-    <BotaoLancar data={data} onUpdate={onUpdate}/>
+    <BotaoLancar data={data} onUpdate={onUpdate} onIrPara={onIrPara}/>
   </div>;
 }
 
@@ -5112,7 +5112,7 @@ function FormNovaRecorr({onSalvo,onClose,data}){
 }
 
 // ── BOTÃO + LANÇAMENTO RÁPIDO (Fluxo) ────────────────────────────────────────
-function BotaoLancar({data,onUpdate}){
+function BotaoLancar({data,onUpdate,onIrPara}){
   const [open,setOpen]=useState(false);
   const [load,setLoad]=useState(false);
   const [dest,setDest]=useState("conta");
@@ -5130,6 +5130,14 @@ function BotaoLancar({data,onUpdate}){
   // que nao fosse literalmente Receita). Mesmo padrao do botao "-/+" ja
   // usado no editar item de cartao -- nunca deriva do que a categoria "e".
   const [vNeg,setVNeg]=useState(true);
+  // [22/07] Navegacao em arvore de pilulas (substitui a antiga grade
+  // Destino+Categoria solta) -- ver alinhamento de design de 21-22/07.
+  // trilha = caminho de nos ja escolhidos (ex: ['gastos','gastos_conta']).
+  // formAberto=true quando uma folha foi tocada e o formulario classico
+  // (que ja existia, intacto) deve aparecer usando dest/cat ja setados.
+  const [trilha,setTrilha]=useState([]);
+  const [formAberto,setFormAberto]=useState(false);
+  const [autoProxima,setAutoProxima]=useState(false);
   const CATS=["DCP","DESPESA FIXA","RECEITA","DEPOSITO_AVULSO","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA","EXTRAORDINARIA","INVESTIMENTO"];
   const envelopesAbertos=useMemo(()=>calcularEnvelopesCustom(data).filter(e=>!e.encerrado),[data.fluxo,data.cartaoPF,data.cartaoPJ,data.config]);
 
@@ -5211,6 +5219,72 @@ function BotaoLancar({data,onUpdate}){
       .sort((a,b)=>a.venc>b.venc?1:-1);
   },[data.fluxo,ehPagamento,tipoAlvoPagamento,cartaoPagamento]);
 
+  function fecharTudo(){
+    setOpen(false);setTrilha([]);setFormAberto(false);setAutoProxima(false);
+    setDest("conta");setCat("");setDesc("");setValor("");setParc("1");setData_(hoje());
+    setEnvelopeId("");setApelido("");setVNeg(true);setVencAlvo("");
+    setModoEspId("");setBruto("");setPercDescReceita("");setValorEstavel("");setPlantoesEsp("");
+  }
+  function voltarTrilha(){
+    if(formAberto){setFormAberto(false);return;}
+    setTrilha(t=>t.slice(0,-1));
+  }
+  // "Proxima" auto-seleciona a fatura mais proxima em aberto assim que
+  // faturasAbertas (que depende de dest ja estar em pagpj/pagpf) terminar
+  // de recalcular -- sem isso o usuario teria que escolher manualmente,
+  // que e exatamente o que "Avulsa" ja faz.
+  useEffect(()=>{
+    if(autoProxima&&ehPagamento&&faturasAbertas.length){
+      setVencAlvo(faturasAbertas[0].venc);
+      setAutoProxima(false);
+    }
+  },[autoProxima,ehPagamento,faturasAbertas]);
+
+  // Arvore de navegacao do "+". Cada no lista suas opcoes; se a opcao tiver
+  // uma entrada em NODES ela e um GALHO (empurra na trilha), senao e uma
+  // FOLHA e dispara LEAF_ACOES[id].
+  const NODES={
+    raiz:[{id:"gastos",label:"Gastos"},{id:"ganhos",label:"Ganhos"}],
+    gastos:[{id:"gastos_cartao",label:"Cartão"},{id:"gastos_conta",label:"Conta"}],
+    gastos_cartao:[{id:"gastos_cartao_pf",label:nomeCartao("PF",data)},{id:"gastos_cartao_pj",label:nomeCartao("PJ",data)}],
+    gastos_cartao_pf:[{id:"fixa_pf",label:"Despesas Fixas"},{id:"dcp_pf",label:"Gastos Semanais"},{id:"extra_pf",label:"Extraordinário"}],
+    gastos_cartao_pj:[{id:"fixa_pj",label:"Despesas Fixas"},{id:"dcp_pj",label:"Gastos Semanais"},{id:"extra_pj",label:"Extraordinário"}],
+    gastos_conta:[{id:"fixa_conta",label:"Despesas Fixas"},{id:"dcp_conta",label:"Gastos Semanais"},{id:"extra_conta",label:"Extraordinário"},
+      {id:"gastos_conta_faturas",label:"Faturas"},{id:"gastos_conta_credito",label:"Empréstimos"},{id:"cofre_aporte",label:"Cofre/Invest. (Aporte)"}],
+    gastos_conta_faturas:[{id:"fat_pf",label:nomeCartao("PF",data)},{id:"fat_pj",label:nomeCartao("PJ",data)}],
+    fat_pf:[{id:"fat_pf_avulsa",label:"Avulsa"},{id:"fat_pf_proxima",label:"Próxima"}],
+    fat_pj:[{id:"fat_pj_avulsa",label:"Avulsa"},{id:"fat_pj_proxima",label:"Próxima"}],
+    gastos_conta_credito:[{id:"cred_parcelados",label:"Parcelados"},{id:"cred_posfixados",label:"Pós-Fixados"}],
+    ganhos:[{id:"ganhos_receitas",label:"Receitas"},{id:"ganhos_emprestimos",label:"Empréstimos"},
+      {id:"ganhos_cofre",label:"Cofre/Invest. (Resgate)"},{id:"ganhos_avulso",label:"Avulso"}],
+  };
+  const LEAF_ACOES={
+    fixa_pf:()=>{setDest("pf");setCat("DESPESA FIXA");setVNeg(true);setFormAberto(true);},
+    dcp_pf:()=>{setDest("pf");setCat("DCP");setVNeg(true);setFormAberto(true);},
+    extra_pf:()=>{setDest("pf");setCat("EXTRAORDINARIA");setVNeg(true);setFormAberto(true);},
+    fixa_pj:()=>{setDest("pj");setCat("DESPESA FIXA");setVNeg(true);setFormAberto(true);},
+    dcp_pj:()=>{setDest("pj");setCat("DCP");setVNeg(true);setFormAberto(true);},
+    extra_pj:()=>{setDest("pj");setCat("EXTRAORDINARIA");setVNeg(true);setFormAberto(true);},
+    fixa_conta:()=>{setDest("conta");setCat("DESPESA FIXA");setVNeg(true);setFormAberto(true);},
+    dcp_conta:()=>{setDest("conta");setCat("DCP");setVNeg(true);setFormAberto(true);},
+    extra_conta:()=>{setDest("conta");setCat("EXTRAORDINARIA");setVNeg(true);setFormAberto(true);},
+    fat_pf_avulsa:()=>{setDest("pagpf");setVencAlvo("");setFormAberto(true);},
+    fat_pf_proxima:()=>{setDest("pagpf");setVencAlvo("");setAutoProxima(true);setFormAberto(true);},
+    fat_pj_avulsa:()=>{setDest("pagpj");setVencAlvo("");setFormAberto(true);},
+    fat_pj_proxima:()=>{setDest("pagpj");setVencAlvo("");setAutoProxima(true);setFormAberto(true);},
+    // [22/07] Parcelados/Pos-Fixados/Cofre (Aporte/Resgate)/contratar
+    // Emprestimo ainda nao tem um "antecipar/aportar rapido" construido --
+    // por ora redireciona pra aba especializada (Etapa 2 do plano constroi
+    // o atalho rapido de verdade). Nunca deixar a folha "morta" sem acao.
+    cofre_aporte:()=>{fecharTudo();onIrPara&&onIrPara({tab:"cofres"});},
+    cred_parcelados:()=>{fecharTudo();onIrPara&&onIrPara({tab:"emprestimos"});},
+    cred_posfixados:()=>{fecharTudo();onIrPara&&onIrPara({tab:"emprestimos"});},
+    ganhos_receitas:()=>{setDest("receita");setFormAberto(true);},
+    ganhos_emprestimos:()=>{fecharTudo();onIrPara&&onIrPara({tab:"emprestimos"});},
+    ganhos_cofre:()=>{fecharTudo();onIrPara&&onIrPara({tab:"cofres"});},
+    ganhos_avulso:()=>{setDest("conta");setCat("DEPOSITO_AVULSO");setVNeg(false);setFormAberto(true);},
+  };
+
   async function salvar(){
     if(ehPagamento){
       if(!valor||!vencAlvo)return;
@@ -5220,7 +5294,7 @@ function BotaoLancar({data,onUpdate}){
         if(!alvo) throw new Error("Fatura selecionada não está mais em aberto — atualize e tente de novo.");
         const v=Math.abs(numBR(valor));
         const r=await api({action:"pagarFaturaAvulso",row:alvo.row,valorPago:v,data:data_});
-        onUpdate(r);setOpen(false);setDesc("");setValor("");setVencAlvo("");setData_(hoje());
+        onUpdate(r);fecharTudo();
       }catch(e){alert(e.message);}
       setLoad(false);
       return;
@@ -5234,7 +5308,7 @@ function BotaoLancar({data,onUpdate}){
         const r=await api({action:"lancar",data:data_,descricao:(fonteEspSelecionada.fonteNome+" (ESPORÁDICA)").toUpperCase(),
           valor:liquidoPreview,tipo:"RECEITA",categoria:"RECEITA",forma:"CONTA",
           status:data_<=hoje()?"EXECUTADO":"PROGRAMADO",obs:obsMarcador});
-        onUpdate(r);setOpen(false);setModoEspId("");setBruto("");setPercDescReceita("");setValorEstavel("");setPlantoesEsp("");setData_(hoje());
+        onUpdate(r);fecharTudo();
       }catch(e){alert(e.message);}
       setLoad(false);
       return;
@@ -5252,7 +5326,7 @@ function BotaoLancar({data,onUpdate}){
         const v=(vNeg?-1:1)*Math.abs(numBR(valor));
         r=await api({action:"lancarCartao",cartao,descricao:descFinal.toUpperCase(),valor:v,parcelas:parseInt(parc)||1,categoria:cat,dcp:cat==="DCP"?"S":"N",data_compra:data_,envelopeId,apelido});
       }
-      onUpdate(r);setOpen(false);setDesc("");setValor("");setParc("1");setData_(hoje());setEnvelopeId("");setVNeg(true);
+      onUpdate(r);fecharTudo();
     }catch(e){alert(e.message);}
     setLoad(false);
   }
@@ -5266,19 +5340,29 @@ function BotaoLancar({data,onUpdate}){
     padding:"20px 18px 32px",zIndex:200,boxShadow:"0 -4px 24px rgba(0,0,0,.12)"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
       <span style={{fontSize:15,fontWeight:800,color:C.text}}>Novo lançamento</span>
-      <button onClick={()=>setOpen(false)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:C.textMuted}}>✕</button>
+      <button onClick={fecharTudo} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:C.textMuted}}>✕</button>
     </div>
-    {/* Destino */}
-    <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
-      {[["conta","Conta"],["pj",nomeCartao("PJ",data)],["pf",nomeCartao("PF",data)],["recorrente","Recorrente"],["pagpj","Pagar fat. "+nomeCartao("PJ",data)],["pagpf","Pagar fat. "+nomeCartao("PF",data)],["receita","Receitas"]].map(([id,l])=>
-        <button key={id} onClick={()=>{setDest(id);setVencAlvo("");}} style={{flex:"1 1 30%",padding:"7px 4px",borderRadius:8,border:"1px solid "+(dest===id?C.accent:C.border),
-          background:dest===id?C.accentLight:"transparent",color:dest===id?C.accent:C.textSub,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
-      )}
-    </div>
-    {dest==="recorrente"?
-      <FormNovaRecorr data={data}
-        onSalvo={async()=>{setOpen(false);setDest("conta");const d=await api({action:"getData"});if(d)onUpdate(d);}}
-        onClose={()=>setDest("conta")}/>
+    {trilha.length>0&&<button onClick={voltarTrilha} style={{background:C.borderLight,color:C.textSub,border:"none",
+      borderRadius:16,padding:"7px 13px",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginBottom:10}}>← voltar</button>}
+    {!formAberto?
+      <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:14}}>
+        {NODES[trilha.length?trilha[trilha.length-1]:"raiz"].map(it=>{
+          const ehRaiz=trilha.length===0;
+          const ehGalho=!!NODES[it.id];
+          return <button key={it.id} onClick={()=>{
+              if(ehGalho) setTrilha(t=>[...t,it.id]);
+              else { const fn=LEAF_ACOES[it.id]; if(fn) fn(); }
+            }}
+            style={ehRaiz?
+              {padding:"13px 20px",borderRadius:26,border:"none",background:C.accent,color:"#fff",
+                fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"inherit",flex:"1 1 40%"}
+              :{padding:"11px 15px",borderRadius:22,border:"1px solid #E5E7EB",background:"#F3F4F6",color:"#6B7280",
+                fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+            {ehRaiz&&<span style={{fontWeight:900,marginRight:5,color:it.id==="gastos"?"#F87171":"#60A5FA"}}>{it.id==="gastos"?"▼":"▲"}</span>}
+            {it.label}
+          </button>;
+        })}
+      </div>
     :ehReceita?<>
       {!fontesEsporadicas.length
         ?<div style={{fontSize:12,color:C.textMuted,padding:"12px 0",textAlign:"center"}}>
@@ -5339,7 +5423,7 @@ function BotaoLancar({data,onUpdate}){
       </button>
     </>
     :null}
-    {!ehReceita&&dest!=="recorrente"&&<>
+    {formAberto&&!ehReceita&&<>
     {/* Seletor de fatura alvo (so pagamento) */}
     {ehPagamento&&<select value={vencAlvo} onChange={e=>setVencAlvo(e.target.value)}
       style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",marginBottom:10,background:C.surface}}>
@@ -5368,12 +5452,10 @@ function BotaoLancar({data,onUpdate}){
     </div>
     <input type="date" value={data_} onChange={e=>setData_(e.target.value)}
       style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",marginBottom:10,boxSizing:"border-box"}}/>
-    {/* Categoria (nao aplica a pagamento de fatura) */}
-    {!ehPagamento&&<select value={cat} onChange={e=>{setCat(e.target.value);if(e.target.value==="RECEITA")setVNeg(false);}}
-      style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+(cat?C.border:C.red),fontSize:14,fontFamily:"inherit",marginBottom:10,background:C.surface}}>
-      <option value="">Escolha uma categoria...</option>
-      {CATS.map(c=><option key={c} value={c}>{CAT_LABEL[c]||c}</option>)}
-    </select>}
+    {/* Categoria -- ja vem decidida pela arvore de pilulas, so confirma */}
+    {!ehPagamento&&<div style={{fontSize:11,color:C.textMuted,marginBottom:10}}>
+      Categoria: <b style={{color:C.text}}>{CAT_LABEL[cat]||cat}</b>
+    </div>}
     {!ehPagamento&&envelopesAbertos.length>0&&<select value={envelopeId} onChange={e=>setEnvelopeId(e.target.value)}
       style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",marginBottom:10,background:C.surface,color:envelopeId?C.text:C.textMuted}}>
       <option value="">Envelope (opcional)</option>
@@ -6478,7 +6560,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260721.1310 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260722.0930 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -6560,7 +6642,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260721.1310
+      // HTML v3.20260722.0930
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
