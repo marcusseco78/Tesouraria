@@ -4806,6 +4806,7 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
 function Recorrencias({data,onUpdate}){
   const [edit,setEdit]=useState(null);
   const [val,setVal]=useState("");
+  const [neg,setNeg]=useState(true);
   const [dia,setDia]=useState("");
   const [tolerancia,setTolerancia]=useState("");
   const [alias,setAlias]=useState("");
@@ -6672,7 +6673,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260722.1330 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260722.1345 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -6754,7 +6755,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260722.1330
+      // HTML v3.20260722.1345
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
