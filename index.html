@@ -5335,35 +5335,49 @@ function BotaoLancar({data,onUpdate,onIrPara}){
     style={{position:"fixed",bottom:24,right:20,width:52,height:52,borderRadius:26,background:C.accent,color:"#fff",
       fontSize:28,border:"none",cursor:"pointer",boxShadow:"0 4px 16px rgba(217,119,6,.4)",zIndex:100,lineHeight:1}}>+</button>;
 
-  return <div style={{position:"fixed",bottom:0,left:0,right:0,maxWidth:480,margin:"0 auto",
-    background:C.surface,borderTop:"2px solid "+C.accent,borderRadius:"18px 18px 0 0",
-    padding:"20px 18px 32px",zIndex:200,boxShadow:"0 -4px 24px rgba(0,0,0,.12)"}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-      <span style={{fontSize:15,fontWeight:800,color:C.text}}>Novo lançamento</span>
-      <button onClick={fecharTudo} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:C.textMuted}}>✕</button>
-    </div>
-    {trilha.length>0&&<button onClick={voltarTrilha} style={{background:C.borderLight,color:C.textSub,border:"none",
-      borderRadius:16,padding:"7px 13px",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",marginBottom:10}}>← voltar</button>}
-    {!formAberto?
-      <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:14}}>
-        {NODES[trilha.length?trilha[trilha.length-1]:"raiz"].map(it=>{
-          const ehRaiz=trilha.length===0;
+  // [22/07] Navegacao (pilulas) flutua solta sobre a tela, SEM bandeja/caixa
+  // branca por baixo -- so quando chega numa folha (formAberto=true) e que
+  // vira a bandeja classica de sempre, com o formulario de valor/data/etc.
+  if(!formAberto){
+    const nivelAtual=NODES[trilha.length?trilha[trilha.length-1]:"raiz"];
+    const ehRaizAtual=trilha.length===0;
+    return <>
+      <button onClick={fecharTudo}
+        style={{position:"fixed",bottom:24,right:20,width:52,height:52,borderRadius:26,background:C.accent,color:"#fff",
+          fontSize:24,border:"none",cursor:"pointer",boxShadow:"0 4px 16px rgba(30,58,138,.35)",zIndex:200,lineHeight:1}}>✕</button>
+      <div style={{position:"fixed",bottom:88,right:20,maxWidth:280,display:"flex",flexDirection:"column-reverse",
+        gap:8,zIndex:150,alignItems:"flex-end"}}>
+        {trilha.length>0&&<button onClick={voltarTrilha}
+          style={{background:"#EDEBE3",color:C.textSub,border:"none",borderRadius:20,padding:"8px 15px",
+            fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px rgba(0,0,0,.12)"}}>← voltar</button>}
+        {nivelAtual.map(it=>{
           const ehGalho=!!NODES[it.id];
           return <button key={it.id} onClick={()=>{
               if(ehGalho) setTrilha(t=>[...t,it.id]);
               else { const fn=LEAF_ACOES[it.id]; if(fn) fn(); }
             }}
-            style={ehRaiz?
+            style={ehRaizAtual?
               {padding:"13px 20px",borderRadius:26,border:"none",background:C.accent,color:"#fff",
-                fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"inherit",flex:"1 1 40%"}
-              :{padding:"11px 15px",borderRadius:22,border:"1px solid #E5E7EB",background:"#F3F4F6",color:"#6B7280",
-                fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
-            {ehRaiz&&<span style={{fontWeight:900,marginRight:5,color:it.id==="gastos"?"#F87171":"#60A5FA"}}>{it.id==="gastos"?"▼":"▲"}</span>}
+                fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px rgba(0,0,0,.12)"}
+              :{padding:"11px 17px",borderRadius:22,border:"1px solid #E5E7EB",background:"#F3F4F6",color:"#6B7280",
+                fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px rgba(0,0,0,.1)"}}>
+            {ehRaizAtual&&<span style={{fontWeight:900,marginRight:5,color:it.id==="gastos"?"#F87171":"#60A5FA"}}>{it.id==="gastos"?"▼":"▲"}</span>}
             {it.label}
           </button>;
         })}
       </div>
-    :ehReceita?<>
+    </>;
+  }
+
+  return <div style={{position:"fixed",bottom:0,left:0,right:0,maxWidth:480,margin:"0 auto",
+    background:C.surface,borderTop:"2px solid "+C.accent,borderRadius:"18px 18px 0 0",
+    padding:"20px 18px 32px",zIndex:200,boxShadow:"0 -4px 24px rgba(0,0,0,.12)"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+      <button onClick={voltarTrilha} style={{background:"none",border:"none",fontSize:13,fontWeight:700,cursor:"pointer",color:C.textSub,padding:0}}>← voltar</button>
+      <span style={{fontSize:15,fontWeight:800,color:C.text}}>Novo lançamento</span>
+      <button onClick={fecharTudo} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:C.textMuted}}>✕</button>
+    </div>
+    {ehReceita?<>
       {!fontesEsporadicas.length
         ?<div style={{fontSize:12,color:C.textMuted,padding:"12px 0",textAlign:"center"}}>
             Nenhuma fonte esporádica cadastrada ainda. Vá em Ferramentas → Receitas e cadastre uma (Variável, não-calculada, Esporádica).
@@ -6560,7 +6574,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260722.0930 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260722.1015 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -6642,7 +6656,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260722.0930
+      // HTML v3.20260722.1015
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
