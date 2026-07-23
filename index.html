@@ -4404,7 +4404,7 @@ function buildPrompt(data){
 
   return `Você é o assistente financeiro pessoal de quem está usando este app.
 
-FORMATAÇÃO: Texto simples, sem markdown, sem asteriscos, sem hashtags. "•" para listas se necessário. JSON em linha isolada, nunca misturado com texto. Quando a resposta for puramente conversacional, responda SEM JSON.
+FORMATAÇÃO: Texto simples, sem markdown, sem asteriscos, sem hashtags. "•" para listas se necessário. Quando for emitir uma ação, escreva SÓ o objeto JSON puro (as chaves { } já bastam) em uma linha isolada -- nunca escreva a palavra "JSON" antes dele, nem qualquer outro rótulo. Quando a resposta for puramente conversacional, não emita objeto nenhum.
 
 SEU PERFIL: Você é o parceiro financeiro pessoal da pessoa. Trate-a pelo nome às vezes, quando souber. Seja direto, humano, opinativo quando fizer sentido. Não é um relatório — é uma conversa. Celebre melhorias, aponte riscos com clareza, mas sem dramatizar. Se a situação estiver boa, diga. Se tiver arriscada, diga também. Pense em voz alta quando útil. Não use listas numeradas para tudo — prose natural quando couber.
 
@@ -4532,6 +4532,11 @@ function Conversar({data,onUpdate,initTxt,onInitDone,msgs,setMsgs}){
   useEffect(()=>{scrollRef.current?.scrollTo(0,scrollRef.current.scrollHeight);},[msgs,pend]);
 
   const ACOES_VALIDAS=["lancar","baixa","editar","deletar","lancarCartao","baixaFatura","editarLote","editarRecorrencia","lancarRecorrencia","editarCartaoItem","deletarCartaoItem","deletarPorDescricao","deletarRecorrencia","salvarContextoPessoal"];
+  // [23/07] Devolve tambem start/end do trecho JSON encontrado -- antes so
+  // devolvia o objeto, e o texto CRU (JSON e tudo) ficava visivel no chat.
+  // Bug reportado pelo Marcus: Gemini escreveu um "JSON:" solto no meio da
+  // resposta (por seguir a instrucao do prompt meio literal demais) e isso
+  // vazou pro balao de chat, sem nada limpando depois.
   function parseOp(text){
     try{
       let depth=0,start=-1;
@@ -4541,7 +4546,7 @@ function Conversar({data,onUpdate,initTxt,onInitDone,msgs,setMsgs}){
           depth--;
           if(!depth&&start>=0){
             try{const o=JSON.parse(text.slice(start,i+1));
-              if(o&&o.acao&&ACOES_VALIDAS.includes(o.acao))return o;
+              if(o&&o.acao&&ACOES_VALIDAS.includes(o.acao))return {op:o,start,end:i+1};
             }catch{}
             start=-1;
           }
@@ -4550,14 +4555,23 @@ function Conversar({data,onUpdate,initTxt,onInitDone,msgs,setMsgs}){
     }catch{}
     return null;
   }
+  // Tira o bloco JSON (se achado) e qualquer rotulo "JSON:" solto que tenha
+  // sobrado por perto -- nunca deixa nada disso vazar pro texto exibido.
+  function limparTextoExibido(text,achado){
+    let limpo=achado?(text.slice(0,achado.start)+text.slice(achado.end)):text;
+    limpo=limpo.replace(/\bJSON:?\s*/gi,"");
+    return limpo.replace(/\n{3,}/g,"\n\n").trim();
+  }
 
   async function send(txt){
     const t=(txt||input).trim();if(!t)return;setInput("");try{localStorage.removeItem("t_draft");}catch{}
     const uMsg={role:"user",parts:[{text:t}]};const hist=[...msgs,uMsg];setMsgs(hist);setLoad(true);
     try{
       const r=await api({action:"gemini",systemPrompt:buildPrompt(data),messages:hist});
-      const mMsg={role:"model",parts:[{text:r.text}]};setMsgs([...hist,mMsg]);
-      const op=parseOp(r.text);if(op)setPend(op);
+      const achado=parseOp(r.text);
+      const textoLimpo=limparTextoExibido(r.text,achado);
+      const mMsg={role:"model",parts:[{text:textoLimpo||"(ok)"}]};setMsgs([...hist,mMsg]);
+      if(achado)setPend(achado.op);
     }catch(e){setMsgs([...hist,{role:"model",parts:[{text:"Erro: "+e.message}]}]);}
     setLoad(false);
   }
@@ -4616,8 +4630,9 @@ function Conversar({data,onUpdate,initTxt,onInitDone,msgs,setMsgs}){
       const uMsg={role:"user",parts:[{inlineData:{mimeType:mime,data:b64}},{text:prompt}]};
       try{
         const r=await api({action:"gemini",systemPrompt:buildPrompt(data),messages:[...msgs,uMsg]});
-        const mMsg={role:"model",parts:[{text:r.text}]};setMsgs([...hist,mMsg]);
-        const op=parseOp(r.text);if(op)setPend(op);
+        const achado=parseOp(r.text);
+        const mMsg={role:"model",parts:[{text:limparTextoExibido(r.text,achado)||"(ok)"}]};setMsgs([...hist,mMsg]);
+        if(achado)setPend(achado.op);
       }catch(err){setMsgs(m=>[...m,{role:"model",parts:[{text:"Erro: "+err.message}]}]);}
       setLoad(false);
     };
@@ -4660,8 +4675,9 @@ function Conversar({data,onUpdate,initTxt,onInitDone,msgs,setMsgs}){
         const novosTexto=res.foraDaPlanilha.map(n=>n.date+","+n.title+","+n.amount+(n.parcela!=="1/1"?" (parcela "+n.parcela+")":"")).join("\n");
         const uMsg={role:"user",parts:[{text:"Categorize e proponha lançamento no cartão "+cartao+" para cada item abaixo (gastos que estão na fatura mas não na planilha):\n"+novosTexto}]};
         const r=await api({action:"gemini",systemPrompt:buildPrompt(data),messages:[...newHist,uMsg]});
-        const mMsg={role:"model",parts:[{text:r.text}]};setMsgs([...newHist,mMsg]);
-        const op=parseOp(r.text);if(op)setPend(op);
+        const achado=parseOp(r.text);
+        const mMsg={role:"model",parts:[{text:limparTextoExibido(r.text,achado)||"(ok)"}]};setMsgs([...newHist,mMsg]);
+        if(achado)setPend(achado.op);
       }
     }catch(err){setMsgs(m=>[...m,{role:"model",parts:[{text:"Erro na conciliação: "+err.message}]}]);}
     setLoad(false);
@@ -5199,6 +5215,12 @@ function FormNovaRecorr({onSalvo,onClose,data}){
   const [parc,setParc]=useState("0");
   const [alias,setAlias]=useState("");
   const [load,setLoad]=useState(false);
+  // [23/07] Mes-ancora pra periodicidade > mensal -- antes sempre assumia o
+  // mes ATUAL da criacao (sem deixar escolher), o que so funciona por
+  // acaso se voce criar a recorrencia no mes certo. Agora deixa escolher
+  // qualquer mes de referencia (ex: Trimestral ancorado em Setembro ->
+  // dispara Set/Dez/Mar/Jun, nao importa em que mes voce cria a regra).
+  const [mesAncora,setMesAncora]=useState(String(new Date().getMonth()+1));
 
   const ehCartao=destino==="CARTAO_PF"||destino==="CARTAO_PJ";
 
@@ -5210,6 +5232,7 @@ function FormNovaRecorr({onSalvo,onClose,data}){
     "trimestral":{dia_venc:0, m:3,  label:"Trimestral (a cada 3 meses)"},
     "quadrimestral":{dia_venc:0,m:4,label:"Quadrimestral (a cada 4 meses)"},
     "semestral":{dia_venc:0,  m:6,  label:"Semestral (a cada 6 meses)"},
+    "anual":    {dia_venc:0,  m:12, label:"Anual (1x por ano)"},
   };
   // Cartao nao tem recorrencia semanal -- so remove "terca"/"sabado" das
   // opcoes quando destino e CARTAO_PF/PJ, pra nunca deixar escolher uma
@@ -5228,7 +5251,7 @@ function FormNovaRecorr({onSalvo,onClose,data}){
       await api({action:"lancarRecorrencia",
         descricao:desc,valor:Math.abs(numBR(valor))*sinal,
         forma,dia_venc:dv,semanal:isWeekly,destino,parc_total:parseInt(parc)||0,
-        tipo,intervalo_meses:f.m,obs:"",alias_csv:alias.trim().toUpperCase()});
+        tipo,intervalo_meses:f.m,mes_ancora:parseInt(mesAncora),obs:"",alias_csv:alias.trim().toUpperCase()});
       onSalvo();
     }catch(e){alert(e.message);}
     setLoad(false);
@@ -5279,6 +5302,22 @@ function FormNovaRecorr({onSalvo,onClose,data}){
       {!isWeekly&&<div><label style={lbl}>Dia do mes</label>
         <input type="number" min="1" max="31" value={dia} onChange={e=>setDia(e.target.value)}
           style={{...inp,textAlign:"center",width:80}}/></div>}
+      {(freqMap[freq]&&freqMap[freq].m>1)&&<div><label style={lbl}>Mês de referência</label>
+        <select value={mesAncora} onChange={e=>setMesAncora(e.target.value)} style={sel}>
+          {["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
+            .map((nome,idx)=><option key={idx} value={idx+1}>{nome}</option>)}
+        </select>
+        <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>
+          {(()=>{
+            const m=freqMap[freq].m, anc=parseInt(mesAncora);
+            const qtd=Math.max(1,Math.round(12/m));
+            const nomes=["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+            const meses=[];
+            for(let k=0;k<qtd;k++) meses.push(nomes[((anc-1+k*m)%12)]);
+            return "Vai disparar em: "+meses.join(", ");
+          })()}
+        </div>
+      </div>}
       <div><label style={lbl}>Termos alternativos (opcional)</label>
         <input value={alias} onChange={e=>setAlias(e.target.value)} placeholder="ex: ZELT; IMOBILIARIA" style={inp}/>
         <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Separe vários com ";". Ajuda a Conciliação a reconhecer esse gasto quando o banco usa um nome diferente.</div>
@@ -6845,7 +6884,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260723.0930 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260723.1800 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -6927,7 +6966,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260723.0930
+      // HTML v3.20260723.1800
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
