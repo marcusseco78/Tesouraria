@@ -3545,12 +3545,26 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
   // DCP/Extra livres, trocam entre si) por enquanto. Fatura/Emprestimo/Cofre
   // como destino de reclassificacao entram quando esses tipos forem
   // construidos nas proximas etapas -- ver alinhamento de 22/07.
+  // [22/07] CORRIGIDO: a classificacao que importa (Fixa/DCP/Extra/Imposto)
+  // mora no campo TIPO, nao em CATEGORIA -- CATEGORIA e uma subtag livre
+  // (CLUBE, MORADIA, DOMESTICO...) usada so pra relatorio, independente.
+  // Descoberto 22/07 ao ver que o bloco nunca aparecia pros itens reais.
+  // Segue o mesmo padrao que o Historico ja usa pra editar categoria: grava
+  // em TIPO (o que importa pro calculo/orcamento DCP) e replica em CATEGORIA
+  // pra manter os dois em sincronia.
   const CAT_TRAVADAS=["DESPESA FIXA","IMPOSTO"];
   const CAT_LIVRES_GASTO=["DCP","EXTRAORDINARIA"];
-  function categoriaEhGastoSimples(cat){ return CAT_TRAVADAS.includes(cat)||CAT_LIVRES_GASTO.includes(cat); }
-  async function salvarCategoriaFluxo(item,novaCat){
+  // Tolera a inconsistencia de acento ja existente nos dados (algumas linhas
+  // antigas tem "EXTRAORDINÁRIA" com acento).
+  function normTipoGasto(t){ return String(t||"").toUpperCase()==="EXTRAORDINÁRIA"?"EXTRAORDINARIA":t; }
+  function categoriaEhGastoSimples(tipo){ const t=normTipoGasto(tipo); return CAT_TRAVADAS.includes(t)||CAT_LIVRES_GASTO.includes(t); }
+  async function salvarCategoriaFluxo(item,novoTipo){
     setLoadCategoria(item.row);
-    try{ onUpdate(await api({action:"editar",aba:"FLUXO",row:item.row,campo:"CATEGORIA",valor:novaCat})); }
+    try{
+      let r=await api({action:"editar",row:item.row,campo:"TIPO",valor:novoTipo});
+      r=await api({action:"editar",row:item.row,campo:"CATEGORIA",valor:novoTipo});
+      onUpdate(r);
+    }
     catch(e){ alert(e.message); }
     setLoadCategoria(null);
   }
@@ -3731,24 +3745,24 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
           {/* [22/07] Categoria -- so gasto simples por enquanto (Fixa/Imposto
               travados; DCP/Extra livres, trocam entre si). Outros tipos
               entram quando forem construidos nas proximas etapas. */}
-          {categoriaEhGastoSimples(item.categoria)&&<div style={{marginTop:8,marginBottom:8}}>
+          {categoriaEhGastoSimples(item.tipo)&&(()=>{const tipoAtual=normTipoGasto(item.tipo);return <div style={{marginTop:8,marginBottom:8}}>
             <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA</span>
-            {CAT_TRAVADAS.includes(item.categoria)?
+            {CAT_TRAVADAS.includes(tipoAtual)?
               <div style={{marginTop:3,padding:"6px 10px",borderRadius:6,background:"#fff",border:"1px dashed "+C.border,
                 fontSize:12,color:C.textMuted}}>
-                🔒 {TITULO_CAT_UNIFICADO[item.categoria]||item.categoria} — nasceu de recorrência, categoria travada
+                🔒 {TITULO_CAT_UNIFICADO[tipoAtual]||tipoAtual} — nasceu de recorrência, categoria travada
               </div>
             :<div style={{display:"flex",gap:6,marginTop:3}}>
-              {CAT_LIVRES_GASTO.map(c=><button key={c} disabled={loadCategoria===item.row||c===item.categoria}
+              {CAT_LIVRES_GASTO.map(c=><button key={c} disabled={loadCategoria===item.row||c===tipoAtual}
                 onClick={()=>salvarCategoriaFluxo(item,c)}
-                style={{flex:1,padding:"6px 8px",borderRadius:6,fontSize:11,fontWeight:700,cursor:c===item.categoria?"default":"pointer",fontFamily:"inherit",
-                  border:"1px solid "+(c===item.categoria?C.accent:C.border),
-                  background:c===item.categoria?C.accentLight:"#fff",
-                  color:c===item.categoria?C.accent:C.textSub}}>
+                style={{flex:1,padding:"6px 8px",borderRadius:6,fontSize:11,fontWeight:700,cursor:c===tipoAtual?"default":"pointer",fontFamily:"inherit",
+                  border:"1px solid "+(c===tipoAtual?C.accent:C.border),
+                  background:c===tipoAtual?C.accentLight:"#fff",
+                  color:c===tipoAtual?C.accent:C.textSub}}>
                 {loadCategoria===item.row?"…":(TITULO_CAT_UNIFICADO[c]||c)}
               </button>)}
             </div>}
-          </div>}
+          </div>;})()}
           {item.categoria!=="DCP_PROVISAO"&&String(item.obs||"").indexOf("FONTE_RECEITA")<0&&
             <SeletorEnvelopeItem aba="FLUXO" row={item.row} obsAtual={item.obs} data={data} onUpdate={onUpdate}/>}
           {item.categoria!=="DCP_PROVISAO"&&<div style={{marginTop:8,marginBottom:4}}>
@@ -6738,7 +6752,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260722.1500 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260722.1545 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -6820,7 +6834,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260722.1500
+      // HTML v3.20260722.1545
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
