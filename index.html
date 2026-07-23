@@ -3692,6 +3692,38 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
         {isOpen&&<div style={{background:execMode?C.greenLight:C.accentLight,padding:"10px 14px",
           borderBottom:"1px solid "+(execMode?"#BBF7D0":C.accent),
           borderLeft:"3px solid "+(execMode?C.green:C.accent)}}>
+          {item.categoria!=="DCP_PROVISAO"&&<div style={{marginBottom:8}}>
+            <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME DE EXIBIÇÃO (opcional)</span>
+            <div style={{display:"flex",gap:6,marginTop:3}}>
+              <input value={apelidoInput} onChange={e=>setApelidoInput(e.target.value.toUpperCase())}
+                placeholder={item.descricao}
+                style={{flex:1,padding:"5px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:12,fontFamily:"inherit"}}/>
+              <button onClick={()=>salvarApelidoFluxo(item)} disabled={loadApelido}
+                style={{padding:"5px 10px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+                {loadApelido?"…":"Salvar"}
+              </button>
+            </div>
+            {(()=>{const cands=apelidosCandidatos(item.descricao,data);
+              return cands.length>1&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:5}}>
+                <span style={{fontSize:9,color:C.textMuted,width:"100%"}}>Esse texto bate com mais de uma regra salva — escolhe qual vale aqui:</span>
+                {cands.map((c,ci)=><button key={ci} onClick={()=>setApelidoInput(c.apelido)}
+                  style={{fontSize:10,padding:"3px 8px",borderRadius:12,border:"1px solid "+C.accent,background:apelidoInput===c.apelido?C.accent:"transparent",color:apelidoInput===c.apelido?"#fff":C.accent,cursor:"pointer",fontFamily:"inherit"}}>
+                  {c.apelido}
+                </button>)}
+              </div>;
+            })()}
+          </div>}
+          {item.categoria!=="DCP_PROVISAO"&&<div style={{marginBottom:10}}>
+            <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME NO EXTRATO/CONCILIAÇÃO</span>
+            <div style={{display:"flex",gap:6,marginTop:3}}>
+              <input value={descInput} onChange={e=>setDescInput(e.target.value.toUpperCase())}
+                style={{flex:1,padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit"}}/>
+              <button onClick={()=>salvarDescFluxo(item)} disabled={loadDesc||!descInput.trim()}
+                style={{padding:"5px 10px",borderRadius:6,background:C.borderLight,color:C.textSub,fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+                {loadDesc?"…":"Salvar"}
+              </button>
+            </div>
+          </div>}
           <div style={{display:"flex",gap:8,marginBottom:8}}>
             <div style={{display:"flex",flexDirection:"column",gap:3,flex:1}}>
               <span style={{fontSize:10,color:execMode?"#166534":"#92400E",fontWeight:600,letterSpacing:".05em"}}>{execMode?"DATA DE EXECUÇÃO":"NOVA DATA"}</span>
@@ -3763,7 +3795,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
                   const clicavel=!travado&&ehLivreDeVerdade&&!ehAtual;
                   return <button key={c} disabled={!clicavel||loadCategoria===item.row}
                     onClick={()=>clicavel&&salvarCategoriaFluxo(item,c)}
-                    style={{flex:"1 1 45%",padding:"8px 10px",borderRadius:20,fontSize:12,fontWeight:700,fontFamily:"inherit",
+                    style={{padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap",
                       cursor:clicavel?"pointer":"default",
                       border:"1px solid "+(ehAtual?C.accent:C.border),
                       background:ehAtual?C.accentLight:(clicavel?"#fff":C.borderLight),
@@ -3776,38 +3808,6 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
           })()}
           {item.categoria!=="DCP_PROVISAO"&&String(item.obs||"").indexOf("FONTE_RECEITA")<0&&
             <SeletorEnvelopeItem aba="FLUXO" row={item.row} obsAtual={item.obs} data={data} onUpdate={onUpdate}/>}
-          {item.categoria!=="DCP_PROVISAO"&&<div style={{marginTop:8,marginBottom:4}}>
-            <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME DE EXIBIÇÃO (opcional)</span>
-            <div style={{display:"flex",gap:6,marginTop:3}}>
-              <input value={apelidoInput} onChange={e=>setApelidoInput(e.target.value.toUpperCase())}
-                placeholder={item.descricao}
-                style={{flex:1,padding:"5px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:12,fontFamily:"inherit"}}/>
-              <button onClick={()=>salvarApelidoFluxo(item)} disabled={loadApelido}
-                style={{padding:"5px 10px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-                {loadApelido?"…":"Salvar"}
-              </button>
-            </div>
-            {(()=>{const cands=apelidosCandidatos(item.descricao,data);
-              return cands.length>1&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:5}}>
-                <span style={{fontSize:9,color:C.textMuted,width:"100%"}}>Esse texto bate com mais de uma regra salva — escolhe qual vale aqui:</span>
-                {cands.map((c,ci)=><button key={ci} onClick={()=>setApelidoInput(c.apelido)}
-                  style={{fontSize:10,padding:"3px 8px",borderRadius:12,border:"1px solid "+C.accent,background:apelidoInput===c.apelido?C.accent:"transparent",color:apelidoInput===c.apelido?"#fff":C.accent,cursor:"pointer",fontFamily:"inherit"}}>
-                  {c.apelido}
-                </button>)}
-              </div>;
-            })()}
-          </div>}
-          {item.categoria!=="DCP_PROVISAO"&&<div style={{marginTop:8,marginBottom:4}}>
-            <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME NO EXTRATO/CONCILIAÇÃO</span>
-            <div style={{display:"flex",gap:6,marginTop:3}}>
-              <input value={descInput} onChange={e=>setDescInput(e.target.value.toUpperCase())}
-                style={{flex:1,padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit"}}/>
-              <button onClick={()=>salvarDescFluxo(item)} disabled={loadDesc||!descInput.trim()}
-                style={{padding:"5px 10px",borderRadius:6,background:C.borderLight,color:C.textSub,fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-                {loadDesc?"…":"Salvar"}
-              </button>
-            </div>
-          </div>}
           {ehFatura&&<button onClick={async()=>{setLoad(item.row);try{onUpdate(await api({action:"mesclarFaturaComSeguinte",row:item.row}));}catch(e){alert(e.message);}setLoad(null);setConf(null);}} disabled={!!load}
             style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:"#92400E",fontSize:11,border:"1px dashed #FED7AA",cursor:"pointer",fontFamily:"inherit"}}>
             🔀 Em vez disso, somar esse valor direto na próxima fatura
@@ -6785,7 +6785,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260722.1645 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260722.1700 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -6867,7 +6867,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260722.1645
+      // HTML v3.20260722.1700
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
