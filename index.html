@@ -3865,7 +3865,14 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
           </button>}
           {(()=>{
             const bucket=unificarBucketGasto(item);
-            const apagarTravado=bucket==="DESPESA FIXA"||bucket==="PAGAMENTO_FATURA"||
+            // [23/07] Despesa Fixa so trava se existir uma recorrencia ATIVA
+            // de verdade por tras -- sem isso, um lancamento orfao (tipo=
+            // DESPESA FIXA mas sem RECORRENCIAS correspondente, ex: CSLL/IRPJ
+            // lancado a mao antes de virar recorrencia de verdade) ficava
+            // travado sem porta de saida nenhuma (a aba Despesas Fixas nem
+            // tem o item pra apagar la). Bug reportado pelo Marcus 23/07.
+            const temRecorrenciaAtiva=(data.recorr||[]).some(r=>String(r[0]).toUpperCase()===String(item.descricao).toUpperCase()&&String(r[6]).toUpperCase()==="S");
+            const apagarTravado=(bucket==="DESPESA FIXA"&&temRecorrenciaAtiva)||bucket==="PAGAMENTO_FATURA"||
               (bucket==="PAGAMENTO_EMPRESTIMO"&&item.categoria==="DIVIDA_PARCELADA");
             if(apagarTravado) return <div style={{marginTop:8}}>
               <div style={{width:"100%",padding:"8px",borderRadius:6,background:C.borderLight,color:C.textMuted,fontSize:11,fontWeight:700,textAlign:"center"}}>
@@ -3890,7 +3897,8 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
           :<>
             {(()=>{
               const bucket=unificarBucketGasto(item);
-              const travadoApagarTodos=bucket==="DESPESA FIXA"||(bucket==="PAGAMENTO_EMPRESTIMO"&&item.categoria==="DIVIDA_PARCELADA");
+              const temRecorrenciaAtivaTodos=(data.recorr||[]).some(r=>String(r[0]).toUpperCase()===String(item.descricao).toUpperCase()&&String(r[6]).toUpperCase()==="S");
+              const travadoApagarTodos=(bucket==="DESPESA FIXA"&&temRecorrenciaAtivaTodos)||(bucket==="PAGAMENTO_EMPRESTIMO"&&item.categoria==="DIVIDA_PARCELADA");
               // [23/07] Fatura, Cofre, e amortizacao Pos-Fixada nao tem
               // conceito de "futuros com essa descricao" -- cada um e um
               // evento independente (nao vem de recorrencia/cronograma),
@@ -6884,7 +6892,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260723.1800 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260723.1845 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -6966,7 +6974,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260723.1800
+      // HTML v3.20260723.1845
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
