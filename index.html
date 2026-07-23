@@ -1495,6 +1495,23 @@ function CardDividaPosFixada({divida,onUpdate}){
   const [loadAbate,setLoadAbate]=useState(false);
   const [loadCDI,setLoadCDI]=useState(false);
   const [resultadoCDI,setResultadoCDI]=useState(null);
+  const [ajustando,setAjustando]=useState(false);
+  const [saldoReal,setSaldoReal]=useState("");
+  const [loadAjuste,setLoadAjuste]=useState(false);
+
+  async function ajustar(){
+    const v=numBR(saldoReal);
+    if(saldoReal===""||isNaN(v)){ alert("Informe o saldo real que você vê no banco/contrato."); return; }
+    setLoadAjuste(true);
+    try{
+      const r=await api({action:"ajustarSaldoDividaPosFixada",nome:divida.nome,saldoReal:v});
+      onUpdate&&onUpdate(r);
+      setAjustando(false);setSaldoReal("");
+      const res=r._resultadoAjusteDividaPosFixada;
+      if(res) alert((res.diferenca>=0?"Corrigido: +":"Corrigido: ")+fmt(res.diferenca)+" em relação ao que o app tinha calculado.");
+    }catch(e){alert(e.message);}
+    setLoadAjuste(false);
+  }
 
   async function atualizar(){
     setLoadCDI(true);
@@ -1533,6 +1550,26 @@ function CardDividaPosFixada({divida,onUpdate}){
         ?`${resultadoCDI.diasUteis} dia(s) útil(eis): +${fmt(resultadoCDI.jurosAcumulado)} de juros`
         :resultadoCDI.motivo}
     </div>}
+    {!ajustando
+      ?<button onClick={()=>{setSaldoReal(formatarValorInicial(divida.saldoAtual));setAjustando(true);}}
+        style={{width:"100%",marginTop:6,background:"none",border:"none",color:C.textMuted,fontSize:10,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>
+        ✏️ Corrigir com o saldo real do banco/contrato
+      </button>
+      :<div style={{background:C.surface,borderRadius:8,padding:10,marginTop:6,border:"1px solid "+C.border}}>
+        <div style={{fontSize:9,color:C.textMuted,marginBottom:6}}>A correção por %CDI é sempre estimativa — se divergir do saldo real (extrato/contrato), cola aqui o valor certo. A correção automática continua rodando a partir desse novo ponto.</div>
+        <div style={{display:"flex",gap:6}}>
+          <input type="text" inputMode="numeric" value={saldoReal} onChange={e=>setSaldoReal(formatarMoedaInput(e.target.value))}
+            style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
+          <button onClick={ajustar} disabled={loadAjuste}
+            style={{background:C.accent,color:"#fff",border:"none",borderRadius:6,padding:"0 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+            {loadAjuste?"…":"Corrigir"}
+          </button>
+          <button onClick={()=>setAjustando(false)}
+            style={{background:"none",color:C.textMuted,border:"1px solid "+C.border,borderRadius:6,padding:"0 10px",fontSize:12,cursor:"pointer"}}>
+            X
+          </button>
+        </div>
+      </div>}
     <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #FDBA74"}}>
       <div style={{fontSize:10,color:C.textMuted,fontWeight:700,marginBottom:4}}>REGISTRAR PAGAMENTO (ABATIMENTO)</div>
       <div style={{display:"flex",gap:6}}>
@@ -6785,7 +6822,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260722.1700 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260722.1730 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -6867,7 +6904,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260722.1700
+      // HTML v3.20260722.1730
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
