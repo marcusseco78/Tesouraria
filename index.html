@@ -132,6 +132,23 @@ const CAT_LABEL={DCP:"Despesas Cotidianas Semanais",DEPOSITO_AVULSO:"Outras Entr
 const TITULO_CAT_UNIFICADO={"DESPESA FIXA":"Despesas Fixas",IMPOSTO:"Despesas Fixas",DCP:"Gastos Semanais",
   EXTRAORDINARIA:"Extraordinário",DEPOSITO_AVULSO:"Avulso",COFRE:"Cofre/Invest.",
   PAGAMENTO_FATURA:"Pagamento de Fatura",PAGAMENTO_EMPRESTIMO:"Pagamento de Empréstimo"};
+// [23/07] Le a periodicidade (trimestral/semestral/anual) de uma recorrencia
+// a partir do OBS -- usado na lista de Recorrencias e no painel de edicao,
+// que hoje nao mostravam essa informacao em lugar nenhum (so existia dentro
+// do OBS cru, invisivel pro usuario).
+const NOMES_MES_CURTO=["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+function periodicidadeInfo(obs){
+  let mesesAlvo=null;
+  try{
+    const o=JSON.parse(obs||"{}");
+    if(Array.isArray(o.mesesAlvo)&&o.mesesAlvo.length) mesesAlvo=o.mesesAlvo;
+    else if(o.m&&o.m>1&&o.mesAlvo) mesesAlvo=[o.mesAlvo];
+  }catch(e){}
+  if(!mesesAlvo) return null;
+  const qtd=mesesAlvo.length;
+  const label=qtd===1?"Anual":qtd===2?"Semestral":qtd===4?"Trimestral":qtd+"x/ano";
+  return {label,meses:mesesAlvo.map(m=>NOMES_MES_CURTO[m-1]).join(", ")};
+}
 // [15/07] Categorias de divida sao conceitualmente PASSIVO por tras -- a
 // categoria so distingue se tem cronograma de parcelas (Emprestimo, aba
 // Emprestimos) ou nao (ex: Pai, so saldo corrente). Usado sempre que TIPO
@@ -4924,6 +4941,9 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
             {item.alias&&<span style={{fontSize:10,background:C.blueLight,color:C.blue,borderRadius:5,padding:"2px 6px",fontWeight:600}}>
               🏷 apelido no banco
             </span>}
+            {(()=>{const p=periodicidadeInfo(item.obs);return p&&<span style={{fontSize:10,background:C.purpleLight,color:C.purple,borderRadius:5,padding:"2px 6px",fontWeight:600}}>
+              📅 {p.label} ({p.meses})
+            </span>;})()}
           </div>
         </div>
         <div style={{textAlign:"right",flexShrink:0,marginRight:6}}>
@@ -4959,6 +4979,11 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
             </select>
           </div>
         </div>
+        {(()=>{const p=periodicidadeInfo(item.obs);return p&&<div style={{marginBottom:10,background:C.purpleLight,borderRadius:8,padding:"8px 10px"}}>
+          <div style={{fontSize:10,color:C.purple,fontWeight:700,textTransform:"uppercase"}}>Periodicidade</div>
+          <div style={{fontSize:13,color:C.text,fontWeight:600,marginTop:2}}>{p.label} — dispara em: {p.meses}</div>
+          <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Pra mudar a periodicidade, apague esta recorrência e crie uma nova com o mês de referência certo.</div>
+        </div>;})()}
         <div style={{marginBottom:10}}>
           <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Dias de tolerância (atraso sem virar problema)</div>
           <input type="text" inputMode="numeric" value={tolerancia} onChange={e=>setTolerancia(e.target.value.replace(/\D/g,""))}
@@ -5189,7 +5214,7 @@ function Recorrencias({data,onUpdate}){
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao}
       load={load} salvar={salvar} apagar={apagar} data={data}/>
-    <SecaoRecorrencias titulo="Recorrentes mensais" lista={debitosMensais} cor={C.red} bg={C.redLight}
+    <SecaoRecorrencias titulo="Recorrentes por conta" lista={debitosMensais} cor={C.red} bg={C.redLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao}
@@ -5216,8 +5241,7 @@ function FormNovaRecorr({onSalvo,onClose,data}){
   const [desc,setDesc]=useState("");
   const [valor,setValor]=useState("");
   const [tipo,setTipo]=useState("DESPESA FIXA");
-  const [forma,setForma]=useState("CONTA");
-  const [destino,setDestino]=useState("FLUXO");
+  const [destinoUI,setDestinoUI]=useState("FLUXO_PF");
   const [freq,setFreq]=useState("mensal");
   const [dia,setDia]=useState("10");
   const [parc,setParc]=useState("0");
@@ -5230,7 +5254,9 @@ function FormNovaRecorr({onSalvo,onClose,data}){
   // dispara Set/Dez/Mar/Jun, nao importa em que mes voce cria a regra).
   const [mesAncora,setMesAncora]=useState(String(new Date().getMonth()+1));
 
-  const ehCartao=destino==="CARTAO_PF"||destino==="CARTAO_PJ";
+  const ehCartao=destinoUI==="CARTAO_PF"||destinoUI==="CARTAO_PJ";
+  const destino=ehCartao?destinoUI:"FLUXO";
+  const forma=destinoUI==="FLUXO_PJ"?"CONTA PJ":"CONTA";
 
   const freqMapTodos={
     "terca":    {dia_venc:2,  m:1,  label:"Toda terca-feira"},
@@ -5278,8 +5304,12 @@ function FormNovaRecorr({onSalvo,onClose,data}){
       <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,color:C.textMuted,cursor:"pointer"}}>x</button>
     </div>
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
-      <div><label style={lbl}>Descricao</label>
-        <input value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Ex: PSICÓLOGO" style={inp}/></div>
+      <div><label style={lbl}>Nome de exibição</label>
+        <input value={desc} onChange={e=>setDesc(e.target.value.toUpperCase())} placeholder="Ex: PSICÓLOGO" style={inp}/></div>
+      <div><label style={lbl}>Nome no extrato/conciliação (opcional)</label>
+        <input value={alias} onChange={e=>setAlias(e.target.value.toUpperCase())} placeholder="ex: ZELT; IMOBILIARIA" style={inp}/>
+        <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Separe vários com ";". Ajuda a Conciliação a reconhecer esse gasto quando o banco usa um nome diferente — nunca muda o nome de exibição.</div>
+      </div>
       <div style={{display:"flex",gap:8}}>
         <div style={{flex:1}}><label style={lbl}>Valor (R$)</label>
           <input type="text" inputMode="numeric" value={valor} onChange={e=>setValor(formatarMoedaInput(e.target.value))} placeholder="0,00" style={{...inp,textAlign:"right"}}/></div>
@@ -5290,18 +5320,15 @@ function FormNovaRecorr({onSalvo,onClose,data}){
           </select></div>
       </div>
       <div><label style={lbl}>Destino</label>
-        <select value={destino} onChange={e=>{setDestino(e.target.value);if(e.target.value!=="FLUXO"&&isWeekly)setFreq("mensal");}} style={sel}>
-          <option value="FLUXO">Fluxo (conta corrente)</option>
+        <select value={destinoUI} onChange={e=>{setDestinoUI(e.target.value);if(e.target.value!=="FLUXO_PF"&&e.target.value!=="FLUXO_PJ"&&isWeekly)setFreq("mensal");}} style={sel}>
+          <option value="FLUXO_PF">Conta PF (pessoal)</option>
+          <option value="FLUXO_PJ">Conta PJ (empresa)</option>
           <option value="CARTAO_PF">{nomeCartao("PF",data)}</option>
           <option value="CARTAO_PJ">{nomeCartao("PJ",data)}</option>
         </select></div>
       {!ehCartao&&<div style={{display:"flex",gap:8}}>
-        <div style={{flex:1}}><label style={lbl}>Forma</label>
-          <select value={forma} onChange={e=>setForma(e.target.value)} style={sel}>
-            <option>CONTA</option><option>DEBITO</option><option>CONTA PJ</option>
-          </select></div>
         <div style={{flex:1}}><label style={lbl}>Parcelas (0=infinito)</label>
-          <input type="number" min="0" value={parc} onChange={e=>setParc(e.target.value)} style={{...inp,textAlign:"center"}}/></div>
+          <input type="number" min="0" value={parc} onChange={e=>setParc(e.target.value)} style={{...inp,textAlign:"center",width:80}}/></div>
       </div>}
       <div><label style={lbl}>Frequencia</label>
         <select value={freq} onChange={e=>setFreq(e.target.value)} style={sel}>
@@ -5326,10 +5353,6 @@ function FormNovaRecorr({onSalvo,onClose,data}){
           })()}
         </div>
       </div>}
-      <div><label style={lbl}>Termos alternativos (opcional)</label>
-        <input value={alias} onChange={e=>setAlias(e.target.value)} placeholder="ex: ZELT; IMOBILIARIA" style={inp}/>
-        <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Separe vários com ";". Ajuda a Conciliação a reconhecer esse gasto quando o banco usa um nome diferente.</div>
-      </div>
       <button onClick={salvar} disabled={load||!desc.trim()||!valor}
         style={{background:C.accent,color:"#fff",borderRadius:8,padding:"10px",
           fontSize:14,fontWeight:700,border:"none",cursor:"pointer",width:"100%"}}>
@@ -6892,7 +6915,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260723.1845 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260723.2015 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -6974,7 +6997,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260723.1845
+      // HTML v3.20260723.2015
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
