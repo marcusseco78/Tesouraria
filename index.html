@@ -132,6 +132,26 @@ const CAT_LABEL={DCP:"Despesas Cotidianas Semanais",DEPOSITO_AVULSO:"Outras Entr
 const TITULO_CAT_UNIFICADO={"DESPESA FIXA":"Despesas Fixas",IMPOSTO:"Despesas Fixas",DCP:"Gastos Semanais",
   EXTRAORDINARIA:"Extraordinário",DEPOSITO_AVULSO:"Avulso",COFRE:"Cofre/Invest.",
   PAGAMENTO_FATURA:"Pagamento de Fatura",PAGAMENTO_EMPRESTIMO:"Pagamento de Empréstimo"};
+// [23/07] Globais (antes viviam só dentro do Fluxo) -- reaproveitadas pelo
+// Historico tambem, pra nao duplicar a logica da matriz de categoria
+// unificada (Fixa/DCP/Extra/Fatura/Emprestimo/Cofre). Fatura/Emprestimo/
+// Cofre sempre travados (decisao do Marcus de abolir a troca de categoria
+// pra esses 3 -- risco de reverter direito nao compensa).
+const CAT_LIVRES_GASTO=["DCP","EXTRAORDINARIA"];
+// Tolera a inconsistencia de acento ja existente nos dados (algumas linhas
+// antigas tem "EXTRAORDINÁRIA" com acento).
+function normTipoGasto(t){ return String(t||"").toUpperCase()==="EXTRAORDINÁRIA"?"EXTRAORDINARIA":t; }
+function unificarBucketGasto(item){
+  const t=normTipoGasto(item.tipo);
+  if(t==="DESPESA FIXA"||t==="IMPOSTO") return "DESPESA FIXA";
+  if(t==="DCP") return "DCP";
+  if(t==="EXTRAORDINARIA") return "EXTRAORDINARIA";
+  if(t==="CARTAO PF"||t==="CARTAO PJ"||t==="CARTÃO PF"||t==="CARTÃO PJ") return "PAGAMENTO_FATURA";
+  if(t==="PASSIVO") return "PAGAMENTO_EMPRESTIMO";
+  if(t==="COFRE") return "COFRE";
+  return null;
+}
+function categoriaEhGastoSimples(item){ return unificarBucketGasto(item)!==null; }
 // [23/07] Le a periodicidade (trimestral/semestral/anual) de uma recorrencia
 // a partir do OBS -- usado na lista de Recorrencias e no painel de edicao,
 // que hoje nao mostravam essa informacao em lugar nenhum (so existia dentro
@@ -3683,26 +3703,9 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
   // Segue o mesmo padrao que o Historico ja usa pra editar categoria: grava
   // em TIPO (o que importa pro calculo/orcamento DCP) e replica em CATEGORIA
   // pra manter os dois em sincronia.
-  // [23/07] Fatura/Emprestimo/Cofre entram no mapa tambem, mas SEMPRE
-  // travados -- decisao do Marcus de abolir a troca de categoria pra esses
-  // 3 (o risco de reverter direito um abatimento/aporte/pagamento avulso
-  // nao compensa economizar um apagar+relancar). So DCP<->Extraordinario
-  // continua intercambiavel de verdade.
-  const CAT_LIVRES_GASTO=["DCP","EXTRAORDINARIA"];
-  // Tolera a inconsistencia de acento ja existente nos dados (algumas linhas
-  // antigas tem "EXTRAORDINÁRIA" com acento).
-  function normTipoGasto(t){ return String(t||"").toUpperCase()==="EXTRAORDINÁRIA"?"EXTRAORDINARIA":t; }
-  function unificarBucketGasto(item){
-    const t=normTipoGasto(item.tipo);
-    if(t==="DESPESA FIXA"||t==="IMPOSTO") return "DESPESA FIXA";
-    if(t==="DCP") return "DCP";
-    if(t==="EXTRAORDINARIA") return "EXTRAORDINARIA";
-    if(t==="CARTAO PF"||t==="CARTAO PJ"||t==="CARTÃO PF"||t==="CARTÃO PJ") return "PAGAMENTO_FATURA";
-    if(t==="PASSIVO") return "PAGAMENTO_EMPRESTIMO";
-    if(t==="COFRE") return "COFRE";
-    return null;
-  }
-  function categoriaEhGastoSimples(item){ return unificarBucketGasto(item)!==null; }
+  // [23/07] unificarBucketGasto/categoriaEhGastoSimples/CAT_LIVRES_GASTO
+  // agora sao globais (ver topo do arquivo) -- reaproveitadas pelo Historico
+  // tambem, sem duplicar a logica.
   async function salvarCategoriaFluxo(item,novoTipo){
     setLoadCategoria(item.row);
     try{
@@ -4054,6 +4057,13 @@ function Historico({data,onUpdate,destaque,onIrPara}){
   const [load,setLoad]=useState(false);
   const [busca,setBusca]=useState("");
   const [limite,setLimite]=useState(30);
+  // [23/07] Espelhando o Fluxo: apelido (nome de exibicao) e nome-no-extrato
+  // (a propria DESCRICAO) agora sao dois campos separados, e a categoria
+  // vira a matriz unificada de 6 (em vez do select antigo de 9 que lia o
+  // campo errado -- ver correcao de 22/07 no Fluxo, mesmo bug existia aqui).
+  const [apelidoInput,setApelidoInput]=useState("");
+  const [loadApelido,setLoadApelido]=useState(false);
+  const [loadCategoria,setLoadCategoria]=useState(null);
 
   const envelopesCustom=useMemo(()=>calcularEnvelopesCustom(data),[data.fluxo,data.cartaoPF,data.cartaoPJ,data.config]);
   const envelopesPorId=useMemo(()=>{const m={};envelopesCustom.forEach(e=>m[e.id]=e);return m;},[envelopesCustom]);
@@ -4068,9 +4078,6 @@ function Historico({data,onUpdate,destaque,onIrPara}){
     const ultimo=ultimoPorChave["fluxo:"+item.row];
     return {nome:envelopesPorId[envId].nome, saldo:ultimo?ultimo.saldo:null};
   }
-
-  const CATEGORIAS=["DCP","DESPESA FIXA","RECEITA","DEPOSITO_AVULSO","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA","EXTRAORDINARIA","IMPOSTO","INVESTIMENTO"];
-  const ehFaturaCartao=item=>item.categoria==="CARTAO PF"||item.categoria==="CARTAO PJ"||item.tipo==="CARTAO PF"||item.tipo==="CARTAO PJ";
 
   const todos=useMemo(()=>(data.fluxo||[]).filter(r=>r.status==="EXECUTADO").sort((a,b)=>a.data<b.data?1:-1),[data.fluxo]);
   const filtrados=useMemo(()=>{
@@ -4137,6 +4144,27 @@ function Historico({data,onUpdate,destaque,onIrPara}){
     setVal(formatarValorInicial(item.valor)); setNeg(item.valor<0);
     setDt(item.data); setCategoria(item.categoria||"");
     setVincularRegraCategoria(false);
+    let obsI={};try{obsI=JSON.parse(item.obs||"{}");}catch(e){}
+    setApelidoInput(obsI.apelido||"");
+  }
+
+  async function salvarApelidoHistorico(item){
+    setLoadApelido(true);
+    try{ onUpdate(await api({action:"editarApelidoItem",aba:"FLUXO",row:item.row,apelido:apelidoInput})); }
+    catch(e){ alert(e.message); }
+    setLoadApelido(false);
+  }
+
+  async function salvarCategoriaHistorico(item,novoTipo){
+    setLoadCategoria(item.row);
+    try{
+      let r=await api({action:"editar",row:item.row,campo:"TIPO",valor:novoTipo});
+      r=await api({action:"editar",row:item.row,campo:"CATEGORIA",valor:novoTipo});
+      if(vincularRegraCategoria) r=await api({action:"vincularCategoriaRegra",descricao:item.descricao,categoria:novoTipo});
+      onUpdate(r);
+    }
+    catch(e){ alert(e.message); }
+    setLoadCategoria(null);
   }
 
   async function salvar(item){
@@ -4147,23 +4175,6 @@ function Historico({data,onUpdate,destaque,onIrPara}){
       const novoValor=(neg?-1:1)*numBR(val);
       if(Math.abs(novoValor-item.valor)>0.005) r=await api({action:"editar",row:item.row,campo:"VALOR",valor:novoValor});
       if(dt!==item.data) r=await api({action:"editar",row:item.row,campo:"DATA",valor:dt});
-      if(!ehFaturaCartao(item)&&categoria!==(item.categoria||"")){
-        r=await api({action:"editar",row:item.row,campo:"CATEGORIA",valor:categoria});
-        // [15/07] TIPO sempre acompanha CATEGORIA aqui -- nenhuma categoria
-        // fora DCP pode ser DCP por conceito (Extraordinária, Despesa Fixa
-        // etc. nunca sao "cotidianas"), entao editar a categoria tem que
-        // mover o lancamento pra fora (ou pra dentro) do consumo semanal de
-        // DCP de verdade, nao so trocar o rotulo visivel. Sem isso, um
-        // lancamento reclassificado de DCP pra outra categoria continuava
-        // contando no orcamento semanal por baixo (TIPO antigo nunca mudava).
-        r=await api({action:"editar",row:item.row,campo:"TIPO",valor:tipoDaCategoria(categoria)});
-        // [NOVO 20/07] Vincula esse texto a essa categoria como regra
-        // permanente, se marcado -- Conciliação de Extrato passa a avisar
-        // se um item futuro com o mesmo texto vier classificado diferente.
-        if(vincularRegraCategoria){
-          r=await api({action:"vincularCategoriaRegra",descricao:item.descricao,categoria:categoria});
-        }
-      }
       if(r) onUpdate(r);
       setConf(null);
     }catch(e){ alert(e.message); }
@@ -4206,8 +4217,21 @@ function Historico({data,onUpdate,destaque,onIrPara}){
               style={{color:C.textSub,padding:"4px 8px",fontSize:14,background:isOpen?C.borderLight:"none",border:"1px solid "+C.border,borderRadius:5,cursor:"pointer",flexShrink:0}}>⋮</button>
           </div>
           {isOpen&&<div style={{background:C.accentLight,padding:"10px 14px",borderBottom:"1px solid "+C.borderLight,borderLeft:"3px solid "+C.accent}}>
-            <input type="text" value={desc} onChange={e=>setDesc(e.target.value)}
-              style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid "+C.accent,fontSize:13,fontFamily:"inherit",marginBottom:6,background:C.surface,boxSizing:"border-box"}}/>
+            {item.categoria!=="DCP_PROVISAO"&&<div style={{marginBottom:8}}>
+              <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME DE EXIBIÇÃO (opcional)</span>
+              <div style={{display:"flex",gap:6,marginTop:3}}>
+                <input value={apelidoInput} onChange={e=>setApelidoInput(e.target.value.toUpperCase())}
+                  placeholder={item.descricao}
+                  style={{flex:1,padding:"5px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:12,fontFamily:"inherit"}}/>
+                <button onClick={()=>salvarApelidoHistorico(item)} disabled={loadApelido}
+                  style={{padding:"5px 10px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+                  {loadApelido?"…":"Salvar"}
+                </button>
+              </div>
+            </div>}
+            <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME NO EXTRATO/CONCILIAÇÃO</span>
+            <input type="text" value={desc} onChange={e=>setDesc(e.target.value.toUpperCase())}
+              style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid "+C.accent,fontSize:13,fontFamily:"inherit",marginTop:3,marginBottom:6,background:C.surface,boxSizing:"border-box"}}/>
             <div style={{display:"grid",gridTemplateColumns:"30px 1fr 1fr",gap:6,marginBottom:6}}>
               <button type="button" onClick={()=>setNeg(n=>!n)}
                 style={{width:30,borderRadius:6,border:"1px solid "+C.accent,
@@ -4219,30 +4243,62 @@ function Historico({data,onUpdate,destaque,onIrPara}){
               <input type="date" value={dt} onChange={e=>setDt(e.target.value)}
                 style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:12,width:"100%",boxSizing:"border-box",background:C.surface}}/>
             </div>
-            {!ehFaturaCartao(item)&&<div style={{marginBottom:8}}>
-              <select value={categoria} onChange={e=>setCategoria(e.target.value)}
-                style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+(categoria?C.accent:C.red),fontSize:13,fontFamily:"inherit",background:C.surface}}>
-                <option value="">Escolha uma categoria...</option>
-                {CATEGORIAS.map(c=><option key={c} value={c}>{CAT_LABEL[c]||c}</option>)}
-              </select>
-              {categoria&&categoria!==(item.categoria||"")&&<label style={{display:"flex",alignItems:"center",gap:5,marginTop:6,fontSize:10,color:C.textMuted,cursor:"pointer"}}>
-                <input type="checkbox" checked={vincularRegraCategoria} onChange={e=>setVincularRegraCategoria(e.target.checked)}/>
-                Vincular esse texto a essa categoria também (avisa se aparecer classificado diferente de novo)
-              </label>}
-            </div>}
+            {/* [23/07] Categoria -- mesma matriz unificada de 6 do Fluxo,
+                consertando o mesmo bug (lia item.categoria, o campo errado --
+                a classificacao real mora em item.tipo). So DCP<->Extra troca
+                de verdade; os outros 4 ficam sempre travados quando SAO a
+                categoria atual. */}
+            {categoriaEhGastoSimples(item)&&(()=>{
+              const bucketAtual=unificarBucketGasto(item);
+              const travado=!CAT_LIVRES_GASTO.includes(bucketAtual);
+              const TODAS=["DESPESA FIXA","DCP","EXTRAORDINARIA","PAGAMENTO_FATURA","PAGAMENTO_EMPRESTIMO","COFRE"];
+              return <div style={{marginBottom:8}}>
+                <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA{travado&&
+                  <span style={{marginLeft:6,fontSize:8,background:"#fff",color:C.textMuted,padding:"1px 6px",borderRadius:8,fontWeight:700,letterSpacing:0}}>travada</span>}
+                </span>
+                <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:5}}>
+                  {TODAS.map(c=>{
+                    const ehLivreDeVerdade=CAT_LIVRES_GASTO.includes(c);
+                    const ehAtual=c===bucketAtual;
+                    const clicavel=!travado&&ehLivreDeVerdade&&!ehAtual;
+                    return <button key={c} disabled={!clicavel||loadCategoria===item.row}
+                      onClick={()=>clicavel&&salvarCategoriaHistorico(item,c)}
+                      style={{padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap",
+                        cursor:clicavel?"pointer":"default",
+                        border:"1px solid "+(ehAtual?C.accent:C.border),
+                        background:ehAtual?C.accentLight:(clicavel?"#fff":C.borderLight),
+                        color:ehAtual?C.accent:(clicavel?C.textSub:C.textMuted)}}>
+                      {loadCategoria===item.row&&ehAtual?"…":(TITULO_CAT_UNIFICADO[c]||c)}
+                    </button>;
+                  })}
+                </div>
+                {CAT_LIVRES_GASTO.includes(bucketAtual)&&<label style={{display:"flex",alignItems:"center",gap:5,marginTop:6,fontSize:10,color:C.textMuted,cursor:"pointer"}}>
+                  <input type="checkbox" checked={vincularRegraCategoria} onChange={e=>setVincularRegraCategoria(e.target.checked)}/>
+                  Vincular esse texto a essa categoria também (avisa se aparecer classificado diferente de novo)
+                </label>}
+              </div>;
+            })()}
             {item.categoria!=="DCP_PROVISAO"&&String(item.obs||"").indexOf("FONTE_RECEITA")<0&&
               <SeletorEnvelopeItem aba="FLUXO" row={item.row} obsAtual={item.obs} data={data} onUpdate={onUpdate}/>}
-            <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <button onClick={()=>apagar(item)} disabled={load}
-                style={{color:C.red,padding:"6px 10px",fontSize:12,fontWeight:700,background:"none",border:"1px solid "+C.redLight,borderRadius:6,cursor:"pointer"}}>🗑 Apagar</button>
-              <span style={{flex:1}}/>
-              <button onClick={()=>setConf(null)} disabled={load}
-                style={{background:C.borderLight,color:C.textSub,borderRadius:6,padding:"6px 10px",fontSize:12,border:"none",cursor:"pointer"}}>Cancelar</button>
-              <button onClick={()=>salvar(item)} disabled={load||(!ehFaturaCartao(item)&&!categoria)}
-                style={{background:C.accent,color:"#fff",borderRadius:6,padding:"6px 16px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer"}}>
-                {load?"…":(!ehFaturaCartao(item)&&!categoria)?"Escolha a categoria":"Salvar"}
-              </button>
-            </div>
+            {(()=>{
+              const bucket=unificarBucketGasto(item);
+              const temRecorrenciaAtiva=(data.recorr||[]).some(r=>String(r[0]).toUpperCase()===String(item.descricao).toUpperCase()&&String(r[6]).toUpperCase()==="S");
+              const apagarTravado=(bucket==="DESPESA FIXA"&&temRecorrenciaAtiva)||bucket==="PAGAMENTO_FATURA"||
+                (bucket==="PAGAMENTO_EMPRESTIMO"&&item.categoria==="DIVIDA_PARCELADA");
+              return <div style={{display:"flex",gap:8,alignItems:"center",marginTop:8}}>
+                {apagarTravado
+                  ?<div style={{fontSize:10,color:C.textMuted,padding:"6px 10px",background:C.borderLight,borderRadius:6}}>🔒 Apagar indisponível</div>
+                  :<button onClick={()=>apagar(item)} disabled={load}
+                    style={{color:C.red,padding:"6px 10px",fontSize:12,fontWeight:700,background:"none",border:"1px solid "+C.redLight,borderRadius:6,cursor:"pointer"}}>🗑 Apagar</button>}
+                <span style={{flex:1}}/>
+                <button onClick={()=>setConf(null)} disabled={load}
+                  style={{background:C.borderLight,color:C.textSub,borderRadius:6,padding:"6px 10px",fontSize:12,border:"none",cursor:"pointer"}}>Cancelar</button>
+                <button onClick={()=>salvar(item)} disabled={load}
+                  style={{background:C.accent,color:"#fff",borderRadius:6,padding:"6px 16px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer"}}>
+                  {load?"…":"Salvar"}
+                </button>
+              </div>;
+            })()}
           </div>}
         </div>;})}
         {(cartaoPorDataFiltrado[gdt]||[]).map(c=><div key={"cart-"+c.cartao+"-"+c.row}
@@ -7055,7 +7111,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260723.2230 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260723.2330 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7137,7 +7193,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260723.2230
+      // HTML v3.20260723.2330
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
