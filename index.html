@@ -1507,7 +1507,46 @@ function FormCriarDividaPosFixada({onSalvo,onClose}){
     </div>
   </div>;
 }
-function CardDividaPosFixada({divida,onUpdate}){
+// [23/07] Timeline de saldo (Historico + Previsao) -- pedido do Marcus pra
+// Cofre e Divida Pos-Fixada, no mesmo espirito do que a Previsao/Fluxo ja
+// mostra pro saldo da conta. Componente compartilhado: recebe uma lista de
+// eventos JA PRONTA (data, tipo, delta, desc, saldoApos) separada em
+// historico (fato) e futuro (agendado, ainda sem correcao projetada --
+// isso fica pra uma proxima etapa).
+function TimelineSaldo({historico,futuro,corPositivo,corNegativo}){
+  const [aberto,setAberto]=useState(false);
+  if(!aberto) return <button onClick={()=>setAberto(true)}
+    style={{width:"100%",marginTop:8,background:"none",border:"1px dashed "+C.border,borderRadius:8,
+      padding:"7px",fontSize:11,color:C.textSub,cursor:"pointer",fontFamily:"inherit"}}>
+    📜 Ver histórico e previsão
+  </button>;
+
+  const Linha=({e,i})=><div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+    padding:"6px 0",borderBottom:"1px solid "+C.borderLight,fontSize:12}}>
+    <div style={{flex:1,minWidth:0}}>
+      <div style={{fontWeight:700,color:C.text}}>{e.tipo}</div>
+      <div style={{fontSize:10,color:C.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fmtD(e.data)}{e.desc?" · "+e.desc:""}</div>
+    </div>
+    <div style={{textAlign:"right",flexShrink:0,marginLeft:8}}>
+      <div style={{fontWeight:800,color:e.delta<0?corNegativo:corPositivo}}>{e.delta>=0?"+":""}{fmt(e.delta)}</div>
+      <div style={{fontSize:10,color:C.textMuted}}>saldo: {fmt(e.saldoApos)}</div>
+    </div>
+  </div>;
+
+  return <div style={{marginTop:8}}>
+    <button onClick={()=>setAberto(false)}
+      style={{width:"100%",marginBottom:8,background:"none",border:"1px dashed "+C.border,borderRadius:8,
+        padding:"7px",fontSize:11,color:C.textSub,cursor:"pointer",fontFamily:"inherit"}}>
+      ▲ Fechar histórico e previsão
+    </button>
+    <div style={{fontSize:10,fontWeight:800,color:C.textMuted,letterSpacing:".05em",marginBottom:4}}>HISTÓRICO</div>
+    {historico.length?historico.map((e,i)=><Linha key={i} e={e} i={i}/>):<div style={{fontSize:11,color:C.textMuted,padding:"6px 0"}}>Nada registrado ainda.</div>}
+    <div style={{fontSize:10,fontWeight:800,color:C.textMuted,letterSpacing:".05em",marginTop:12,marginBottom:4}}>PREVISÃO (agendado)</div>
+    {futuro.length?futuro.map((e,i)=><Linha key={i} e={e} i={i}/>):<div style={{fontSize:11,color:C.textMuted,padding:"6px 0"}}>Nada agendado. (Correção mensal projetada ainda não entra aqui — só o que já está lançado.)</div>}
+  </div>;
+}
+
+function CardDividaPosFixada({divida,onUpdate,data}){
   const [valorAbate,setValorAbate]=useState("");
   const [loadAbate,setLoadAbate]=useState(false);
   const [loadCDI,setLoadCDI]=useState(false);
@@ -1551,6 +1590,19 @@ function CardDividaPosFixada({divida,onUpdate}){
     }catch(e){alert(e.message);}
     setLoadAbate(false);
   }
+
+  // [23/07] Historico real, direto do log que ja existe (CORRECAO_CDI,
+  // ABATIMENTO, ESTORNO, AJUSTE_MANUAL) -- cada evento ja vem com o saldo
+  // resultante e o sinal certos no log (positivo = bom/reduz o quanto deve,
+  // negativo = ruim/aumenta o quanto deve). Aqui o saldo em si e mostrado
+  // sempre negativo (e uma divida, representa quanto voce deve).
+  const NOMES_EVENTO_DPF={ABATIMENTO:"Amortização",ESTORNO:"Estorno de amortização",CORRECAO_CDI:"Correção CDI",AJUSTE_MANUAL:"Ajuste manual"};
+  const logDivida=(data.dividasPosFixadasLog||[]).filter(l=>l.divida===divida.nome).sort((a,b)=>String(a.data).localeCompare(String(b.data)));
+  const historicoDivida=[
+    {data:divida.dataAquisicao,tipo:"Dívida inicial",delta:-Math.abs(divida.saldoInicial),desc:"",saldoApos:-Math.abs(divida.saldoInicial)},
+    ...logDivida.map(l=>({data:l.data,tipo:NOMES_EVENTO_DPF[l.tipoEvento]||l.tipoEvento,delta:l.valor,desc:l.descricao,saldoApos:-Math.abs(l.saldoResultante)}))
+  ];
+  const futuroDivida=[]; // amortizacao hoje e sempre imediata (EXECUTADO) -- nao ha "agendado" pra dividas ainda
 
   return <div style={{background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:10,padding:10,marginBottom:8}}>
     <div style={{fontSize:13,fontWeight:700,color:C.text}}>{divida.nome} <span style={{fontWeight:500,color:C.textMuted}}>· correção {divida.percentualCdi}% CDI</span></div>
@@ -1601,6 +1653,7 @@ function CardDividaPosFixada({divida,onUpdate}){
         Reduz o saldo e já lança a saída no Fluxo (categoria Passivo), hoje.
       </div>
     </div>
+    <TimelineSaldo historico={historicoDivida} futuro={futuroDivida} corPositivo={C.green} corNegativo={C.red}/>
   </div>;
 }
 function FormCriarEmprestimo({onSalvo,onClose}){
@@ -1803,7 +1856,7 @@ function EmprestimosPassivos({data,onUpdate}){
       </div>
       {showFormDPF&&<FormCriarDividaPosFixada onSalvo={r=>{onUpdate&&onUpdate(r);setShowFormDPF(false);}} onClose={()=>setShowFormDPF(false)}/>}
       {!dividasAtivas.length&&!showFormDPF&&<div style={{padding:"16px",textAlign:"center",fontSize:12,color:C.textMuted,fontStyle:"italic"}}>Nenhuma dívida pós-fixada ativa.</div>}
-      {dividasAtivas.map(d=><CardDividaPosFixada key={d.nome} divida={d} onUpdate={onUpdate}/>)}
+      {dividasAtivas.map(d=><CardDividaPosFixada key={d.nome} divida={d} onUpdate={onUpdate} data={data}/>)}
       {dividasQuitadas.length>0&&<div style={{marginTop:6}}>
         <button onClick={()=>setShowHistoricoDPF(v=>!v)}
           style={{background:"none",border:"none",color:C.textMuted,fontSize:11,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",padding:"4px 0"}}>
@@ -2675,7 +2728,7 @@ function EnvelopesCustom({data,onUpdate}){
 // Envelope (isso é a etapa 2) nem correção CDI (etapa 3) -- o campo % CDI já
 // fica salvo no cadastro pra não precisar migrar depois, mas não faz nada
 // ainda.
-function CardCofre({cofre,onUpdate}){
+function CardCofre({cofre,onUpdate,data}){
   const [tipoAcao,setTipoAcao]=useState("aporte");
   const [valor,setValor]=useState("");
   const [load,setLoad]=useState(false);
@@ -2728,6 +2781,28 @@ function CardCofre({cofre,onUpdate}){
     catch(e){alert(e.message);}
     setLoadApagar(false);
   }
+
+  // [23/07] Historico do cofre combina duas fontes: aportes/resgates (linhas
+  // reais no Fluxo, marcadas com obs.cofre) + correcoes/ajustes (cofre.log,
+  // que ate ontem nao existia -- so registra dai pra frente). Como so o log
+  // ja vem com saldoResultante pronto, aqui precisa somar tudo em ordem
+  // cronologica pra calcular o saldo apos cada evento.
+  const eventosFluxoCofre=(data.fluxo||[]).map(r=>{
+    let obs={};try{obs=JSON.parse(r.obs||"{}");}catch(e){}
+    if(obs.cofre!==cofre.id) return null;
+    return {data:r.data,tipo:obs.tipoCofre==="resgate"?"Resgate":"Aporte",delta:-Number(r.valor||0),desc:r.descricao,status:r.status};
+  }).filter(Boolean);
+  const eventosLogCofre=(cofre.log||[]).map(l=>({
+    data:l.data,tipo:l.tipoEvento==="CORRECAO_CDI"?"Correção CDI":l.tipoEvento==="AJUSTE_MANUAL"?"Ajuste manual":l.tipoEvento,
+    delta:l.valor,desc:l.descricao,status:"EXECUTADO"
+  }));
+  const passadoCofre=[...eventosFluxoCofre.filter(e=>e.status==="EXECUTADO"),...eventosLogCofre]
+    .sort((a,b)=>String(a.data).localeCompare(String(b.data)));
+  let _accCofre=0;
+  const historicoCofre=passadoCofre.map(e=>{_accCofre+=e.delta;return {...e,saldoApos:_accCofre};});
+  const futuroBrutoCofre=eventosFluxoCofre.filter(e=>e.status==="PROGRAMADO").sort((a,b)=>String(a.data).localeCompare(String(b.data)));
+  let _accFuturoCofre=_accCofre;
+  const futuroCofre=futuroBrutoCofre.map(e=>{_accFuturoCofre+=e.delta;return {...e,saldoApos:_accFuturoCofre};});
 
   return <div style={{background:C.tealLight,border:"1px solid #99F6E4",borderRadius:10,padding:10,marginBottom:8}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -2795,6 +2870,7 @@ function CardCofre({cofre,onUpdate}){
       style={{width:"100%",marginTop:8,padding:"5px",borderRadius:6,background:"transparent",color:C.red,fontSize:10,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
       🗑 Apagar este cofre
     </button>
+    <TimelineSaldo historico={historicoCofre} futuro={futuroCofre} corPositivo={C.teal} corNegativo={C.red}/>
   </div>;
 }
 
@@ -2844,7 +2920,7 @@ function Cofres({data,onUpdate}){
       </button>
     </div>}
     {!cofres.length&&!showForm&&<div style={{padding:"20px",textAlign:"center",fontSize:12,color:C.textMuted,fontStyle:"italic"}}>Nenhum cofre ainda.</div>}
-    {cofres.map(c=><CardCofre key={c.id} cofre={c} onUpdate={onUpdate}/>)}
+    {cofres.map(c=><CardCofre key={c.id} cofre={c} onUpdate={onUpdate} data={data}/>)}
   </div>;
 }
 
@@ -4910,7 +4986,7 @@ function Conversar({data,onUpdate,initTxt,onInitDone,msgs,setMsgs}){
 
 
 // ── RECORRÊNCIAS ──────────────────────────────────────────────────────────────
-function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCartao,neg,setNeg,val,setVal,dia,setDia,tolerancia,setTolerancia,alias,setAlias,envelopePadrao,setEnvelopePadrao,load,salvar,apagar,data}){
+function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCartao,neg,setNeg,val,setVal,dia,setDia,tolerancia,setTolerancia,alias,setAlias,envelopePadrao,setEnvelopePadrao,destinoEdit,setDestinoEdit,load,salvar,apagar,data}){
   // [CORRIGIDO 17/07] Precisa viver FORA de Recorrencias (nunca definido
   // dentro do corpo de outro componente) -- antes, toda tecla digitada em
   // qualquer campo do painel (alias, tolerancia, valor) disparava um
@@ -4953,6 +5029,16 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
         <span style={{fontSize:11,color:C.textMuted}}>{isOpen?"▲":"▼"}</span>
       </div>
       {isOpen&&<div style={{background:bg,padding:"12px 16px",borderBottom:"1px solid "+C.border}}>
+        <div style={{marginBottom:10}}>
+          <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Destino</div>
+          <select value={destinoEdit} onChange={e=>setDestinoEdit(e.target.value)}
+            style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",background:C.surface}}>
+            <option value="FLUXO">Conta</option>
+            <option value="CARTAO_PF">{nomeCartao("PF",data)}</option>
+            <option value="CARTAO_PJ">{nomeCartao("PJ",data)}</option>
+          </select>
+          <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Muda só as próximas ocorrências geradas — o que já foi lançado num lado fica onde está.</div>
+        </div>
         <div style={{display:"flex",gap:10,marginBottom:10}}>
           <div style={{flex:1}}>
             <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Valor</div>
@@ -5033,6 +5119,7 @@ function Recorrencias({data,onUpdate}){
   const [tolerancia,setTolerancia]=useState("");
   const [alias,setAlias]=useState("");
   const [envelopePadrao,setEnvelopePadrao]=useState("");
+  const [destinoEdit,setDestinoEdit]=useState("FLUXO");
   const [load,setLoad]=useState(false);
   const [showForm,setShowForm]=useState(false);
   const [loadTolerancia,setLoadTolerancia]=useState(false);
@@ -5088,7 +5175,22 @@ function Recorrencias({data,onUpdate}){
   const receitas=items.filter(r=>r.valor>=0).sort(sortDia);
   const debitosSemanais=debitosTodos.filter(r=>ehSemanal(r)&&!ehCartao(r)).sort(sortDia);
   const debitosCartao=debitosTodos.filter(ehCartao).sort(sortDia);
-  const debitosMensais=debitosTodos.filter(r=>!ehSemanal(r)&&!ehCartao(r)).sort(sortDia);
+  const debitosConta=debitosTodos.filter(r=>!ehSemanal(r)&&!ehCartao(r)).sort(sortDia);
+  // [23/07] Separa por periodicidade (mensal/trimestral/semestral/anual) --
+  // antes tudo isso ficava misturado numa lista so chamada "mensais", mesmo
+  // quando nao era mensal de verdade (ex: CSLL trimestral, Amazon Prime
+  // anual). Aplica tanto pro lado da Conta quanto do Cartao.
+  const rotuloPeriodicidade=r=>{const p=periodicidadeInfo(r.obs);return p?p.label:"Mensal";};
+  const ESPECIAIS=["Trimestral","Semestral","Anual"];
+  const porPeriodicidade=(lista,rotulo)=>lista.filter(r=>rotuloPeriodicidade(r)===rotulo);
+  const debitosMensais=debitosConta.filter(r=>!ESPECIAIS.includes(rotuloPeriodicidade(r)));
+  const debitosTrimestrais=porPeriodicidade(debitosConta,"Trimestral");
+  const debitosSemestrais=porPeriodicidade(debitosConta,"Semestral");
+  const debitosAnuaisConta=porPeriodicidade(debitosConta,"Anual");
+  const cartaoMensal=debitosCartao.filter(r=>!ESPECIAIS.includes(rotuloPeriodicidade(r)));
+  const cartaoTrimestral=porPeriodicidade(debitosCartao,"Trimestral");
+  const cartaoSemestral=porPeriodicidade(debitosCartao,"Semestral");
+  const cartaoAnual=porPeriodicidade(debitosCartao,"Anual");
 
   function fmtDia(d,cartao){
     const n=parseInt(d);
@@ -5106,6 +5208,7 @@ function Recorrencias({data,onUpdate}){
     setTolerancia(item.tolerancia!=null&&item.tolerancia!==""?String(item.tolerancia):"");
     setAlias(item.alias||"");
     setEnvelopePadrao(item.envelopePadrao||"");
+    setDestinoEdit(String(item.destino||"FLUXO").toUpperCase().replace(/[^A-Z0-9_]/g,""));
   }
 
   async function salvar(item){
@@ -5115,6 +5218,9 @@ function Recorrencias({data,onUpdate}){
       const novoDia=parseInt(dia);
       const novaTolerancia=tolerancia===""?null:parseInt(tolerancia);
       let ultimoResultado=null;
+      const destinoAntigo=String(item.destino||"FLUXO").toUpperCase().replace(/[^A-Z0-9_]/g,"");
+      if(destinoEdit!==destinoAntigo)
+        ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"DESTINO",valor:destinoEdit,resumo:""});
       if(novoValor!==item.valor)
         ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"VALOR",valor:String(novoValor),resumo:""});
       if(novoDia!==parseInt(item.diaVenc))
@@ -5212,22 +5318,52 @@ function Recorrencias({data,onUpdate}){
     <SecaoRecorrencias titulo="Recorrentes semanais" lista={debitosSemanais} cor={C.red} bg={C.redLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
-      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao}
+      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit}
       load={load} salvar={salvar} apagar={apagar} data={data}/>
     <SecaoRecorrencias titulo="Recorrentes por conta" lista={debitosMensais} cor={C.red} bg={C.redLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
-      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao}
+      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit}
       load={load} salvar={salvar} apagar={apagar} data={data}/>
-    <SecaoRecorrencias titulo="Recorrentes no cartão" lista={debitosCartao} cor={C.red} bg={C.redLight}
+    <SecaoRecorrencias titulo="Trimestrais (conta)" lista={debitosTrimestrais} cor={C.purple} bg={C.purpleLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
-      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao}
+      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit}
+      load={load} salvar={salvar} apagar={apagar} data={data}/>
+    <SecaoRecorrencias titulo="Semestrais (conta)" lista={debitosSemestrais} cor={C.purple} bg={C.purpleLight}
+      edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
+      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
+      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit}
+      load={load} salvar={salvar} apagar={apagar} data={data}/>
+    <SecaoRecorrencias titulo="Anuais (conta)" lista={debitosAnuaisConta} cor={C.purple} bg={C.purpleLight}
+      edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
+      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
+      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit}
+      load={load} salvar={salvar} apagar={apagar} data={data}/>
+    <SecaoRecorrencias titulo="Recorrentes no cartão" lista={cartaoMensal} cor={C.red} bg={C.redLight}
+      edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
+      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
+      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit}
+      load={load} salvar={salvar} apagar={apagar} data={data}/>
+    <SecaoRecorrencias titulo="Trimestrais (cartão)" lista={cartaoTrimestral} cor={C.purple} bg={C.purpleLight}
+      edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
+      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
+      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit}
+      load={load} salvar={salvar} apagar={apagar} data={data}/>
+    <SecaoRecorrencias titulo="Semestrais (cartão)" lista={cartaoSemestral} cor={C.purple} bg={C.purpleLight}
+      edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
+      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
+      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit}
+      load={load} salvar={salvar} apagar={apagar} data={data}/>
+    <SecaoRecorrencias titulo="Anuais (cartão)" lista={cartaoAnual} cor={C.purple} bg={C.purpleLight}
+      edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
+      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
+      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit}
       load={load} salvar={salvar} apagar={apagar} data={data}/>
     <SecaoRecorrencias titulo="Receitas recorrentes" lista={receitas} cor={C.blue} bg={C.blueLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
-      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao}
+      tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit}
       load={load} salvar={salvar} apagar={apagar} data={data}/>
     {totalRecorr>0&&!items.length&&<div style={{padding:"20px",textAlign:"center",color:C.textMuted,fontSize:13}}>
       {totalRecorr} itens, nenhum ativo.
@@ -5307,8 +5443,12 @@ function FormNovaRecorr({onSalvo,onClose,data}){
       <div><label style={lbl}>Nome de exibição</label>
         <input value={desc} onChange={e=>setDesc(e.target.value.toUpperCase())} placeholder="Ex: PSICÓLOGO" style={inp}/></div>
       <div><label style={lbl}>Nome no extrato/conciliação (opcional)</label>
-        <input value={alias} onChange={e=>setAlias(e.target.value.toUpperCase())} placeholder="ex: ZELT; IMOBILIARIA" style={inp}/>
-        <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Separe vários com ";". Ajuda a Conciliação a reconhecer esse gasto quando o banco usa um nome diferente — nunca muda o nome de exibição.</div>
+        <input value={alias} onChange={e=>setAlias(e.target.value.toUpperCase())}
+          placeholder={destinoUI==="FLUXO_PJ"?"ex: TRANSFERENCIA PIX ENVIADA; TRANSFERENCIA RECEBIDA INTENSIVA":"ex: ZELT; IMOBILIARIA"}
+          style={inp}/>
+        <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Separe vários com ";". Ajuda a Conciliação a reconhecer esse gasto quando o banco usa um nome diferente — nunca muda o nome de exibição.
+          {destinoUI==="FLUXO_PJ"&&" Como você paga isso via Pix entre suas próprias contas, o extrato da PJ mostra a transferência, não o nome do imposto — vale cadastrar os dois termos."}
+        </div>
       </div>
       <div style={{display:"flex",gap:8}}>
         <div style={{flex:1}}><label style={lbl}>Valor (R$)</label>
@@ -6915,7 +7055,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260723.2015 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260723.2230 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -6997,7 +7137,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260723.2015
+      // HTML v3.20260723.2230
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
