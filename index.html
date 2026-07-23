@@ -3590,12 +3590,26 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
   // Segue o mesmo padrao que o Historico ja usa pra editar categoria: grava
   // em TIPO (o que importa pro calculo/orcamento DCP) e replica em CATEGORIA
   // pra manter os dois em sincronia.
-  const CAT_TRAVADAS=["DESPESA FIXA","IMPOSTO"];
+  // [23/07] Fatura/Emprestimo/Cofre entram no mapa tambem, mas SEMPRE
+  // travados -- decisao do Marcus de abolir a troca de categoria pra esses
+  // 3 (o risco de reverter direito um abatimento/aporte/pagamento avulso
+  // nao compensa economizar um apagar+relancar). So DCP<->Extraordinario
+  // continua intercambiavel de verdade.
   const CAT_LIVRES_GASTO=["DCP","EXTRAORDINARIA"];
   // Tolera a inconsistencia de acento ja existente nos dados (algumas linhas
   // antigas tem "EXTRAORDINÁRIA" com acento).
   function normTipoGasto(t){ return String(t||"").toUpperCase()==="EXTRAORDINÁRIA"?"EXTRAORDINARIA":t; }
-  function categoriaEhGastoSimples(tipo){ const t=normTipoGasto(tipo); return CAT_TRAVADAS.includes(t)||CAT_LIVRES_GASTO.includes(t); }
+  function unificarBucketGasto(item){
+    const t=normTipoGasto(item.tipo);
+    if(t==="DESPESA FIXA"||t==="IMPOSTO") return "DESPESA FIXA";
+    if(t==="DCP") return "DCP";
+    if(t==="EXTRAORDINARIA") return "EXTRAORDINARIA";
+    if(t==="CARTAO PF"||t==="CARTAO PJ"||t==="CARTÃO PF"||t==="CARTÃO PJ") return "PAGAMENTO_FATURA";
+    if(t==="PASSIVO") return "PAGAMENTO_EMPRESTIMO";
+    if(t==="COFRE") return "COFRE";
+    return null;
+  }
+  function categoriaEhGastoSimples(item){ return unificarBucketGasto(item)!==null; }
   async function salvarCategoriaFluxo(item,novoTipo){
     setLoadCategoria(item.row);
     try{
@@ -3812,14 +3826,14 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
               Cancelar
             </button>
           </div>
-          {/* [22/07] Categoria -- lista completa das 6, sempre visivel (igual
-              o mockup aprovado). So gasto simples (Fixa/Imposto/DCP/Extra)
-              tem logica de verdade por enquanto; Fatura/Emprestimo/Cofre
-              aparecem cinza/bloqueadas ate serem construidas nas proximas
-              etapas -- nunca clicaveis ainda. */}
-          {categoriaEhGastoSimples(item.tipo)&&(()=>{
-            const tipoAtual=normTipoGasto(item.tipo);
-            const travado=CAT_TRAVADAS.includes(tipoAtual);
+          {/* [23/07] Categoria -- lista completa das 6, sempre visivel. So
+              DCP<->Extraordinario e intercambiavel de verdade -- Fixa/Imposto/
+              Fatura/Emprestimo/Cofre ficam sempre travados quando SAO a
+              categoria atual (decisao do Marcus: abolir troca pra esses 3,
+              risco de reverter nao compensa). */}
+          {categoriaEhGastoSimples(item)&&(()=>{
+            const bucketAtual=unificarBucketGasto(item);
+            const travado=!CAT_LIVRES_GASTO.includes(bucketAtual);
             const TODAS=["DESPESA FIXA","DCP","EXTRAORDINARIA","PAGAMENTO_FATURA","PAGAMENTO_EMPRESTIMO","COFRE"];
             return <div style={{marginTop:8,marginBottom:8}}>
               <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA{travado&&
@@ -3827,8 +3841,8 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
               </span>
               <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:5}}>
                 {TODAS.map(c=>{
-                  const ehLivreDeVerdade=CAT_LIVRES_GASTO.includes(c); // so DCP/Extra tem logica hoje
-                  const ehAtual=c===tipoAtual;
+                  const ehLivreDeVerdade=CAT_LIVRES_GASTO.includes(c); // so DCP/Extra sao intercambiaveis
+                  const ehAtual=c===bucketAtual;
                   const clicavel=!travado&&ehLivreDeVerdade&&!ehAtual;
                   return <button key={c} disabled={!clicavel||loadCategoria===item.row}
                     onClick={()=>clicavel&&salvarCategoriaFluxo(item,c)}
@@ -3849,19 +3863,25 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
             style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:"#92400E",fontSize:11,border:"1px dashed #FED7AA",cursor:"pointer",fontFamily:"inherit"}}>
             🔀 Em vez disso, somar esse valor direto na próxima fatura
           </button>}
-          {CAT_TRAVADAS.includes(normTipoGasto(item.tipo))?
-            <div style={{marginTop:8}}>
+          {(()=>{
+            const bucket=unificarBucketGasto(item);
+            const apagarTravado=bucket==="DESPESA FIXA"||bucket==="PAGAMENTO_FATURA"||
+              (bucket==="PAGAMENTO_EMPRESTIMO"&&item.categoria==="DIVIDA_PARCELADA");
+            if(apagarTravado) return <div style={{marginTop:8}}>
               <div style={{width:"100%",padding:"8px",borderRadius:6,background:C.borderLight,color:C.textMuted,fontSize:11,fontWeight:700,textAlign:"center"}}>
                 🔒 Apagar indisponível
               </div>
               <div style={{fontSize:10,color:C.textMuted,marginTop:4,textAlign:"center"}}>
-                Nasceu de recorrência — use "Apagar TODOS" ou "Gerenciar recorrência" abaixo.
+                {bucket==="PAGAMENTO_FATURA"?'Linha calculada automaticamente — edite valor/data acima, ou use "Somar na próxima fatura".'
+                  :bucket==="PAGAMENTO_EMPRESTIMO"?'Parcela de cronograma — gerencie esse empréstimo na aba própria.'
+                  :'Nasceu de recorrência — use "Apagar TODOS" ou "Gerenciar recorrência" abaixo.'}
               </div>
-            </div>
-          :<button onClick={()=>apagar(item)} disabled={!!load}
-            style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:11,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
-            🗑 Apagar este lançamento
-          </button>}
+            </div>;
+            return <button onClick={()=>apagar(item)} disabled={!!load}
+              style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:11,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
+              🗑 Apagar este lançamento
+            </button>;
+          })()}
           {String(item.obs||"").indexOf("FONTE_RECEITA")>=0?
             <button onClick={()=>onIrPara&&onIrPara({tab:"receitas"})}
               style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.teal,fontSize:10,border:"1px dashed "+C.teal,cursor:"pointer",fontFamily:"inherit"}}>
@@ -3869,23 +3889,26 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
             </button>
           :<>
             {(()=>{
-              const tipoNorm=normTipoGasto(item.tipo);
-              const ehGastoSimples=categoriaEhGastoSimples(item.tipo);
-              const travadoApagarTodos=ehGastoSimples&&CAT_TRAVADAS.includes(tipoNorm);
-              const ehLivreSemRecorrencia=ehGastoSimples&&CAT_LIVRES_GASTO.includes(tipoNorm);
-              // [22/07] DCP/Extraordinario nunca nascem de recorrencia de
-              // verdade (conferido: nenhuma linha em RECORRENCIAS tem esses
-              // tipos) -- "Apagar TODOS por descricao" seria arriscado aqui,
-              // podendo apagar avulsos que so coincidem no nome. Só existe
-              // pros tipos que realmente tem uma recorrencia por tras.
-              if(ehLivreSemRecorrencia) return null;
-              return <button onClick={()=>travadoApagarTodos?(onIrPara&&onIrPara({tab:"recorr"})):apagarTodosComEssaDescricao(item)} disabled={!!load}
+              const bucket=unificarBucketGasto(item);
+              const travadoApagarTodos=bucket==="DESPESA FIXA"||(bucket==="PAGAMENTO_EMPRESTIMO"&&item.categoria==="DIVIDA_PARCELADA");
+              // [23/07] Fatura, Cofre, e amortizacao Pos-Fixada nao tem
+              // conceito de "futuros com essa descricao" -- cada um e um
+              // evento independente (nao vem de recorrencia/cronograma),
+              // igual DCP/Extraordinario ja eram. So DCP/Extra e Fatura/
+              // Cofre/Pos-Fixado ficam sem esse botao; so Fixa e Parcela
+              // (que tem cronograma de verdade) mostram algo aqui.
+              const semConceitoDeTodos="DCP,EXTRAORDINARIA,PAGAMENTO_FATURA,COFRE".indexOf(bucket)>=0||
+                (bucket==="PAGAMENTO_EMPRESTIMO"&&item.categoria!=="DIVIDA_PARCELADA");
+              if(semConceitoDeTodos) return null;
+              const destino=bucket==="PAGAMENTO_EMPRESTIMO"?"emprestimos":"recorr";
+              const nomeAba=bucket==="PAGAMENTO_EMPRESTIMO"?"Empréstimos":"Despesas Fixas";
+              return <button onClick={()=>travadoApagarTodos?(onIrPara&&onIrPara({tab:destino})):apagarTodosComEssaDescricao(item)} disabled={!!load}
                 style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",
                   color:travadoApagarTodos?C.blue:C.red,fontSize:10,border:"1px dashed "+(travadoApagarTodos?C.blue:"#FECACA"),cursor:"pointer",fontFamily:"inherit"}}>
-                {travadoApagarTodos?"🔁 Ir pra Despesas Fixas pra apagar":('🗑 Apagar TODOS os "'+item.descricao+'" futuros (Fluxo)')}
+                {travadoApagarTodos?("🔁 Ir pra "+nomeAba+" pra apagar"):('🗑 Apagar TODOS os "'+item.descricao+'" futuros (Fluxo)')}
               </button>;
             })()}
-            {!(categoriaEhGastoSimples(item.tipo)&&CAT_TRAVADAS.includes(normTipoGasto(item.tipo)))&&(data.recorr||[]).some(r=>String(r[0]).toUpperCase()===String(item.descricao).toUpperCase()&&String(r[6]).toUpperCase()==="S")&&
+            {unificarBucketGasto(item)!=="DESPESA FIXA"&&(data.recorr||[]).some(r=>String(r[0]).toUpperCase()===String(item.descricao).toUpperCase()&&String(r[6]).toUpperCase()==="S")&&
               <button onClick={()=>onIrPara&&onIrPara({tab:"recorr"})}
                 style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.blue,fontSize:10,border:"1px dashed "+C.blue,cursor:"pointer",fontFamily:"inherit"}}>
                 🔁 Gerenciar/apagar esta recorrência
@@ -6822,7 +6845,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260722.1730 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260723.0930 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -6904,7 +6927,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260722.1730
+      // HTML v3.20260723.0930
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
