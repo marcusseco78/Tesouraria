@@ -3574,19 +3574,341 @@ function DCPTab({data,onUpdate,onIrPara}){
   </div>;
 }
 
-function Fluxo({data,onUpdate,destaque,onIrPara}){
-  const [conf,setConf]=useState(null);
-  const [val,setVal]=useState("");
-  const [dt,setDt]=useState("");
-  const [neg,setNeg]=useState(true);
-  const [load,setLoad]=useState(null);
-  const [novoPlantoes,setNovoPlantoes]=useState("");
-  const [loadPlantoes,setLoadPlantoes]=useState(false);
-  const [apelidoInput,setApelidoInput]=useState("");
+// [24/07] Painel de edicao de item -- MOLDE UNICO, usado por Fluxo,
+// Historico e Timeline. Antes existiam duas copias quase identicas (uma em
+// cada tela), que ja divergiram uma vez (bug do Histórico ficando pra tras
+// numa correcao do Fluxo). Agora e um so: cada tela so decide QUANDO
+// mostrar (isOpen) e o que fazer ao fechar/navegar -- a logica de dentro
+// (campos, categoria, apagar, travas) mora aqui, uma vez so.
+//
+// execMode e derivado do proprio item (status==="PROGRAMADO" + data
+// escolhida <= hoje), nao de qual tela esta chamando -- isso e o que faz
+// o mesmo componente se comportar certo tanto no Fluxo (pode "Executar")
+// quanto no Historico (sempre so "Salvar", already executado).
+function fonteCalculadaDeItem(item,data){
+  const m=String(item.obs||"").match(/FONTE_RECEITA:([A-Z0-9_]+):([A-Za-z0-9_]+):/);
+  if(!m) return null;
+  const fonte=(data.fontesReceita||[]).find(f=>String(f.nome||"").toUpperCase().replace(/[^A-Z0-9_]/g,"")===m[1]);
+  if(!fonte) return null;
+  const modo=(fonte.modos||[]).find(md=>md.id===m[2]);
+  if(!modo||!modo.calculada) return null;
+  const mp=String(item.descricao||"").match(/\(([\d.]+)\s+HORAS\)/);
+  const horasAtual=mp?Number(mp[1]):null;
+  const horasPorPlantao=Number(modo.horasPlantao)||12;
+  const plantoesAtual=horasAtual?(horasAtual/horasPorPlantao):"";
+  return {fonte:modo,plantoesAtual};
+}
+
+function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
+  const [val,setVal]=useState(formatarValorInicial(item.valor));
+  const [neg,setNeg]=useState(item.valor<0);
+  const [dt,setDt]=useState(antecipar?hoje():item.data);
+  const [apelidoInput,setApelidoInput]=useState(()=>{let o={};try{o=JSON.parse(item.obs||"{}");}catch(e){}return o.apelido||"";});
+  const [descInput,setDescInput]=useState(item.descricao||"");
   const [loadApelido,setLoadApelido]=useState(false);
-  const [descInput,setDescInput]=useState("");
   const [loadDesc,setLoadDesc]=useState(false);
   const [loadCategoria,setLoadCategoria]=useState(null);
+  const [load,setLoad]=useState(false);
+  const [novoPlantoes,setNovoPlantoes]=useState("");
+  const [loadPlantoes,setLoadPlantoes]=useState(false);
+  const [vincularRegraCategoria,setVincularRegraCategoria]=useState(false);
+
+  const hj=hoje();
+  const ehFatura=item.tipo==="CARTAO PF"||item.tipo==="CARTAO PJ";
+  const podeExecutar=item.status==="PROGRAMADO";
+  const execMode=podeExecutar&&dt<=hj;
+
+  async function salvarApelido(){
+    setLoadApelido(true);
+    try{ onUpdate(await api({action:"editarApelidoItem",aba:"FLUXO",row:item.row,apelido:apelidoInput})); }
+    catch(e){ alert(e.message); }
+    setLoadApelido(false);
+  }
+  async function salvarDesc(){
+    setLoadDesc(true);
+    try{ onUpdate(await api({action:"editar",aba:"FLUXO",row:item.row,campo:"DESCRICAO",valor:descInput})); }
+    catch(e){ alert(e.message); }
+    setLoadDesc(false);
+  }
+  async function salvarCategoria(novoTipo){
+    setLoadCategoria(item.row);
+    try{
+      let r=await api({action:"editar",row:item.row,campo:"TIPO",valor:novoTipo});
+      r=await api({action:"editar",row:item.row,campo:"CATEGORIA",valor:novoTipo});
+      if(vincularRegraCategoria) r=await api({action:"vincularCategoriaRegra",descricao:item.descricao,categoria:novoTipo});
+      onUpdate(r);
+    }
+    catch(e){ alert(e.message); }
+    setLoadCategoria(null);
+  }
+  async function confirmar(){
+    setLoad(true);
+    try{
+      const sinal=neg?-1:1;
+      if(execMode){
+        onUpdate(await api({action:"baixa",row:item.row,valorReal:numBR(val)*sinal,dataReal:dt}));
+      } else {
+        let r=null;
+        if(dt!==item.data) r=await api({action:"editar",row:item.row,campo:"DATA",valor:dt});
+        if(String(Math.abs(item.valor))!==val) r=await api({action:"editar",row:item.row,campo:"VALOR",valor:String(numBR(val)*sinal)});
+        onUpdate(r||await api({action:"getData"}));
+      }
+      onClose&&onClose();
+    }catch(e){alert(e.message);}
+    setLoad(false);
+  }
+  async function apagar(){
+    if(!confirm('Apagar "'+item.descricao+'" definitivamente?'))return;
+    setLoad(true);
+    try{ onUpdate(await api({action:"deletar",row:item.row})); onClose&&onClose(); }
+    catch(e){ alert(e.message); }
+    setLoad(false);
+  }
+  async function apagarTodosComEssaDescricao(){
+    if(!confirm('Apagar TODOS os lançamentos futuros ainda programados com a descrição "'+item.descricao+'"? Executados/histórico não são tocados.'))return;
+    setLoad(true);
+    try{
+      const r=await api({action:"deletarPorDescricao",aba:"FLUXO",descricao:item.descricao,apenasFuturas:false,apenasProgramadas:true});
+      onUpdate(r);
+      onClose&&onClose();
+      alert((r.apagados||0)+" lançamento(s) apagado(s).");
+    }catch(e){ alert(e.message); }
+    setLoad(false);
+  }
+  async function recalcularPlantoes(){
+    const n=Number(novoPlantoes);
+    if(!novoPlantoes||!isFinite(n)||n<0){ alert("Informe um número de plantões válido."); return; }
+    setLoadPlantoes(true);
+    try{
+      const r=await api({action:"editarPlantoesReceita",row:item.row,plantoes:n});
+      onUpdate(r);
+      onClose&&onClose();
+    }catch(e){alert(e.message);}
+    setLoadPlantoes(false);
+  }
+
+  const rotuloBotao=item.status==="EXECUTADO"?"Salvar":execMode?"Executar":"Reagendar";
+
+  return <div style={{background:execMode?C.greenLight:C.accentLight,padding:"10px 14px",
+    borderBottom:"1px solid "+(execMode?"#BBF7D0":C.accent),
+    borderLeft:"3px solid "+(execMode?C.green:C.accent)}}>
+    {item.categoria!=="DCP_PROVISAO"&&<div style={{marginBottom:8}}>
+      <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME DE EXIBIÇÃO (opcional)</span>
+      <div style={{display:"flex",gap:6,marginTop:3}}>
+        <input value={apelidoInput} onChange={e=>setApelidoInput(e.target.value.toUpperCase())}
+          placeholder={item.descricao}
+          style={{flex:1,padding:"5px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:12,fontFamily:"inherit"}}/>
+        <button onClick={salvarApelido} disabled={loadApelido}
+          style={{padding:"5px 10px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+          {loadApelido?"…":"Salvar"}
+        </button>
+      </div>
+      {(()=>{const cands=apelidosCandidatos(item.descricao,data);
+        return cands.length>1&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:5}}>
+          <span style={{fontSize:9,color:C.textMuted,width:"100%"}}>Esse texto bate com mais de uma regra salva — escolhe qual vale aqui:</span>
+          {cands.map((c,ci)=><button key={ci} onClick={()=>setApelidoInput(c.apelido)}
+            style={{fontSize:10,padding:"3px 8px",borderRadius:12,border:"1px solid "+C.accent,background:apelidoInput===c.apelido?C.accent:"transparent",color:apelidoInput===c.apelido?"#fff":C.accent,cursor:"pointer",fontFamily:"inherit"}}>
+            {c.apelido}
+          </button>)}
+        </div>;
+      })()}
+    </div>}
+    {item.categoria!=="DCP_PROVISAO"&&<div style={{marginBottom:10}}>
+      <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME NO EXTRATO/CONCILIAÇÃO</span>
+      <div style={{display:"flex",gap:6,marginTop:3}}>
+        <input value={descInput} onChange={e=>setDescInput(e.target.value.toUpperCase())}
+          style={{flex:1,padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit"}}/>
+        <button onClick={salvarDesc} disabled={loadDesc||!descInput.trim()}
+          style={{padding:"5px 10px",borderRadius:6,background:C.borderLight,color:C.textSub,fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+          {loadDesc?"…":"Salvar"}
+        </button>
+      </div>
+    </div>}
+    <div style={{display:"flex",gap:8,marginBottom:8}}>
+      <div style={{display:"flex",flexDirection:"column",gap:3,flex:1}}>
+        <span style={{fontSize:10,color:execMode?"#166534":"#92400E",fontWeight:600,letterSpacing:".05em"}}>{execMode?"DATA DE EXECUÇÃO":"NOVA DATA"}</span>
+        <input type="date" value={dt} onChange={e=>setDt(e.target.value)}
+          style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+(execMode?"#86EFAC":C.accent),fontSize:13,fontFamily:"inherit",width:"100%"}}/>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:3,flex:1}}>
+        <span style={{fontSize:10,color:execMode?"#166534":"#92400E",fontWeight:600,letterSpacing:".05em"}}>VALOR</span>
+        <div style={{display:"flex",gap:4}}>
+          <button type="button" onClick={()=>setNeg(n=>!n)}
+            style={{width:30,flexShrink:0,borderRadius:6,border:"1px solid "+(execMode?"#86EFAC":C.accent),
+              background:neg?C.redLight:C.blueLight,color:neg?C.red:C.blue,fontWeight:800,fontSize:14,cursor:"pointer"}}>
+            {neg?"−":"+"}
+          </button>
+          <input type="text" inputMode="numeric" value={val} onChange={e=>setVal(formatarMoedaInput(e.target.value))}
+            style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+(execMode?"#86EFAC":C.accent),fontSize:13,textAlign:"right",width:"100%"}}/>
+        </div>
+      </div>
+    </div>
+    {ehFatura&&execMode&&neg&&numBR(val)<Math.abs(item.valor)-0.01&&<div style={{fontSize:10,color:"#92400E",marginBottom:8,fontStyle:"italic"}}>
+      Pagamento parcial — o restante (R$ {(Math.abs(item.valor)-numBR(val)).toFixed(2).replace(".",",")}) vira um novo lançamento no Fluxo, na mesma data, editável normalmente.
+    </div>}
+    {item.categoria==="DCP_PROVISAO"&&execMode&&<div style={{fontSize:10,color:"#92400E",background:C.accentLight,borderRadius:6,padding:"6px 8px",marginBottom:8}}>
+      Fechamento de semana DCP: a sobra/estouro é redistribuída automaticamente entre as próximas segundas e a linha fecha em R$ 0,00 no Histórico — o valor digitado acima é ignorado. Feche as semanas em ordem (a mais antiga primeiro).
+    </div>}
+    {(()=>{const fc=fonteCalculadaDeItem(item,data); if(!fc) return null; return <div style={{background:"#fff",border:"1px dashed "+C.teal,borderRadius:6,padding:8,marginBottom:8}}>
+      <div style={{fontSize:10,color:C.teal,fontWeight:700,marginBottom:4}}>PLANTÕES DIFERENTES ESSE MÊS?</div>
+      <div style={{fontSize:10,color:C.textMuted,marginBottom:6}}>Valor/hora e alíquota continuam os mesmos da fonte — só a contagem muda.</div>
+      <div style={{display:"flex",gap:6}}>
+        <input type="number" min="0" step="1" placeholder={"Atual: "+(fc.plantoesAtual||"?")} value={novoPlantoes}
+          onChange={e=>setNovoPlantoes(e.target.value)}
+          style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit"}}/>
+        <button onClick={recalcularPlantoes} disabled={loadPlantoes||!novoPlantoes}
+          style={{background:C.teal,color:"#fff",border:"none",borderRadius:6,padding:"0 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+          {loadPlantoes?"…":"Recalcular"}
+        </button>
+      </div>
+    </div>;})()}
+    <div style={{display:"flex",gap:8,alignItems:"center"}}>
+      <span style={{flex:1,fontSize:11,color:execMode?"#166534":"#92400E"}}>
+        {item.status==="EXECUTADO"?"":execMode?"→ Vai para o Histórico":"→ Permanece no Fluxo com nova data"}
+      </span>
+      <button onClick={confirmar} disabled={!!load}
+        style={{background:execMode?C.green:C.accent,color:"#fff",borderRadius:6,padding:"6px 16px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",flexShrink:0}}>
+        {load?"…":rotuloBotao}
+      </button>
+      <button onClick={onClose}
+        style={{background:C.borderLight,color:C.textSub,borderRadius:6,padding:"6px 10px",fontSize:12,border:"none",cursor:"pointer",flexShrink:0}}>
+        Cancelar
+      </button>
+    </div>
+    {/* Categoria -- lista completa das 6, sempre visivel. So DCP<->
+        Extraordinario e intercambiavel de verdade -- Fixa/Imposto/Fatura/
+        Emprestimo/Cofre ficam sempre travados quando SAO a categoria atual
+        (decisao do Marcus: abolir troca pra esses 3, risco de reverter nao
+        compensa). */}
+    {categoriaEhGastoSimples(item)&&(()=>{
+      const bucketAtual=unificarBucketGasto(item);
+      const travado=!CAT_LIVRES_GASTO.includes(bucketAtual);
+      const TODAS=["DESPESA FIXA","DCP","EXTRAORDINARIA","PAGAMENTO_FATURA","PAGAMENTO_EMPRESTIMO","COFRE"];
+      return <div style={{marginTop:8,marginBottom:8}}>
+        <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA{travado&&
+          <span style={{marginLeft:6,fontSize:8,background:"#fff",color:C.textMuted,padding:"1px 6px",borderRadius:8,fontWeight:700,letterSpacing:0}}>travada</span>}
+        </span>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:5}}>
+          {TODAS.map(c=>{
+            const ehLivreDeVerdade=CAT_LIVRES_GASTO.includes(c);
+            const ehAtual=c===bucketAtual;
+            const clicavel=!travado&&ehLivreDeVerdade&&!ehAtual;
+            return <button key={c} disabled={!clicavel||loadCategoria===item.row}
+              onClick={()=>clicavel&&salvarCategoria(c)}
+              style={{padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap",
+                cursor:clicavel?"pointer":"default",
+                border:"1px solid "+(ehAtual?C.accent:C.border),
+                background:ehAtual?C.accentLight:(clicavel?"#fff":C.borderLight),
+                color:ehAtual?C.accent:(clicavel?C.textSub:C.textMuted)}}>
+              {loadCategoria===item.row&&ehAtual?"…":(TITULO_CAT_UNIFICADO[c]||c)}
+            </button>;
+          })}
+        </div>
+        {CAT_LIVRES_GASTO.includes(bucketAtual)&&<label style={{display:"flex",alignItems:"center",gap:5,marginTop:6,fontSize:10,color:C.textMuted,cursor:"pointer"}}>
+          <input type="checkbox" checked={vincularRegraCategoria} onChange={e=>setVincularRegraCategoria(e.target.checked)}/>
+          Vincular esse texto a essa categoria também (avisa se aparecer classificado diferente de novo)
+        </label>}
+      </div>;
+    })()}
+    {item.tipo==="RECEITA"&&<div style={{marginTop:8,marginBottom:8}}>
+      <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA
+        <span style={{marginLeft:6,fontSize:8,background:"#fff",color:C.textMuted,padding:"1px 6px",borderRadius:8,fontWeight:700,letterSpacing:0}}>travada</span>
+      </span>
+      <div style={{marginTop:5,padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,display:"inline-block",
+        border:"1px solid "+C.accent,background:C.accentLight,color:C.accent}}>
+        Receita
+      </div>
+    </div>}
+    {item.tipo==="DEPOSITO_AVULSO"&&<div style={{marginTop:8,marginBottom:8}}>
+      <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA
+        <span style={{marginLeft:6,fontSize:8,background:"#fff",color:C.textMuted,padding:"1px 6px",borderRadius:8,fontWeight:700,letterSpacing:0}}>travada</span>
+      </span>
+      <div style={{marginTop:5,padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,display:"inline-block",
+        border:"1px solid "+C.accent,background:C.accentLight,color:C.accent}}>
+        Avulso
+      </div>
+    </div>}
+    {item.valor<0&&item.categoria!=="DCP_PROVISAO"&&String(item.obs||"").indexOf("FONTE_RECEITA")<0&&
+      <SeletorEnvelopeItem aba="FLUXO" row={item.row} obsAtual={item.obs} data={data} onUpdate={onUpdate}/>}
+    {ehFatura&&<button onClick={async()=>{setLoad(true);try{onUpdate(await api({action:"mesclarFaturaComSeguinte",row:item.row}));}catch(e){alert(e.message);}setLoad(false);onClose&&onClose();}} disabled={!!load}
+      style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:"#92400E",fontSize:11,border:"1px dashed #FED7AA",cursor:"pointer",fontFamily:"inherit"}}>
+      🔀 Em vez disso, somar esse valor direto na próxima fatura
+    </button>}
+    {(()=>{
+      // Credito de emprestimo (obs.origemEmprestimo) trava igual as
+      // parcelas -- apagar so ele deixava o cronograma orfao, sem vinculo
+      // de volta pra nenhum credito. Sempre redireciona pra Empréstimos,
+      // que tem o botao de apagar o emprestimo INTEIRO (credito + parcelas)
+      // com a checagem de conciliacao. Fallback pro texto antigo tambem
+      // (linhas criadas antes desse marcador existir).
+      let obsCredito={};try{obsCredito=JSON.parse(item.obs||"{}");}catch(e){}
+      const ehCreditoEmprestimo=!!obsCredito.origemEmprestimo||String(item.obs||"").indexOf("Criado via Criar Empréstimo")>=0;
+      if(ehCreditoEmprestimo) return <div style={{marginTop:8}}>
+        <div style={{width:"100%",padding:"8px",borderRadius:6,background:C.borderLight,color:C.textMuted,fontSize:11,fontWeight:700,textAlign:"center"}}>
+          🔒 Apagar indisponível
+        </div>
+        <div style={{fontSize:10,color:C.textMuted,marginTop:4,textAlign:"center"}}>
+          Crédito de empréstimo — apagar isoladamente deixaria as parcelas órfãs.
+        </div>
+        <button onClick={()=>onIrPara&&onIrPara({tab:"emprestimos"})}
+          style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.blue,fontSize:10,border:"1px dashed "+C.blue,cursor:"pointer",fontFamily:"inherit"}}>
+          🔁 Ir pra Empréstimos (apagar o empréstimo inteiro)
+        </button>
+      </div>;
+      const bucket=unificarBucketGasto(item);
+      const ehFonteReceita=item.tipo==="RECEITA"&&String(item.obs||"").indexOf("FONTE_RECEITA")>=0;
+      const temRecorrenciaAtiva=(data.recorr||[]).some(r=>String(r[0]).toUpperCase()===String(item.descricao).toUpperCase()&&String(r[6]).toUpperCase()==="S");
+      const apagarTravado=ehFonteReceita||(bucket==="DESPESA FIXA"&&temRecorrenciaAtiva)||bucket==="PAGAMENTO_FATURA"||
+        (bucket==="PAGAMENTO_EMPRESTIMO"&&item.categoria==="DIVIDA_PARCELADA");
+      if(apagarTravado) return <div style={{marginTop:8}}>
+        <div style={{width:"100%",padding:"8px",borderRadius:6,background:C.borderLight,color:C.textMuted,fontSize:11,fontWeight:700,textAlign:"center"}}>
+          🔒 Apagar indisponível
+        </div>
+        <div style={{fontSize:10,color:C.textMuted,marginTop:4,textAlign:"center"}}>
+          {ehFonteReceita?'Fonte de receita cadastrada — use "Gerenciar futuros dessa fonte" abaixo.'
+            :bucket==="PAGAMENTO_FATURA"?'Linha calculada automaticamente — edite valor/data acima, ou use "Somar na próxima fatura".'
+            :bucket==="PAGAMENTO_EMPRESTIMO"?'Parcela de cronograma — gerencie esse empréstimo na aba própria.'
+            :'Nasceu de recorrência — use "Apagar TODOS" ou "Gerenciar recorrência" abaixo.'}
+        </div>
+      </div>;
+      return <button onClick={apagar} disabled={!!load}
+        style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:11,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
+        🗑 Apagar este lançamento
+      </button>;
+    })()}
+    {String(item.obs||"").indexOf("FONTE_RECEITA")>=0?
+      <button onClick={()=>onIrPara&&onIrPara({tab:"receitas"})}
+        style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.teal,fontSize:10,border:"1px dashed "+C.teal,cursor:"pointer",fontFamily:"inherit"}}>
+        🏥 Gerenciar futuros dessa fonte em Receitas
+      </button>
+    :<>
+      {(()=>{
+        const bucket=unificarBucketGasto(item);
+        const temRecorrenciaAtivaTodos=(data.recorr||[]).some(r=>String(r[0]).toUpperCase()===String(item.descricao).toUpperCase()&&String(r[6]).toUpperCase()==="S");
+        const travadoApagarTodos=(bucket==="DESPESA FIXA"&&temRecorrenciaAtivaTodos)||(bucket==="PAGAMENTO_EMPRESTIMO"&&item.categoria==="DIVIDA_PARCELADA");
+        const semConceitoDeTodos="DCP,EXTRAORDINARIA,PAGAMENTO_FATURA,COFRE".indexOf(bucket)>=0||
+          (bucket==="PAGAMENTO_EMPRESTIMO"&&item.categoria!=="DIVIDA_PARCELADA");
+        if(semConceitoDeTodos) return null;
+        const destino=bucket==="PAGAMENTO_EMPRESTIMO"?"emprestimos":"recorr";
+        const nomeAba=bucket==="PAGAMENTO_EMPRESTIMO"?"Empréstimos":"Despesas Fixas";
+        return <button onClick={()=>travadoApagarTodos?(onIrPara&&onIrPara({tab:destino})):apagarTodosComEssaDescricao()} disabled={!!load}
+          style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",
+            color:travadoApagarTodos?C.blue:C.red,fontSize:10,border:"1px dashed "+(travadoApagarTodos?C.blue:"#FECACA"),cursor:"pointer",fontFamily:"inherit"}}>
+          {travadoApagarTodos?("🔁 Ir pra "+nomeAba+" pra apagar"):('🗑 Apagar TODOS os "'+item.descricao+'" futuros (Fluxo)')}
+        </button>;
+      })()}
+      {unificarBucketGasto(item)!=="DESPESA FIXA"&&(data.recorr||[]).some(r=>String(r[0]).toUpperCase()===String(item.descricao).toUpperCase()&&String(r[6]).toUpperCase()==="S")&&
+        <button onClick={()=>onIrPara&&onIrPara({tab:"recorr"})}
+          style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.blue,fontSize:10,border:"1px dashed "+C.blue,cursor:"pointer",fontFamily:"inherit"}}>
+          🔁 Gerenciar/apagar esta recorrência
+        </button>}
+    </>
+    }
+  </div>;
+}
+
+function Fluxo({data,onUpdate,destaque,onIrPara}){
+  const [conf,setConf]=useState(null);
   const [busca,setBusca]=useState("");
   const [mostrarCofres,setMostrarCofres]=useState(false);
   const hj=hoje();
@@ -3608,24 +3930,6 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
     return {nome:envelopesPorId[envId].nome, saldo:ultimo?ultimo.saldo:null};
   }
 
-  // Detecta se um item do Fluxo e uma linha de receita CALCULADA (gerada
-  // pelo motor de Receitas Estruturadas) -- so essas tem "numero de
-  // plantoes" pra editar. ESTAVEL (ex HDWC) nao tem esse conceito. Marcador
-  // agora e "FONTE_RECEITA:NOME:MODOID:DATA" -- precisa achar o MODO exato
-  // dentro da fonte (uma fonte pode ter varios modos, so um deles calculado).
-  function fonteCalculadaDeItem(item){
-    const m=String(item.obs||"").match(/FONTE_RECEITA:([A-Z0-9_]+):([A-Za-z0-9_]+):/);
-    if(!m) return null;
-    const fonte=(data.fontesReceita||[]).find(f=>String(f.nome||"").toUpperCase().replace(/[^A-Z0-9_]/g,"")===m[1]);
-    if(!fonte) return null;
-    const modo=(fonte.modos||[]).find(md=>md.id===m[2]);
-    if(!modo||!modo.calculada) return null;
-    const mp=String(item.descricao||"").match(/\(([\d.]+)\s+HORAS\)/);
-    const horasAtual=mp?Number(mp[1]):null;
-    const horasPorPlantao=Number(modo.horasPlantao)||12;
-    const plantoesAtual=horasAtual?(horasAtual/horasPorPlantao):"";
-    return {fonte:modo,plantoesAtual};
-  }
   useEffect(()=>{
     if(destaque?.tab==="fluxo"&&destaque.row){
       const el=document.getElementById("fluxo-item-"+destaque.row);
@@ -3633,10 +3937,9 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
       // [22/07] Vindo do "+" (antecipar Fixa/Fatura/Parcela de Emprestimo):
       // nunca cria lancamento novo, so abre o item JA EXISTENTE no painel de
       // edicao com a data ja em hoje, um toque de "Reagendar" de confirmar.
-      if(destaque.antecipar){
-        const item=(data.fluxo||[]).find(r=>r.row===destaque.row);
-        if(item){ abrir(item); setDt(hoje()); }
-      }
+      // [24/07] setDt movido pra dentro do PainelEdicaoItem (prop antecipar) --
+      // aqui so precisa abrir o item, o resto o painel resolve sozinho.
+      if(destaque.antecipar) setConf(destaque.row);
     }
   },[destaque]);
 
@@ -3707,108 +4010,6 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
       .filter(g=>g.itensExibir.length||g.cartaoExibir.length);
   },[gruposComSaldo,cartaoPorData,busca]);
 
-  function abrir(item){setConf(item.row);setVal(formatarValorInicial(item.valor));setDt(item.data);setNeg(item.valor<0);setNovoPlantoes("");
-    let obsI={};try{obsI=JSON.parse(item.obs||"{}");}catch(e){}
-    setApelidoInput(obsI.apelido||"");
-    setDescInput(item.descricao||"");
-  }
-  async function salvarApelidoFluxo(item){
-    setLoadApelido(true);
-    try{ onUpdate(await api({action:"editarApelidoItem",aba:"FLUXO",row:item.row,apelido:apelidoInput})); }
-    catch(e){ alert(e.message); }
-    setLoadApelido(false);
-  }
-  // [22/07] "Nome no extrato/conciliacao" = a propria DESCRICAO da linha --
-  // acao "editar" generica ja aceita campo:"DESCRICAO", nao precisa de nada
-  // novo no backend. Apelido (acima) e o que aparece na tela; isso aqui e so
-  // a referencia crua pra bater com CSV/OFX depois.
-  async function salvarDescFluxo(item){
-    setLoadDesc(true);
-    try{ onUpdate(await api({action:"editar",aba:"FLUXO",row:item.row,campo:"DESCRICAO",valor:descInput})); }
-    catch(e){ alert(e.message); }
-    setLoadDesc(false);
-  }
-  // [22/07] Categoria -- so o grupo "gasto simples" (Fixa/Imposto travados;
-  // DCP/Extra livres, trocam entre si) por enquanto. Fatura/Emprestimo/Cofre
-  // como destino de reclassificacao entram quando esses tipos forem
-  // construidos nas proximas etapas -- ver alinhamento de 22/07.
-  // [22/07] CORRIGIDO: a classificacao que importa (Fixa/DCP/Extra/Imposto)
-  // mora no campo TIPO, nao em CATEGORIA -- CATEGORIA e uma subtag livre
-  // (CLUBE, MORADIA, DOMESTICO...) usada so pra relatorio, independente.
-  // Descoberto 22/07 ao ver que o bloco nunca aparecia pros itens reais.
-  // Segue o mesmo padrao que o Historico ja usa pra editar categoria: grava
-  // em TIPO (o que importa pro calculo/orcamento DCP) e replica em CATEGORIA
-  // pra manter os dois em sincronia.
-  // [23/07] unificarBucketGasto/categoriaEhGastoSimples/CAT_LIVRES_GASTO
-  // agora sao globais (ver topo do arquivo) -- reaproveitadas pelo Historico
-  // tambem, sem duplicar a logica.
-  async function salvarCategoriaFluxo(item,novoTipo){
-    setLoadCategoria(item.row);
-    try{
-      let r=await api({action:"editar",row:item.row,campo:"TIPO",valor:novoTipo});
-      r=await api({action:"editar",row:item.row,campo:"CATEGORIA",valor:novoTipo});
-      onUpdate(r);
-    }
-    catch(e){ alert(e.message); }
-    setLoadCategoria(null);
-  }
-
-  async function confirmar(){
-    setLoad(conf);
-    try{
-      const execMode=dt<=hj;
-      const origItem=prog.find(r=>r.row===conf);
-      const sinal=neg?-1:1;
-      if(execMode){
-        onUpdate(await api({action:"baixa",row:conf,valorReal:numBR(val)*sinal,dataReal:dt}));
-      } else {
-        await api({action:"editar",row:conf,campo:"DATA",valor:dt});
-        if(origItem&&String(Math.abs(origItem.valor))!==val){
-          await api({action:"editar",row:conf,campo:"VALOR",valor:String(numBR(val)*sinal)});
-        }
-        onUpdate(await api({action:"getData"}));
-      }
-    }catch(e){alert(e.message);}
-    setLoad(null);setConf(null);
-  }
-
-  async function apagar(item){
-    if(!confirm("Apagar \""+item.descricao+"\" definitivamente?"))return;
-    setLoad(item.row);
-    try{ onUpdate(await api({action:"deletar",row:item.row})); setConf(null); }
-    catch(e){ alert(e.message); }
-    setLoad(null);
-  }
-
-  async function apagarTodosComEssaDescricao(item){
-    if(!confirm("Apagar TODOS os lançamentos futuros ainda programados com a descrição \""+item.descricao+"\"? Executados/histórico não são tocados."))return;
-    setLoad(item.row);
-    try{
-      const r=await api({action:"deletarPorDescricao",aba:"FLUXO",descricao:item.descricao,apenasFuturas:false,apenasProgramadas:true});
-      onUpdate(r);
-      setConf(null);
-      alert((r.apagados||0)+" lançamento(s) apagado(s).");
-    }catch(e){ alert(e.message); }
-    setLoad(null);
-  }
-
-  // Corrige so o numero de plantoes de UM mes especifico (sem mexer na
-  // regra nem nas outras linhas) -- pro caso comum de "esse mes fiz
-  // mais/menos plantoes que o normal" (doou plantao, cobriu de colega
-  // etc). O backend recalcula o valor usando a config atual da fonte
-  // (valor-hora e aliquota nunca mudam por causa disso, so a contagem).
-  async function recalcularPlantoes(item){
-    const n=Number(novoPlantoes);
-    if(!novoPlantoes||!isFinite(n)||n<0){ alert("Informe um número de plantões válido."); return; }
-    setLoadPlantoes(true);
-    try{
-      const r=await api({action:"editarPlantoesReceita",row:item.row,plantoes:n});
-      onUpdate(r);
-      setConf(null);
-    }catch(e){alert(e.message);}
-    setLoadPlantoes(false);
-  }
-
   if(!prog.length) return <div>
     <div style={{padding:"40px 20px",textAlign:"center",color:C.textMuted,fontSize:14}}>
       Nenhum lançamento programado.
@@ -3856,7 +4057,6 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
         </div>;
       })()}
       {itensExibir.map(item=>{const isOpen=conf===item.row;
-        const ehFatura=item.tipo==="CARTAO PF"||item.tipo==="CARTAO PJ";
         const {cor:corItem,selo,bg:bgItem,descCor,confirmadoExtrato}=corDoItem(item,hj);
         const destacado=destaque?.tab==="fluxo"&&destaque.row===item.row;
         return <div key={item.row} id={"fluxo-item-"+item.row}>
@@ -3878,249 +4078,13 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
               </div>}
           </div>
           {item.categoria==="DCP_PROVISAO"?<ValorDCPProvisao valor={item.valor} dataEnvelope={item.data}/>:<span style={{fontWeight:700,color:item.valor<0?C.red:C.blue,flexShrink:0,fontSize:12}}>{fmt(item.valor)}</span>}
-          <button onClick={()=>isOpen?setConf(null):abrir(item)} disabled={!!load}
+          <button onClick={()=>isOpen?setConf(null):setConf(item.row)}
             style={{background:C.borderLight,color:C.textSub,borderRadius:8,padding:"6px 12px",fontSize:18,border:"1px solid "+C.border,fontWeight:400,cursor:"pointer",flexShrink:0,lineHeight:1}}>
-            {load===item.row?"…":"⋮"}
+            ⋮
           </button>
         </div>
-        {isOpen&&<div style={{background:execMode?C.greenLight:C.accentLight,padding:"10px 14px",
-          borderBottom:"1px solid "+(execMode?"#BBF7D0":C.accent),
-          borderLeft:"3px solid "+(execMode?C.green:C.accent)}}>
-          {item.categoria!=="DCP_PROVISAO"&&<div style={{marginBottom:8}}>
-            <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME DE EXIBIÇÃO (opcional)</span>
-            <div style={{display:"flex",gap:6,marginTop:3}}>
-              <input value={apelidoInput} onChange={e=>setApelidoInput(e.target.value.toUpperCase())}
-                placeholder={item.descricao}
-                style={{flex:1,padding:"5px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:12,fontFamily:"inherit"}}/>
-              <button onClick={()=>salvarApelidoFluxo(item)} disabled={loadApelido}
-                style={{padding:"5px 10px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-                {loadApelido?"…":"Salvar"}
-              </button>
-            </div>
-            {(()=>{const cands=apelidosCandidatos(item.descricao,data);
-              return cands.length>1&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:5}}>
-                <span style={{fontSize:9,color:C.textMuted,width:"100%"}}>Esse texto bate com mais de uma regra salva — escolhe qual vale aqui:</span>
-                {cands.map((c,ci)=><button key={ci} onClick={()=>setApelidoInput(c.apelido)}
-                  style={{fontSize:10,padding:"3px 8px",borderRadius:12,border:"1px solid "+C.accent,background:apelidoInput===c.apelido?C.accent:"transparent",color:apelidoInput===c.apelido?"#fff":C.accent,cursor:"pointer",fontFamily:"inherit"}}>
-                  {c.apelido}
-                </button>)}
-              </div>;
-            })()}
-          </div>}
-          {item.categoria!=="DCP_PROVISAO"&&<div style={{marginBottom:10}}>
-            <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME NO EXTRATO/CONCILIAÇÃO</span>
-            <div style={{display:"flex",gap:6,marginTop:3}}>
-              <input value={descInput} onChange={e=>setDescInput(e.target.value.toUpperCase())}
-                style={{flex:1,padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit"}}/>
-              <button onClick={()=>salvarDescFluxo(item)} disabled={loadDesc||!descInput.trim()}
-                style={{padding:"5px 10px",borderRadius:6,background:C.borderLight,color:C.textSub,fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-                {loadDesc?"…":"Salvar"}
-              </button>
-            </div>
-          </div>}
-          <div style={{display:"flex",gap:8,marginBottom:8}}>
-            <div style={{display:"flex",flexDirection:"column",gap:3,flex:1}}>
-              <span style={{fontSize:10,color:execMode?"#166534":"#92400E",fontWeight:600,letterSpacing:".05em"}}>{execMode?"DATA DE EXECUÇÃO":"NOVA DATA"}</span>
-              <input type="date" value={dt} onChange={e=>setDt(e.target.value)}
-                style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+(execMode?"#86EFAC":C.accent),fontSize:13,fontFamily:"inherit",width:"100%"}}/>
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:3,flex:1}}>
-              <span style={{fontSize:10,color:execMode?"#166534":"#92400E",fontWeight:600,letterSpacing:".05em"}}>VALOR</span>
-              <div style={{display:"flex",gap:4}}>
-                <button type="button" onClick={()=>setNeg(n=>!n)}
-                  style={{width:30,flexShrink:0,borderRadius:6,border:"1px solid "+(execMode?"#86EFAC":C.accent),
-                    background:neg?C.redLight:C.blueLight,color:neg?C.red:C.blue,fontWeight:800,fontSize:14,cursor:"pointer"}}>
-                  {neg?"−":"+"}
-                </button>
-                <input type="text" inputMode="numeric" value={val} onChange={e=>setVal(formatarMoedaInput(e.target.value))}
-                  style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+(execMode?"#86EFAC":C.accent),fontSize:13,textAlign:"right",width:"100%"}}/>
-              </div>
-            </div>
-          </div>
-          {ehFatura&&execMode&&neg&&numBR(val)<Math.abs(item.valor)-0.01&&<div style={{fontSize:10,color:"#92400E",marginBottom:8,fontStyle:"italic"}}>
-            Pagamento parcial — o restante (R$ {(Math.abs(item.valor)-numBR(val)).toFixed(2).replace(".",",")}) vira um novo lançamento no Fluxo, na mesma data, editável normalmente.
-          </div>}
-          {item.categoria==="DCP_PROVISAO"&&execMode&&<div style={{fontSize:10,color:"#92400E",background:C.accentLight,borderRadius:6,padding:"6px 8px",marginBottom:8}}>
-            Fechamento de semana DCP: a sobra/estouro é redistribuída automaticamente entre as próximas segundas e a linha fecha em R$ 0,00 no Histórico — o valor digitado acima é ignorado. Feche as semanas em ordem (a mais antiga primeiro).
-          </div>}
-          {(()=>{const fc=fonteCalculadaDeItem(item); if(!fc) return null; return <div style={{background:"#fff",border:"1px dashed "+C.teal,borderRadius:6,padding:8,marginBottom:8}}>
-            <div style={{fontSize:10,color:C.teal,fontWeight:700,marginBottom:4}}>PLANTÕES DIFERENTES ESSE MÊS?</div>
-            <div style={{fontSize:10,color:C.textMuted,marginBottom:6}}>Valor/hora e alíquota continuam os mesmos da fonte — só a contagem muda.</div>
-            <div style={{display:"flex",gap:6}}>
-              <input type="number" min="0" step="1" placeholder={"Atual: "+(fc.plantoesAtual||"?")} value={novoPlantoes}
-                onChange={e=>setNovoPlantoes(e.target.value)}
-                style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit"}}/>
-              <button onClick={()=>recalcularPlantoes(item)} disabled={loadPlantoes||!novoPlantoes}
-                style={{background:C.teal,color:"#fff",border:"none",borderRadius:6,padding:"0 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
-                {loadPlantoes?"…":"Recalcular"}
-              </button>
-            </div>
-          </div>;})()}
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <span style={{flex:1,fontSize:11,color:execMode?"#166534":"#92400E"}}>
-              {execMode?"→ Vai para o Histórico":"→ Permanece no Fluxo com nova data"}
-            </span>
-            <button onClick={confirmar} disabled={!!load}
-              style={{background:execMode?C.green:C.accent,color:"#fff",borderRadius:6,padding:"6px 16px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",flexShrink:0}}>
-              {load?("…"):execMode?"Executar":"Reagendar"}
-            </button>
-            <button onClick={()=>setConf(null)}
-              style={{background:C.borderLight,color:C.textSub,borderRadius:6,padding:"6px 10px",fontSize:12,border:"none",cursor:"pointer",flexShrink:0}}>
-              Cancelar
-            </button>
-          </div>
-          {/* [23/07] Categoria -- lista completa das 6, sempre visivel. So
-              DCP<->Extraordinario e intercambiavel de verdade -- Fixa/Imposto/
-              Fatura/Emprestimo/Cofre ficam sempre travados quando SAO a
-              categoria atual (decisao do Marcus: abolir troca pra esses 3,
-              risco de reverter nao compensa). */}
-          {categoriaEhGastoSimples(item)&&(()=>{
-            const bucketAtual=unificarBucketGasto(item);
-            const travado=!CAT_LIVRES_GASTO.includes(bucketAtual);
-            const TODAS=["DESPESA FIXA","DCP","EXTRAORDINARIA","PAGAMENTO_FATURA","PAGAMENTO_EMPRESTIMO","COFRE"];
-            return <div style={{marginTop:8,marginBottom:8}}>
-              <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA{travado&&
-                <span style={{marginLeft:6,fontSize:8,background:"#fff",color:C.textMuted,padding:"1px 6px",borderRadius:8,fontWeight:700,letterSpacing:0}}>travada</span>}
-              </span>
-              <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:5}}>
-                {TODAS.map(c=>{
-                  const ehLivreDeVerdade=CAT_LIVRES_GASTO.includes(c); // so DCP/Extra sao intercambiaveis
-                  const ehAtual=c===bucketAtual;
-                  const clicavel=!travado&&ehLivreDeVerdade&&!ehAtual;
-                  return <button key={c} disabled={!clicavel||loadCategoria===item.row}
-                    onClick={()=>clicavel&&salvarCategoriaFluxo(item,c)}
-                    style={{padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap",
-                      cursor:clicavel?"pointer":"default",
-                      border:"1px solid "+(ehAtual?C.accent:C.border),
-                      background:ehAtual?C.accentLight:(clicavel?"#fff":C.borderLight),
-                      color:ehAtual?C.accent:(clicavel?C.textSub:C.textMuted)}}>
-                    {loadCategoria===item.row&&ehAtual?"…":(TITULO_CAT_UNIFICADO[c]||c)}
-                  </button>;
-                })}
-              </div>
-            </div>;
-          })()}
-          {/* [24/07] Receita nao entra na matriz de 6 pilulas (essa e so pra
-              Gastos) -- mas merece um indicador simples de que a categoria
-              e travada tambem, sem pilulas clicaveis (nao ha pra onde
-              trocar: Receita e sempre Receita). */}
-          {item.tipo==="RECEITA"&&<div style={{marginTop:8,marginBottom:8}}>
-            <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA
-              <span style={{marginLeft:6,fontSize:8,background:"#fff",color:C.textMuted,padding:"1px 6px",borderRadius:8,fontWeight:700,letterSpacing:0}}>travada</span>
-            </span>
-            <div style={{marginTop:5,padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,display:"inline-block",
-              border:"1px solid "+C.accent,background:C.accentLight,color:C.accent}}>
-              Receita
-            </div>
-          </div>}
-          {/* [24/07] Avulso -- decisao geral do Marcus: categoria complexa ou
-              vinculada na criacao (Fatura/Emprestimo/Cofre/Receita/Avulso)
-              nunca e intercambiavel, sempre trava. Apaga e relanca certo se
-              precisar mudar. */}
-          {item.tipo==="DEPOSITO_AVULSO"&&<div style={{marginTop:8,marginBottom:8}}>
-            <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA
-              <span style={{marginLeft:6,fontSize:8,background:"#fff",color:C.textMuted,padding:"1px 6px",borderRadius:8,fontWeight:700,letterSpacing:0}}>travada</span>
-            </span>
-            <div style={{marginTop:5,padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,display:"inline-block",
-              border:"1px solid "+C.accent,background:C.accentLight,color:C.accent}}>
-              Avulso
-            </div>
-          </div>}
-          {item.valor<0&&item.categoria!=="DCP_PROVISAO"&&String(item.obs||"").indexOf("FONTE_RECEITA")<0&&
-            <SeletorEnvelopeItem aba="FLUXO" row={item.row} obsAtual={item.obs} data={data} onUpdate={onUpdate}/>}
-          {ehFatura&&<button onClick={async()=>{setLoad(item.row);try{onUpdate(await api({action:"mesclarFaturaComSeguinte",row:item.row}));}catch(e){alert(e.message);}setLoad(null);setConf(null);}} disabled={!!load}
-            style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:"#92400E",fontSize:11,border:"1px dashed #FED7AA",cursor:"pointer",fontFamily:"inherit"}}>
-            🔀 Em vez disso, somar esse valor direto na próxima fatura
-          </button>}
-          {(()=>{
-            // [24/07] Credito de emprestimo (obs.origemEmprestimo) trava
-            // igual as parcelas -- apagar so ele deixava o cronograma orfao,
-            // sem vinculo de volta pra nenhum credito. Sempre redireciona
-            // pra Empréstimos, que tem o botao de apagar o emprestimo
-            // INTEIRO (credito + parcelas) com a checagem de conciliacao.
-            // Fallback pro texto antigo (linhas criadas antes desse marcador
-            // existir, ex: "Criado via Criar Empréstimo" puro, sem JSON).
-            let obsCredito={};try{obsCredito=JSON.parse(item.obs||"{}");}catch(e){}
-            const ehCreditoEmprestimo=!!obsCredito.origemEmprestimo||String(item.obs||"").indexOf("Criado via Criar Empréstimo")>=0;
-            if(ehCreditoEmprestimo) return <div style={{marginTop:8}}>
-              <div style={{width:"100%",padding:"8px",borderRadius:6,background:C.borderLight,color:C.textMuted,fontSize:11,fontWeight:700,textAlign:"center"}}>
-                🔒 Apagar indisponível
-              </div>
-              <div style={{fontSize:10,color:C.textMuted,marginTop:4,textAlign:"center"}}>
-                Crédito de empréstimo — apagar isoladamente deixaria as parcelas órfãs.
-              </div>
-              <button onClick={()=>onIrPara&&onIrPara({tab:"emprestimos"})}
-                style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.blue,fontSize:10,border:"1px dashed "+C.blue,cursor:"pointer",fontFamily:"inherit"}}>
-                🔁 Ir pra Empréstimos (apagar o empréstimo inteiro)
-              </button>
-            </div>;
-            const bucket=unificarBucketGasto(item);
-            // [24/07] Receita com fonte cadastrada (FONTE_RECEITA) trava
-            // igual Despesa Fixa -- apagar a ocorrencia individual sem
-            // desativar a fonte deixava as duas telas (apagar aqui, gerenciar
-            // la) competindo, e a fonte continuaria gerando a mesma receita
-            // de novo na proxima virada de ciclo mesmo apagada aqui.
-            const ehFonteReceita=item.tipo==="RECEITA"&&String(item.obs||"").indexOf("FONTE_RECEITA")>=0;
-            // [23/07] Despesa Fixa so trava se existir uma recorrencia ATIVA
-            // de verdade por tras -- sem isso, um lancamento orfao (tipo=
-            // DESPESA FIXA mas sem RECORRENCIAS correspondente, ex: CSLL/IRPJ
-            // lancado a mao antes de virar recorrencia de verdade) ficava
-            // travado sem porta de saida nenhuma (a aba Despesas Fixas nem
-            // tem o item pra apagar la). Bug reportado pelo Marcus 23/07.
-            const temRecorrenciaAtiva=(data.recorr||[]).some(r=>String(r[0]).toUpperCase()===String(item.descricao).toUpperCase()&&String(r[6]).toUpperCase()==="S");
-            const apagarTravado=ehFonteReceita||(bucket==="DESPESA FIXA"&&temRecorrenciaAtiva)||bucket==="PAGAMENTO_FATURA"||
-              (bucket==="PAGAMENTO_EMPRESTIMO"&&item.categoria==="DIVIDA_PARCELADA");
-            if(apagarTravado) return <div style={{marginTop:8}}>
-              <div style={{width:"100%",padding:"8px",borderRadius:6,background:C.borderLight,color:C.textMuted,fontSize:11,fontWeight:700,textAlign:"center"}}>
-                🔒 Apagar indisponível
-              </div>
-              <div style={{fontSize:10,color:C.textMuted,marginTop:4,textAlign:"center"}}>
-                {ehFonteReceita?'Fonte de receita cadastrada — use "Gerenciar futuros dessa fonte" abaixo.'
-                  :bucket==="PAGAMENTO_FATURA"?'Linha calculada automaticamente — edite valor/data acima, ou use "Somar na próxima fatura".'
-                  :bucket==="PAGAMENTO_EMPRESTIMO"?'Parcela de cronograma — gerencie esse empréstimo na aba própria.'
-                  :'Nasceu de recorrência — use "Apagar TODOS" ou "Gerenciar recorrência" abaixo.'}
-              </div>
-            </div>;
-            return <button onClick={()=>apagar(item)} disabled={!!load}
-              style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:11,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
-              🗑 Apagar este lançamento
-            </button>;
-          })()}
-          {String(item.obs||"").indexOf("FONTE_RECEITA")>=0?
-            <button onClick={()=>onIrPara&&onIrPara({tab:"receitas"})}
-              style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.teal,fontSize:10,border:"1px dashed "+C.teal,cursor:"pointer",fontFamily:"inherit"}}>
-              🏥 Gerenciar futuros dessa fonte em Receitas
-            </button>
-          :<>
-            {(()=>{
-              const bucket=unificarBucketGasto(item);
-              const temRecorrenciaAtivaTodos=(data.recorr||[]).some(r=>String(r[0]).toUpperCase()===String(item.descricao).toUpperCase()&&String(r[6]).toUpperCase()==="S");
-              const travadoApagarTodos=(bucket==="DESPESA FIXA"&&temRecorrenciaAtivaTodos)||(bucket==="PAGAMENTO_EMPRESTIMO"&&item.categoria==="DIVIDA_PARCELADA");
-              // [23/07] Fatura, Cofre, e amortizacao Pos-Fixada nao tem
-              // conceito de "futuros com essa descricao" -- cada um e um
-              // evento independente (nao vem de recorrencia/cronograma),
-              // igual DCP/Extraordinario ja eram. So DCP/Extra e Fatura/
-              // Cofre/Pos-Fixado ficam sem esse botao; so Fixa e Parcela
-              // (que tem cronograma de verdade) mostram algo aqui.
-              const semConceitoDeTodos="DCP,EXTRAORDINARIA,PAGAMENTO_FATURA,COFRE".indexOf(bucket)>=0||
-                (bucket==="PAGAMENTO_EMPRESTIMO"&&item.categoria!=="DIVIDA_PARCELADA");
-              if(semConceitoDeTodos) return null;
-              const destino=bucket==="PAGAMENTO_EMPRESTIMO"?"emprestimos":"recorr";
-              const nomeAba=bucket==="PAGAMENTO_EMPRESTIMO"?"Empréstimos":"Despesas Fixas";
-              return <button onClick={()=>travadoApagarTodos?(onIrPara&&onIrPara({tab:destino})):apagarTodosComEssaDescricao(item)} disabled={!!load}
-                style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",
-                  color:travadoApagarTodos?C.blue:C.red,fontSize:10,border:"1px dashed "+(travadoApagarTodos?C.blue:"#FECACA"),cursor:"pointer",fontFamily:"inherit"}}>
-                {travadoApagarTodos?("🔁 Ir pra "+nomeAba+" pra apagar"):('🗑 Apagar TODOS os "'+item.descricao+'" futuros (Fluxo)')}
-              </button>;
-            })()}
-            {unificarBucketGasto(item)!=="DESPESA FIXA"&&(data.recorr||[]).some(r=>String(r[0]).toUpperCase()===String(item.descricao).toUpperCase()&&String(r[6]).toUpperCase()==="S")&&
-              <button onClick={()=>onIrPara&&onIrPara({tab:"recorr"})}
-                style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.blue,fontSize:10,border:"1px dashed "+C.blue,cursor:"pointer",fontFamily:"inherit"}}>
-                🔁 Gerenciar/apagar esta recorrência
-              </button>}
-          </>
-          }
-        </div>}
+        {isOpen&&<PainelEdicaoItem key={item.row} item={item} data={data} onUpdate={onUpdate} onClose={()=>setConf(null)} onIrPara={onIrPara}
+          antecipar={!!(destaque&&destaque.antecipar&&destaque.row===item.row)}/>}
       </div>;})}
       {cartaoExibir.map(c=><div key={"cart-"+c.cartao+"-"+c.row}
         onClick={()=>onIrPara&&onIrPara({tab:"cartoes",row:c.row,cartao:c.cartao})}
@@ -4150,22 +4114,8 @@ function Historico({data,onUpdate,destaque,onIrPara}){
     }
   },[destaque]);
   const [conf,setConf]=useState(null);
-  const [desc,setDesc]=useState("");
-  const [val,setVal]=useState("");
-  const [neg,setNeg]=useState(true);
-  const [dt,setDt]=useState("");
-  const [categoria,setCategoria]=useState("");
-  const [vincularRegraCategoria,setVincularRegraCategoria]=useState(false);
-  const [load,setLoad]=useState(false);
   const [busca,setBusca]=useState("");
   const [limite,setLimite]=useState(30);
-  // [23/07] Espelhando o Fluxo: apelido (nome de exibicao) e nome-no-extrato
-  // (a propria DESCRICAO) agora sao dois campos separados, e a categoria
-  // vira a matriz unificada de 6 (em vez do select antigo de 9 que lia o
-  // campo errado -- ver correcao de 22/07 no Fluxo, mesmo bug existia aqui).
-  const [apelidoInput,setApelidoInput]=useState("");
-  const [loadApelido,setLoadApelido]=useState(false);
-  const [loadCategoria,setLoadCategoria]=useState(null);
 
   const envelopesCustom=useMemo(()=>calcularEnvelopesCustom(data),[data.fluxo,data.cartaoPF,data.cartaoPJ,data.config]);
   const envelopesPorId=useMemo(()=>{const m={};envelopesCustom.forEach(e=>m[e.id]=e);return m;},[envelopesCustom]);
@@ -4241,56 +4191,6 @@ function Historico({data,onUpdate,destaque,onIrPara}){
     return Object.entries(m).sort((a,b)=>a[0]<b[0]?1:-1);
   },[ex,cartaoPorDataFiltrado]);
 
-  function abrir(item){
-    setConf(item.row); setDesc(item.descricao);
-    setVal(formatarValorInicial(item.valor)); setNeg(item.valor<0);
-    setDt(item.data); setCategoria(item.categoria||"");
-    setVincularRegraCategoria(false);
-    let obsI={};try{obsI=JSON.parse(item.obs||"{}");}catch(e){}
-    setApelidoInput(obsI.apelido||"");
-  }
-
-  async function salvarApelidoHistorico(item){
-    setLoadApelido(true);
-    try{ onUpdate(await api({action:"editarApelidoItem",aba:"FLUXO",row:item.row,apelido:apelidoInput})); }
-    catch(e){ alert(e.message); }
-    setLoadApelido(false);
-  }
-
-  async function salvarCategoriaHistorico(item,novoTipo){
-    setLoadCategoria(item.row);
-    try{
-      let r=await api({action:"editar",row:item.row,campo:"TIPO",valor:novoTipo});
-      r=await api({action:"editar",row:item.row,campo:"CATEGORIA",valor:novoTipo});
-      if(vincularRegraCategoria) r=await api({action:"vincularCategoriaRegra",descricao:item.descricao,categoria:novoTipo});
-      onUpdate(r);
-    }
-    catch(e){ alert(e.message); }
-    setLoadCategoria(null);
-  }
-
-  async function salvar(item){
-    setLoad(true);
-    try{
-      let r;
-      if(desc.toUpperCase()!==item.descricao) r=await api({action:"editar",row:item.row,campo:"DESCRICAO",valor:desc});
-      const novoValor=(neg?-1:1)*numBR(val);
-      if(Math.abs(novoValor-item.valor)>0.005) r=await api({action:"editar",row:item.row,campo:"VALOR",valor:novoValor});
-      if(dt!==item.data) r=await api({action:"editar",row:item.row,campo:"DATA",valor:dt});
-      if(r) onUpdate(r);
-      setConf(null);
-    }catch(e){ alert(e.message); }
-    setLoad(false);
-  }
-
-  async function apagar(item){
-    if(!confirm("Apagar \""+item.descricao+"\" definitivamente?")) return;
-    setLoad(true);
-    try{ onUpdate(await api({action:"deletar",row:item.row})); setConf(null); }
-    catch(e){ alert(e.message); }
-    setLoad(false);
-  }
-
   return <div style={{paddingBottom:8}}>
     <div style={{padding:"10px 14px",background:"#F9FAFB",borderBottom:"1px solid "+C.border}}>
       <input type="text" value={busca} onChange={e=>{setBusca(e.target.value);setLimite(30);}}
@@ -4322,126 +4222,10 @@ function Historico({data,onUpdate,destaque,onIrPara}){
                 </div>}
             </div>
             {item.categoria==="DCP_PROVISAO"?<ValorDCPProvisao valor={item.valor} dataEnvelope={item.data}/>:<span style={{fontWeight:700,color:item.valor<0?C.red:C.blue,flexShrink:0,fontSize:12}}>{fmt(item.valor)}</span>}
-            <button onClick={()=>isOpen?setConf(null):abrir(item)}
+            <button onClick={()=>isOpen?setConf(null):setConf(item.row)}
               style={{color:C.textSub,padding:"4px 8px",fontSize:14,background:isOpen?C.borderLight:"none",border:"1px solid "+C.border,borderRadius:5,cursor:"pointer",flexShrink:0}}>⋮</button>
           </div>
-          {isOpen&&<div style={{background:C.accentLight,padding:"10px 14px",borderBottom:"1px solid "+C.borderLight,borderLeft:"3px solid "+C.accent}}>
-            {item.categoria!=="DCP_PROVISAO"&&<div style={{marginBottom:8}}>
-              <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME DE EXIBIÇÃO (opcional)</span>
-              <div style={{display:"flex",gap:6,marginTop:3}}>
-                <input value={apelidoInput} onChange={e=>setApelidoInput(e.target.value.toUpperCase())}
-                  placeholder={item.descricao}
-                  style={{flex:1,padding:"5px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:12,fontFamily:"inherit"}}/>
-                <button onClick={()=>salvarApelidoHistorico(item)} disabled={loadApelido}
-                  style={{padding:"5px 10px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-                  {loadApelido?"…":"Salvar"}
-                </button>
-              </div>
-            </div>}
-            <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME NO EXTRATO/CONCILIAÇÃO</span>
-            <input type="text" value={desc} onChange={e=>setDesc(e.target.value.toUpperCase())}
-              style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid "+C.accent,fontSize:13,fontFamily:"inherit",marginTop:3,marginBottom:6,background:C.surface,boxSizing:"border-box"}}/>
-            <div style={{display:"grid",gridTemplateColumns:"30px 1fr 1fr",gap:6,marginBottom:6}}>
-              <button type="button" onClick={()=>setNeg(n=>!n)}
-                style={{width:30,borderRadius:6,border:"1px solid "+C.accent,
-                  background:neg?C.redLight:C.blueLight,color:neg?C.red:C.blue,fontWeight:800,fontSize:14,cursor:"pointer"}}>
-                {neg?"−":"+"}
-              </button>
-              <input type="text" inputMode="numeric" value={val} onChange={e=>setVal(formatarMoedaInput(e.target.value))}
-                style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:13,textAlign:"right",width:"100%",boxSizing:"border-box",background:C.surface}}/>
-              <input type="date" value={dt} onChange={e=>setDt(e.target.value)}
-                style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:12,width:"100%",boxSizing:"border-box",background:C.surface}}/>
-            </div>
-            {/* [23/07] Categoria -- mesma matriz unificada de 6 do Fluxo,
-                consertando o mesmo bug (lia item.categoria, o campo errado --
-                a classificacao real mora em item.tipo). So DCP<->Extra troca
-                de verdade; os outros 4 ficam sempre travados quando SAO a
-                categoria atual. */}
-            {categoriaEhGastoSimples(item)&&(()=>{
-              const bucketAtual=unificarBucketGasto(item);
-              const travado=!CAT_LIVRES_GASTO.includes(bucketAtual);
-              const TODAS=["DESPESA FIXA","DCP","EXTRAORDINARIA","PAGAMENTO_FATURA","PAGAMENTO_EMPRESTIMO","COFRE"];
-              return <div style={{marginBottom:8}}>
-                <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA{travado&&
-                  <span style={{marginLeft:6,fontSize:8,background:"#fff",color:C.textMuted,padding:"1px 6px",borderRadius:8,fontWeight:700,letterSpacing:0}}>travada</span>}
-                </span>
-                <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:5}}>
-                  {TODAS.map(c=>{
-                    const ehLivreDeVerdade=CAT_LIVRES_GASTO.includes(c);
-                    const ehAtual=c===bucketAtual;
-                    const clicavel=!travado&&ehLivreDeVerdade&&!ehAtual;
-                    return <button key={c} disabled={!clicavel||loadCategoria===item.row}
-                      onClick={()=>clicavel&&salvarCategoriaHistorico(item,c)}
-                      style={{padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap",
-                        cursor:clicavel?"pointer":"default",
-                        border:"1px solid "+(ehAtual?C.accent:C.border),
-                        background:ehAtual?C.accentLight:(clicavel?"#fff":C.borderLight),
-                        color:ehAtual?C.accent:(clicavel?C.textSub:C.textMuted)}}>
-                      {loadCategoria===item.row&&ehAtual?"…":(TITULO_CAT_UNIFICADO[c]||c)}
-                    </button>;
-                  })}
-                </div>
-                {CAT_LIVRES_GASTO.includes(bucketAtual)&&<label style={{display:"flex",alignItems:"center",gap:5,marginTop:6,fontSize:10,color:C.textMuted,cursor:"pointer"}}>
-                  <input type="checkbox" checked={vincularRegraCategoria} onChange={e=>setVincularRegraCategoria(e.target.checked)}/>
-                  Vincular esse texto a essa categoria também (avisa se aparecer classificado diferente de novo)
-                </label>}
-              </div>;
-            })()}
-            {item.tipo==="RECEITA"&&<div style={{marginTop:8,marginBottom:8}}>
-              <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA
-                <span style={{marginLeft:6,fontSize:8,background:"#fff",color:C.textMuted,padding:"1px 6px",borderRadius:8,fontWeight:700,letterSpacing:0}}>travada</span>
-              </span>
-              <div style={{marginTop:5,padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,display:"inline-block",
-                border:"1px solid "+C.accent,background:C.accentLight,color:C.accent}}>
-                Receita
-              </div>
-            </div>}
-            {item.tipo==="DEPOSITO_AVULSO"&&<div style={{marginTop:8,marginBottom:8}}>
-              <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA
-                <span style={{marginLeft:6,fontSize:8,background:"#fff",color:C.textMuted,padding:"1px 6px",borderRadius:8,fontWeight:700,letterSpacing:0}}>travada</span>
-              </span>
-              <div style={{marginTop:5,padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,display:"inline-block",
-                border:"1px solid "+C.accent,background:C.accentLight,color:C.accent}}>
-                Avulso
-              </div>
-            </div>}
-            {item.valor<0&&item.categoria!=="DCP_PROVISAO"&&String(item.obs||"").indexOf("FONTE_RECEITA")<0&&
-              <SeletorEnvelopeItem aba="FLUXO" row={item.row} obsAtual={item.obs} data={data} onUpdate={onUpdate}/>}
-            {(()=>{
-              let obsCredito={};try{obsCredito=JSON.parse(item.obs||"{}");}catch(e){}
-              const bucket=unificarBucketGasto(item);
-              const temRecorrenciaAtiva=(data.recorr||[]).some(r=>String(r[0]).toUpperCase()===String(item.descricao).toUpperCase()&&String(r[6]).toUpperCase()==="S");
-              // [24/07] Credito de emprestimo trava igual as parcelas -- ver
-              // mesma nota no Fluxo. Fallback pro texto antigo tambem.
-              const ehCreditoEmprestimo=!!obsCredito.origemEmprestimo||String(item.obs||"").indexOf("Criado via Criar Empréstimo")>=0;
-              const ehFonteReceita=item.tipo==="RECEITA"&&String(item.obs||"").indexOf("FONTE_RECEITA")>=0;
-              const apagarTravado=ehCreditoEmprestimo||ehFonteReceita||(bucket==="DESPESA FIXA"&&temRecorrenciaAtiva)||bucket==="PAGAMENTO_FATURA"||
-                (bucket==="PAGAMENTO_EMPRESTIMO"&&item.categoria==="DIVIDA_PARCELADA");
-              return <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:8}}>
-                <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                  {apagarTravado
-                    ?<div style={{fontSize:10,color:C.textMuted,padding:"6px 10px",background:C.borderLight,borderRadius:6}}>🔒 Apagar indisponível</div>
-                    :<button onClick={()=>apagar(item)} disabled={load}
-                      style={{color:C.red,padding:"6px 10px",fontSize:12,fontWeight:700,background:"none",border:"1px solid "+C.redLight,borderRadius:6,cursor:"pointer"}}>🗑 Apagar</button>}
-                  <span style={{flex:1}}/>
-                  <button onClick={()=>setConf(null)} disabled={load}
-                    style={{background:C.borderLight,color:C.textSub,borderRadius:6,padding:"6px 10px",fontSize:12,border:"none",cursor:"pointer"}}>Cancelar</button>
-                  <button onClick={()=>salvar(item)} disabled={load}
-                    style={{background:C.accent,color:"#fff",borderRadius:6,padding:"6px 16px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer"}}>
-                    {load?"…":"Salvar"}
-                  </button>
-                </div>
-                {ehCreditoEmprestimo&&<button onClick={()=>onIrPara&&onIrPara({tab:"emprestimos"})}
-                  style={{width:"100%",padding:"6px",borderRadius:6,background:"transparent",color:C.blue,fontSize:10,border:"1px dashed "+C.blue,cursor:"pointer",fontFamily:"inherit"}}>
-                  🔁 Ir pra Empréstimos (apagar o empréstimo inteiro)
-                </button>}
-                {ehFonteReceita&&<button onClick={()=>onIrPara&&onIrPara({tab:"receitas"})}
-                  style={{width:"100%",padding:"6px",borderRadius:6,background:"transparent",color:C.teal,fontSize:10,border:"1px dashed "+C.teal,cursor:"pointer",fontFamily:"inherit"}}>
-                  🏥 Gerenciar futuros dessa fonte em Receitas
-                </button>}
-              </div>;
-            })()}
-          </div>}
+          {isOpen&&<PainelEdicaoItem key={item.row} item={item} data={data} onUpdate={onUpdate} onClose={()=>setConf(null)} onIrPara={onIrPara}/>}
         </div>;})}
         {(cartaoPorDataFiltrado[gdt]||[]).map(c=><div key={"cart-"+c.cartao+"-"+c.row}
           onClick={()=>onIrPara&&onIrPara({tab:"cartoes",row:c.row,cartao:c.cartao})}
@@ -4508,11 +4292,16 @@ function _fmtDataCurta(d){
   return String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+String(d.getFullYear()).slice(2)+" · "+dias[d.getDay()];
 }
 
-function Timeline({data,onIrPara}){
+function Timeline({data,onUpdate,onIrPara}){
   const containerRef=useRef(null);
   const nodeRefs=useRef([]);
   const [busca,setBusca]=useState("");
   const [filtro,setFiltro]=useState("todos"); // todos|previsao|historico
+  // [24/07] Item selecionado abre o MESMO painel de edicao que Fluxo/
+  // Historico usam (PainelEdicaoItem), como um modal por cima da lista --
+  // evita mexer no scroll-snap (que depende de cada slot ter altura fixa).
+  // Antes so navegava pra Fluxo/Historico; agora edita direto aqui.
+  const [itemAberto,setItemAberto]=useState(null);
   const hj=hoje();
   const linhasBrutas=useMemo(()=>_gerarLinhasTimeline(data,hj),[data.fluxo,hj]);
   // [24/07] Filtro e busca agora filtram de verdade -- antes eram so visuais
@@ -4628,8 +4417,8 @@ function Timeline({data,onIrPara}){
                 </div>
               </div>
             ) : (
-              <div onClick={()=>onIrPara&&onIrPara({tab:s.item.status==="EXECUTADO"?"historico":"fluxo",row:s.item.row})}
-                style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:onIrPara?"pointer":"default",
+              <div onClick={()=>setItemAberto(s.item.item)}
+                style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",
                 background:ehDCP?C.yellowLight:"transparent",borderRadius:ehDCP?8:0,
                 borderLeft:ehDCP?"3px solid #D97706":"3px solid transparent",
                 borderBottom:ehDCP?"none":"1px solid "+C.border,padding:"4px 7px"}}>
@@ -4654,6 +4443,19 @@ function Timeline({data,onIrPara}){
         📍 Hoje
       </button>
     </div>
+    {/* [24/07] Modal de edicao -- mesmo PainelEdicaoItem do Fluxo/Historico,
+        sobreposto por cima da lista. Fecha ao tocar fora ou no X. */}
+    {itemAberto&&<div onClick={()=>setItemAberto(null)}
+      style={{position:"fixed",inset:0,background:"rgba(0,0,0,.4)",zIndex:50,display:"flex",alignItems:"flex-end"}}>
+      <div onClick={e=>e.stopPropagation()}
+        style={{width:"100%",maxHeight:"85vh",overflowY:"auto",background:C.surface,borderRadius:"16px 16px 0 0",boxShadow:"0 -4px 20px rgba(0,0,0,.2)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderBottom:"1px solid "+C.border}}>
+          <span style={{fontSize:13,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",flex:1}}>{nomeExibicao(itemAberto,data)}</span>
+          <button onClick={()=>setItemAberto(null)} style={{background:"none",border:"none",fontSize:18,color:C.textMuted,cursor:"pointer",padding:"0 4px"}}>✕</button>
+        </div>
+        <PainelEdicaoItem item={itemAberto} data={data} onUpdate={onUpdate} onClose={()=>setItemAberto(null)} onIrPara={onIrPara}/>
+      </div>
+    </div>}
   </div>;
 }
 
@@ -7312,7 +7114,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260724.1230 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260724.1400 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7351,7 +7153,7 @@ function Tesouraria(){
         tab==="dashboard"   ? <Dashboard data={data}/> :
         tab==="fluxo"       ? <Fluxo data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
         tab==="historico"   ? <Historico data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
-        tab==="timeline"    ? <Timeline data={data} onIrPara={irPara}/> :
+        tab==="timeline"    ? <Timeline data={data} onUpdate={setData} onIrPara={irPara}/> :
         tab==="ferramentas" ? <Ferramentas onIrPara={t=>{navegar(t);}}/> :
         tab==="recorr"      ? <Recorrencias data={data} onUpdate={setData}/> :
         tab==="cartoes"     ? <Cartoes data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
@@ -7394,7 +7196,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260724.1230
+      // HTML v3.20260724.1400
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
