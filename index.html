@@ -3443,18 +3443,18 @@ function ConciliarExtratoTab({data,onUpdate}){
 
 function Ferramentas({onIrPara}){
   const FERRAMENTAS=[
-    {id:"recorr",icone:"🔁",titulo:"Recorrências",sub:"Gastos fixos e receitas",cor:C.blue,bg:C.blueLight},
-    {id:"cartoes",icone:"💳",titulo:"Cartões",sub:"Faturas PF e PJ",cor:"#D97706",bg:"#FEF3C7"},
-    {id:"dcp",icone:"🗂",titulo:"Despesas Cotidianas",sub:"Envelope semanal",cor:C.green,bg:C.greenLight},
-    {id:"conversar",icone:"💬",titulo:"Conversar",sub:"Assistente do app",cor:C.purple,bg:C.purpleLight},
-    {id:"emprestimos",icone:"🏦",titulo:"Empréstimos",sub:"Dívidas e passivos",cor:C.red,bg:C.redLight},
-    {id:"parcelas",icone:"🛍️",titulo:"Parceladas",sub:"Compras no cartão",cor:C.yellow,bg:C.yellowLight},
     {id:"receitas",icone:"🏥",titulo:"Receitas",sub:"HSA, HSI e outras fontes",cor:C.teal,bg:C.tealLight},
+    {id:"emprestimos",icone:"🏦",titulo:"Empréstimos",sub:"Dívidas e passivos",cor:C.red,bg:C.redLight},
+    {id:"recorr",icone:"🔁",titulo:"Despesas Fixas",sub:"Gastos fixos e receitas",cor:C.blue,bg:C.blueLight},
+    {id:"dcp",icone:"🗂",titulo:"Despesas Cotidianas",sub:"Envelope semanal",cor:C.green,bg:C.greenLight},
+    {id:"cartoes",icone:"💳",titulo:"Cartões",sub:"Faturas PF e PJ",cor:"#D97706",bg:"#FEF3C7"},
+    {id:"parcelas",icone:"🛍️",titulo:"Parceladas",sub:"Compras no cartão",cor:C.yellow,bg:C.yellowLight},
+    {id:"cofres",icone:"🏦",titulo:"Cofres",sub:"Poupança pra projetos, tipo caixinha",cor:C.teal,bg:C.tealLight||C.blueLight},
     {id:"envelopes",icone:"💌",titulo:"Envelopes",sub:"Metas por projeto",cor:C.purple,bg:C.purpleLight},
     {id:"conciliacao",icone:"🔄",titulo:"Conciliação",sub:"Cartões e extrato",cor:C.orange,bg:C.orangeLight},
     {id:"perfil",icone:"👤",titulo:"Perfil & Apelidos",sub:"Contexto do Gemini, nomes de descrição",cor:C.blue,bg:C.blueLight},
     {id:"config",icone:"⚙️",titulo:"Configurações",sub:"Servidor, cartões, dados sensíveis",cor:C.textMuted,bg:C.borderLight},
-    {id:"cofres",icone:"🏦",titulo:"Cofres",sub:"Poupança pra projetos, tipo caixinha",cor:C.teal,bg:C.tealLight||C.blueLight},
+    {id:"conversar",icone:"💬",titulo:"Conversar",sub:"Assistente do app",cor:C.purple,bg:C.purpleLight},
   ];
   return <div style={{padding:"4px 4px 16px"}}>
     <div style={{fontSize:11,fontWeight:800,color:C.textMuted,letterSpacing:".1em",padding:"8px 12px"}}>FERRAMENTAS</div>
@@ -7146,7 +7146,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260724.0015 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260724.0030 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7228,7 +7228,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260724.0015
+      // HTML v3.20260724.0030
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
