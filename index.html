@@ -4271,11 +4271,25 @@ function _gerarLinhasTimeline(data,hj){
   const todos=(data.fluxo||[]).filter(r=>r.categoria!=="DCP_PROVISAO");
   const porDia={};
   todos.forEach(r=>{ if(!porDia[r.data]) porDia[r.data]=[]; porDia[r.data].push(r); });
+  // [24/07] Garante que HOJE sempre tem uma linha, mesmo sem nenhum
+  // lancamento nesse dia -- sem isso, o botao "Hoje" e o auto-scroll ao
+  // abrir nao achavam pra onde ir (bug reportado pelo Marcus). O mock
+  // antigo sempre forcava isso; a versao com dado real esqueceu.
+  if(!porDia[hj]) porDia[hj]=[];
   const datasOrdenadas=Object.keys(porDia).sort();
+  let ultimoSaldo=null;
   return datasOrdenadas.map(iso=>{
     const itens=porDia[iso].slice().sort((a,b)=>(a.row||0)-(b.row||0));
-    const ultimoDoDia=itens[itens.length-1];
-    const saldo=ultimoDoDia.status==="EXECUTADO"?ultimoDoDia.saldoReal:ultimoDoDia.saldoProjetado;
+    let saldo;
+    if(itens.length){
+      const ultimoDoDia=itens[itens.length-1];
+      saldo=ultimoDoDia.status==="EXECUTADO"?ultimoDoDia.saldoReal:ultimoDoDia.saldoProjetado;
+      ultimoSaldo=saldo;
+    } else {
+      // Dia sem lancamento (incluindo hoje, se for o caso) herda o saldo
+      // do ultimo dia conhecido -- mesmo principio que Previsao ja usa.
+      saldo=ultimoSaldo;
+    }
     const dt=parseDateLocal(iso);
     return {tipo:"dia",data:iso,dataObj:dt,saldo,hoje:iso===hj,seg:dt.getDay()===1,
       itens:itens.map(r=>({tipo:"item",row:r.row,descricao:nomeExibicao(r,data),categoriaTxt:
@@ -7112,7 +7126,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260724.2000 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260724.2030 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7194,7 +7208,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260724.2000
+      // HTML v3.20260724.2030
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
