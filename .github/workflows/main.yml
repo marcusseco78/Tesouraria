@@ -1,0 +1,32 @@
+name: Renomear HTML para Index
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  rename:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Baixar código do repositório
+        uses: actions/checkout@v4
+
+      - name: Padronizar arquivo para index.html
+        run: |
+          for file in index-*.html; do
+            if [ -f "$file" ]; then
+              rm -f index.html
+              mv "$file" "index.html"
+              echo "Arquivo $file transformado em index.html"
+              break
+            fi
+          done
+
+      - name: Enviar alteração automática
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Automático: atualizando para index.html"
+          
