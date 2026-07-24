@@ -3863,8 +3863,19 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
         <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 14px",borderBottom:"1px solid "+C.borderLight,background:destacado?"#FEF3C7":(bgItem||C.surface),transition:"background 1s",
           borderLeft:corItem?"3px solid "+corItem:"none"}}>
           <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:12,fontWeight:600,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}{selo&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,color:corItem}}>{selo}</span>}{confirmadoExtrato&&<span style={{marginLeft:6,fontSize:9,background:C.greenLight,color:C.green,padding:"1px 6px",borderRadius:8,fontWeight:700}}>✅ Extrato</span>}</div>
-            <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{item.categoria==="DCP_PROVISAO"?periodoDCP(item.data):(<>{tipoDisplay(item.tipo,data)}{item.categoria&&item.categoria!==item.tipo?" · "+item.categoria:""} · {item.forma}</>)}<TagEnvelopeDCP envelope={item.categoria!=="DCP_PROVISAO"?item.dcpEnvelope:null} futuro={item.status==="PROGRAMADO"}/>{(()=>{const ie=infoEnvelopeItem(item);return ie?<TagEnvelopeCustom nome={ie.nome} saldo={ie.saldo}/>:null;})()}</div>
+            <div style={{fontSize:12,fontWeight:600,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}</div>
+            <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{item.categoria==="DCP_PROVISAO"?periodoDCP(item.data):(<>{tipoDisplay(item.tipo,data)}{item.categoria&&item.categoria!==item.tipo?" · "+item.categoria:""} · {item.forma}</>)}</div>
+            {/* [24/07] Selos (status, conciliacao, envelope) sempre numa
+                terceira linha propria, com flex-wrap -- antes disputavam
+                espaco com o nome ou o subtitulo e cortavam quando nao
+                cabiam. Reportado pelo Marcus 24/07. */}
+            {(selo||confirmadoExtrato||(item.categoria!=="DCP_PROVISAO"&&item.dcpEnvelope)||infoEnvelopeItem(item))&&
+              <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:3,alignItems:"center"}}>
+                {selo&&<span style={{fontSize:9,fontWeight:700,color:corItem}}>{selo}</span>}
+                {confirmadoExtrato&&<span style={{fontSize:9,background:C.greenLight,color:C.green,padding:"1px 6px",borderRadius:8,fontWeight:700}}>✅ Extrato</span>}
+                <TagEnvelopeDCP envelope={item.categoria!=="DCP_PROVISAO"?item.dcpEnvelope:null} futuro={item.status==="PROGRAMADO"}/>
+                {(()=>{const ie=infoEnvelopeItem(item);return ie?<TagEnvelopeCustom nome={ie.nome} saldo={ie.saldo}/>:null;})()}
+              </div>}
           </div>
           {item.categoria==="DCP_PROVISAO"?<ValorDCPProvisao valor={item.valor} dataEnvelope={item.data}/>:<span style={{fontWeight:700,color:item.valor<0?C.red:C.blue,flexShrink:0,fontSize:12}}>{fmt(item.valor)}</span>}
           <button onClick={()=>isOpen?setConf(null):abrir(item)} disabled={!!load}
@@ -3989,7 +4000,33 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
               </div>
             </div>;
           })()}
-          {item.categoria!=="DCP_PROVISAO"&&String(item.obs||"").indexOf("FONTE_RECEITA")<0&&
+          {/* [24/07] Receita nao entra na matriz de 6 pilulas (essa e so pra
+              Gastos) -- mas merece um indicador simples de que a categoria
+              e travada tambem, sem pilulas clicaveis (nao ha pra onde
+              trocar: Receita e sempre Receita). */}
+          {item.tipo==="RECEITA"&&<div style={{marginTop:8,marginBottom:8}}>
+            <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA
+              <span style={{marginLeft:6,fontSize:8,background:"#fff",color:C.textMuted,padding:"1px 6px",borderRadius:8,fontWeight:700,letterSpacing:0}}>travada</span>
+            </span>
+            <div style={{marginTop:5,padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,display:"inline-block",
+              border:"1px solid "+C.accent,background:C.accentLight,color:C.accent}}>
+              Receita
+            </div>
+          </div>}
+          {/* [24/07] Avulso -- decisao geral do Marcus: categoria complexa ou
+              vinculada na criacao (Fatura/Emprestimo/Cofre/Receita/Avulso)
+              nunca e intercambiavel, sempre trava. Apaga e relanca certo se
+              precisar mudar. */}
+          {item.tipo==="DEPOSITO_AVULSO"&&<div style={{marginTop:8,marginBottom:8}}>
+            <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA
+              <span style={{marginLeft:6,fontSize:8,background:"#fff",color:C.textMuted,padding:"1px 6px",borderRadius:8,fontWeight:700,letterSpacing:0}}>travada</span>
+            </span>
+            <div style={{marginTop:5,padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,display:"inline-block",
+              border:"1px solid "+C.accent,background:C.accentLight,color:C.accent}}>
+              Avulso
+            </div>
+          </div>}
+          {item.valor<0&&item.categoria!=="DCP_PROVISAO"&&String(item.obs||"").indexOf("FONTE_RECEITA")<0&&
             <SeletorEnvelopeItem aba="FLUXO" row={item.row} obsAtual={item.obs} data={data} onUpdate={onUpdate}/>}
           {ehFatura&&<button onClick={async()=>{setLoad(item.row);try{onUpdate(await api({action:"mesclarFaturaComSeguinte",row:item.row}));}catch(e){alert(e.message);}setLoad(null);setConf(null);}} disabled={!!load}
             style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:"#92400E",fontSize:11,border:"1px dashed #FED7AA",cursor:"pointer",fontFamily:"inherit"}}>
@@ -4018,6 +4055,12 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
               </button>
             </div>;
             const bucket=unificarBucketGasto(item);
+            // [24/07] Receita com fonte cadastrada (FONTE_RECEITA) trava
+            // igual Despesa Fixa -- apagar a ocorrencia individual sem
+            // desativar a fonte deixava as duas telas (apagar aqui, gerenciar
+            // la) competindo, e a fonte continuaria gerando a mesma receita
+            // de novo na proxima virada de ciclo mesmo apagada aqui.
+            const ehFonteReceita=item.tipo==="RECEITA"&&String(item.obs||"").indexOf("FONTE_RECEITA")>=0;
             // [23/07] Despesa Fixa so trava se existir uma recorrencia ATIVA
             // de verdade por tras -- sem isso, um lancamento orfao (tipo=
             // DESPESA FIXA mas sem RECORRENCIAS correspondente, ex: CSLL/IRPJ
@@ -4025,14 +4068,15 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
             // travado sem porta de saida nenhuma (a aba Despesas Fixas nem
             // tem o item pra apagar la). Bug reportado pelo Marcus 23/07.
             const temRecorrenciaAtiva=(data.recorr||[]).some(r=>String(r[0]).toUpperCase()===String(item.descricao).toUpperCase()&&String(r[6]).toUpperCase()==="S");
-            const apagarTravado=(bucket==="DESPESA FIXA"&&temRecorrenciaAtiva)||bucket==="PAGAMENTO_FATURA"||
+            const apagarTravado=ehFonteReceita||(bucket==="DESPESA FIXA"&&temRecorrenciaAtiva)||bucket==="PAGAMENTO_FATURA"||
               (bucket==="PAGAMENTO_EMPRESTIMO"&&item.categoria==="DIVIDA_PARCELADA");
             if(apagarTravado) return <div style={{marginTop:8}}>
               <div style={{width:"100%",padding:"8px",borderRadius:6,background:C.borderLight,color:C.textMuted,fontSize:11,fontWeight:700,textAlign:"center"}}>
                 🔒 Apagar indisponível
               </div>
               <div style={{fontSize:10,color:C.textMuted,marginTop:4,textAlign:"center"}}>
-                {bucket==="PAGAMENTO_FATURA"?'Linha calculada automaticamente — edite valor/data acima, ou use "Somar na próxima fatura".'
+                {ehFonteReceita?'Fonte de receita cadastrada — use "Gerenciar futuros dessa fonte" abaixo.'
+                  :bucket==="PAGAMENTO_FATURA"?'Linha calculada automaticamente — edite valor/data acima, ou use "Somar na próxima fatura".'
                   :bucket==="PAGAMENTO_EMPRESTIMO"?'Parcela de cronograma — gerencie esse empréstimo na aba própria.'
                   :'Nasceu de recorrência — use "Apagar TODOS" ou "Gerenciar recorrência" abaixo.'}
               </div>
@@ -4084,7 +4128,8 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
           background:C.borderLight,opacity:0.8,cursor:onIrPara?"pointer":"default"}}>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:13,fontWeight:600,color:C.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontStyle:"italic"}}>{c.descricao}</div>
-          <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>🏷 Cartão {c.cartao} · não conta aqui, já está na fatura<TagEnvelopeDCP envelope={c.dcpEnvelope} futuro={true}/></div>
+          <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>🏷 Cartão {c.cartao} · não conta aqui, já está na fatura</div>
+          {c.dcpEnvelope&&<div style={{marginTop:3}}><TagEnvelopeDCP envelope={c.dcpEnvelope} futuro={true}/></div>}
         </div>
         <span style={{fontSize:13,fontWeight:700,color:C.textMuted,flexShrink:0}}>{fmt(c.valor)}</span>
         <span style={{fontSize:12,color:C.textMuted,flexShrink:0}}>→</span>
@@ -4266,8 +4311,15 @@ function Historico({data,onUpdate,destaque,onIrPara}){
           <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 14px",borderBottom:isOpen?"none":"1px solid "+C.borderLight,background:destacado?"#FEF3C7":(bgItem||C.surface),transition:"background 1s",
             borderLeft:corItem?"3px solid "+corItem:"none"}}>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:12,fontWeight:600,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}{selo&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,color:corItem}}>{selo}</span>}{confirmadoExtrato&&<span style={{marginLeft:6,fontSize:9,background:C.greenLight,color:C.green,padding:"1px 6px",borderRadius:8,fontWeight:700}}>✅ Extrato</span>}</div>
-              <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{item.categoria==="DCP_PROVISAO"?periodoDCP(item.data):(<>{tipoDisplay(item.tipo,data)}{item.categoria&&item.categoria!==item.tipo?" · "+item.categoria:""}</>)}<TagEnvelopeDCP envelope={item.categoria!=="DCP_PROVISAO"?item.dcpEnvelope:null} futuro={false}/>{(()=>{const ie=infoEnvelopeItem(item);return ie?<TagEnvelopeCustom nome={ie.nome} saldo={ie.saldo}/>:null;})()}</div>
+              <div style={{fontSize:12,fontWeight:600,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}</div>
+              <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{item.categoria==="DCP_PROVISAO"?periodoDCP(item.data):(<>{tipoDisplay(item.tipo,data)}{item.categoria&&item.categoria!==item.tipo?" · "+item.categoria:""}</>)}</div>
+              {(selo||confirmadoExtrato||(item.categoria!=="DCP_PROVISAO"&&item.dcpEnvelope)||infoEnvelopeItem(item))&&
+                <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:3,alignItems:"center"}}>
+                  {selo&&<span style={{fontSize:9,fontWeight:700,color:corItem}}>{selo}</span>}
+                  {confirmadoExtrato&&<span style={{fontSize:9,background:C.greenLight,color:C.green,padding:"1px 6px",borderRadius:8,fontWeight:700}}>✅ Extrato</span>}
+                  <TagEnvelopeDCP envelope={item.categoria!=="DCP_PROVISAO"?item.dcpEnvelope:null} futuro={false}/>
+                  {(()=>{const ie=infoEnvelopeItem(item);return ie?<TagEnvelopeCustom nome={ie.nome} saldo={ie.saldo}/>:null;})()}
+                </div>}
             </div>
             {item.categoria==="DCP_PROVISAO"?<ValorDCPProvisao valor={item.valor} dataEnvelope={item.data}/>:<span style={{fontWeight:700,color:item.valor<0?C.red:C.blue,flexShrink:0,fontSize:12}}>{fmt(item.valor)}</span>}
             <button onClick={()=>isOpen?setConf(null):abrir(item)}
@@ -4335,7 +4387,25 @@ function Historico({data,onUpdate,destaque,onIrPara}){
                 </label>}
               </div>;
             })()}
-            {item.categoria!=="DCP_PROVISAO"&&String(item.obs||"").indexOf("FONTE_RECEITA")<0&&
+            {item.tipo==="RECEITA"&&<div style={{marginTop:8,marginBottom:8}}>
+              <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA
+                <span style={{marginLeft:6,fontSize:8,background:"#fff",color:C.textMuted,padding:"1px 6px",borderRadius:8,fontWeight:700,letterSpacing:0}}>travada</span>
+              </span>
+              <div style={{marginTop:5,padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,display:"inline-block",
+                border:"1px solid "+C.accent,background:C.accentLight,color:C.accent}}>
+                Receita
+              </div>
+            </div>}
+            {item.tipo==="DEPOSITO_AVULSO"&&<div style={{marginTop:8,marginBottom:8}}>
+              <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA
+                <span style={{marginLeft:6,fontSize:8,background:"#fff",color:C.textMuted,padding:"1px 6px",borderRadius:8,fontWeight:700,letterSpacing:0}}>travada</span>
+              </span>
+              <div style={{marginTop:5,padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,display:"inline-block",
+                border:"1px solid "+C.accent,background:C.accentLight,color:C.accent}}>
+                Avulso
+              </div>
+            </div>}
+            {item.valor<0&&item.categoria!=="DCP_PROVISAO"&&String(item.obs||"").indexOf("FONTE_RECEITA")<0&&
               <SeletorEnvelopeItem aba="FLUXO" row={item.row} obsAtual={item.obs} data={data} onUpdate={onUpdate}/>}
             {(()=>{
               let obsCredito={};try{obsCredito=JSON.parse(item.obs||"{}");}catch(e){}
@@ -4344,7 +4414,8 @@ function Historico({data,onUpdate,destaque,onIrPara}){
               // [24/07] Credito de emprestimo trava igual as parcelas -- ver
               // mesma nota no Fluxo. Fallback pro texto antigo tambem.
               const ehCreditoEmprestimo=!!obsCredito.origemEmprestimo||String(item.obs||"").indexOf("Criado via Criar Empréstimo")>=0;
-              const apagarTravado=ehCreditoEmprestimo||(bucket==="DESPESA FIXA"&&temRecorrenciaAtiva)||bucket==="PAGAMENTO_FATURA"||
+              const ehFonteReceita=item.tipo==="RECEITA"&&String(item.obs||"").indexOf("FONTE_RECEITA")>=0;
+              const apagarTravado=ehCreditoEmprestimo||ehFonteReceita||(bucket==="DESPESA FIXA"&&temRecorrenciaAtiva)||bucket==="PAGAMENTO_FATURA"||
                 (bucket==="PAGAMENTO_EMPRESTIMO"&&item.categoria==="DIVIDA_PARCELADA");
               return <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:8}}>
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -4364,6 +4435,10 @@ function Historico({data,onUpdate,destaque,onIrPara}){
                   style={{width:"100%",padding:"6px",borderRadius:6,background:"transparent",color:C.blue,fontSize:10,border:"1px dashed "+C.blue,cursor:"pointer",fontFamily:"inherit"}}>
                   🔁 Ir pra Empréstimos (apagar o empréstimo inteiro)
                 </button>}
+                {ehFonteReceita&&<button onClick={()=>onIrPara&&onIrPara({tab:"receitas"})}
+                  style={{width:"100%",padding:"6px",borderRadius:6,background:"transparent",color:C.teal,fontSize:10,border:"1px dashed "+C.teal,cursor:"pointer",fontFamily:"inherit"}}>
+                  🏥 Gerenciar futuros dessa fonte em Receitas
+                </button>}
               </div>;
             })()}
           </div>}
@@ -4374,7 +4449,8 @@ function Historico({data,onUpdate,destaque,onIrPara}){
             background:C.borderLight,opacity:0.8,cursor:onIrPara?"pointer":"default"}}>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:13,fontWeight:600,color:C.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontStyle:"italic"}}>{c.descricao}</div>
-            <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>🏷 Cartão {c.cartao} · não conta aqui, já está na fatura<TagEnvelopeDCP envelope={c.dcpEnvelope} futuro={false}/></div>
+            <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>🏷 Cartão {c.cartao} · não conta aqui, já está na fatura</div>
+            {c.dcpEnvelope&&<div style={{marginTop:3}}><TagEnvelopeDCP envelope={c.dcpEnvelope} futuro={false}/></div>}
           </div>
           <span style={{fontSize:13,fontWeight:700,color:C.textMuted,flexShrink:0}}>{fmt(c.valor)}</span>
           <span style={{fontSize:12,color:C.textMuted,flexShrink:0}}>→</span>
@@ -4404,52 +4480,55 @@ function Historico({data,onUpdate,destaque,onIrPara}){
 // Mistura linha de saldo-do-dia + 0-2 lancamentos por dia, so pra ter
 // altura/variedade parecida com o uso real (~1 saldo + ~1 lancamento a
 // cada poucos dias, como vimos na planilha real: ~38 lancamentos/mes).
-function _gerarMockTimeline(){
-  const hj=new Date();
-  const linhas=[];
-  let saldo=26545.46;
-  const descs=[
-    {d:"ROSE (FAXINA)",c:"DESPESA FIXA · DOMÉSTICO · CONTA",v:-135,cat:null},
-    {d:"MEOO (VW NIVUS)",c:"DESPESA FIXA · VEÍCULO · CONTA",v:-3726,cat:null},
-    {d:"FATURA CARTÃO PJ",c:"Nubank INTENSIVA! · CARTÃO · CONTA",v:-9299.58,cat:null},
-    {d:"CELESC (ENERGIA)",c:"DESPESA FIXA · MORADIA · CONTA",v:-350,cat:null},
-    {d:"BENEVIX (PLANO SAÚDE)",c:"DESPESA FIXA · SAÚDE · CONTA",v:-1900,cat:null},
-    {d:"PLANTÃO HSA",c:"RECEITA · ESTRUTURADA",v:4800,cat:null},
-    {d:"IFOOD",c:"ALIMENTAÇÃO · CONTA",v:-68.9,cat:"DCP"},
-    {d:"PADARIA",c:"ALIMENTAÇÃO · CONTA",v:-42.3,cat:"DCP"},
-  ];
-  for(let i=-20;i<=25;i++){
-    const dt=new Date(hj); dt.setDate(dt.getDate()+i);
-    const iso=dt.toISOString().slice(0,10);
-    const ehHoje=i===0;
-    const ehSeg=dt.getDay()===1;
-    // pula uns dias sem nada, igual ao comportamento real (só aparece dia
-    // com lançamento OU o próprio dia de hoje).
-    const temAlgo = ehHoje || ehSeg || (Math.abs(i)%3===0);
-    if(!temAlgo) continue;
-    const n = ehHoje?1:(Math.abs(i)%5===0?2:1);
-    const itens=[];
-    for(let k=0;k<n;k++){
-      const pick=descs[Math.floor(Math.random()*descs.length)];
-      saldo+=pick.v;
-      itens.push({tipo:"item",descricao:pick.d,categoriaTxt:pick.c,valor:pick.v,cat:pick.cat});
-    }
-    linhas.push({tipo:"dia",data:iso,dataObj:new Date(dt),saldo,hoje:ehHoje,seg:ehSeg,itens});
-  }
-  return linhas;
+// [24/07] Timeline com dado real -- substitui o mock da sessao 11. Junta
+// TODOS os itens de FLUXO (EXECUTADO + PROGRAMADO, igual Previsao+Historico
+// combinados), agrupa por dia, e usa o saldoReal/saldoProjetado que o
+// backend ja calcula por linha (mesmo campo que Previsao/Historico usam --
+// nao reinventa o calculo).
+function _gerarLinhasTimeline(data,hj){
+  const todos=(data.fluxo||[]).filter(r=>r.categoria!=="DCP_PROVISAO");
+  const porDia={};
+  todos.forEach(r=>{ if(!porDia[r.data]) porDia[r.data]=[]; porDia[r.data].push(r); });
+  const datasOrdenadas=Object.keys(porDia).sort();
+  return datasOrdenadas.map(iso=>{
+    const itens=porDia[iso].slice().sort((a,b)=>(a.row||0)-(b.row||0));
+    const ultimoDoDia=itens[itens.length-1];
+    const saldo=ultimoDoDia.status==="EXECUTADO"?ultimoDoDia.saldoReal:ultimoDoDia.saldoProjetado;
+    const dt=parseDateLocal(iso);
+    return {tipo:"dia",data:iso,dataObj:dt,saldo,hoje:iso===hj,seg:dt.getDay()===1,
+      itens:itens.map(r=>({tipo:"item",row:r.row,descricao:nomeExibicao(r,data),categoriaTxt:
+        (r.categoria==="DCP_PROVISAO"?"":(tipoDisplay(r.tipo,data)+(r.categoria&&r.categoria!==r.tipo?" · "+r.categoria:"")+" · "+r.forma)),
+        valor:r.valor,status:r.status,item:r}))};
+  });
 }
+function parseDateLocal(iso){const[y,m,d]=iso.split("-").map(Number);return new Date(y,m-1,d);}
 
 function _fmtDataCurta(d){
   const dias=["DOM","SEG","TER","QUA","QUI","SEX","SAB"];
   return String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+String(d.getFullYear()).slice(2)+" · "+dias[d.getDay()];
 }
 
-function Timeline({data}){
+function Timeline({data,onIrPara}){
   const containerRef=useRef(null);
   const nodeRefs=useRef([]);
   const [busca,setBusca]=useState("");
-  const [filtro,setFiltro]=useState("todos"); // todos|previsao|historico -- so visual nesta etapa (mock nao tem status real ainda)
-  const linhas=useMemo(()=>_gerarMockTimeline(),[]);
+  const [filtro,setFiltro]=useState("todos"); // todos|previsao|historico
+  const hj=hoje();
+  const linhasBrutas=useMemo(()=>_gerarLinhasTimeline(data,hj),[data.fluxo,hj]);
+  // [24/07] Filtro e busca agora filtram de verdade -- antes eram so visuais
+  // (o mock nao tinha status real nem texto pra buscar). Filtra os ITENS
+  // dentro de cada dia, nunca o saldo do dia (saldo sempre reflete o real,
+  // senao o numero mostrado mentiria sobre o filtro aplicado).
+  const linhas=useMemo(()=>{
+    const b=busca.trim().toUpperCase();
+    return linhasBrutas.map(l=>{
+      let itens=l.itens;
+      if(filtro==="previsao") itens=itens.filter(it=>it.status==="PROGRAMADO");
+      else if(filtro==="historico") itens=itens.filter(it=>it.status==="EXECUTADO");
+      if(b) itens=itens.filter(it=>String(it.descricao||"").toUpperCase().indexOf(b)>=0||String(it.categoriaTxt||"").toUpperCase().indexOf(b)>=0);
+      return {...l,itens};
+    }).filter(l=>l.itens.length||l.hoje);
+  },[linhasBrutas,filtro,busca]);
   const hojeIdx=useMemo(()=>linhas.findIndex(l=>l.hoje),[linhas]);
 
   // Achata em "slots" (1 slot = 1 linha de saldo OU 1 item), pra cada um
@@ -4519,8 +4598,7 @@ function Timeline({data}){
   return <div>
     <Card style={{padding:"7px 12px",marginBottom:7}}>
       <div style={{display:"flex",alignItems:"center",gap:8}}>
-        <span title="Protótipo em construção — dado ainda é mockado, não é a planilha real" style={{fontSize:13,cursor:"help"}}>🔴</span>
-        <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar (visual só, ainda não filtra)"
+        <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar por descrição ou categoria..."
           style={{flex:1,padding:"7px 11px",border:"1px solid "+C.border,borderRadius:9,fontSize:13,fontFamily:"inherit"}}/>
       </div>
       <div style={{display:"flex",gap:6,marginTop:7}}>
@@ -4537,28 +4615,28 @@ function Timeline({data}){
         <div style={{height:alturaContainer/2-19}}/>
         {slots.map((s,i)=>{
           const isHoje=s.tipo==="saldo"&&s.linha.hoje;
+          const ehDCP=s.tipo==="item"&&s.item.item&&s.item.item.categoria==="DCP";
           return <div key={i} ref={n=>nodeRefs.current[i]=n}
             style={{scrollSnapAlign:"center",transition:"transform .06s linear",padding:"5px 13px"}}>
             {s.tipo==="saldo" ? (
               <div data-fade style={{display:"flex",justifyContent:"space-between",alignItems:"center",transition:"opacity .06s linear"}}>
                 <div>
                   <div style={{fontWeight:800,color:C.accent,fontSize:isHoje?13:11}}>{_fmtDataCurta(s.linha.dataObj)}{isHoje&&<span style={{marginLeft:6,fontSize:9,background:C.accentLight,color:C.accent,padding:"1px 5px",borderRadius:5}}>HOJE</span>}</div>
-                  {(isHoje||s.linha.seg)&&<div style={{fontSize:9,color:C.textMuted,marginTop:1}}>DCP semanal · 28/07 a 03/08</div>}
                 </div>
                 <div style={{textAlign:"right"}}>
                   <div style={{color:C.blue,fontWeight:900,fontSize:isHoje?17:13}}>→ {fmt(s.linha.saldo)}</div>
-                  {(isHoje||s.linha.seg)&&<div style={{color:C.green,fontWeight:800,fontSize:11}}>Envelope: R$ 1.283,24</div>}
                 </div>
               </div>
             ) : (
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-                background:s.item.cat==="DCP"?C.yellowLight:"transparent",borderRadius:s.item.cat==="DCP"?8:0,
-                borderLeft:s.item.cat==="DCP"?"3px solid #D97706":"3px solid transparent",
-                borderBottom:s.item.cat==="DCP"?"none":"1px solid "+C.border,padding:"4px 7px"}}>
+              <div onClick={()=>onIrPara&&onIrPara({tab:s.item.status==="EXECUTADO"?"historico":"fluxo",row:s.item.row})}
+                style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:onIrPara?"pointer":"default",
+                background:ehDCP?C.yellowLight:"transparent",borderRadius:ehDCP?8:0,
+                borderLeft:ehDCP?"3px solid #D97706":"3px solid transparent",
+                borderBottom:ehDCP?"none":"1px solid "+C.border,padding:"4px 7px"}}>
                 <div data-fade style={{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%",transition:"opacity .06s linear"}}>
                   <div>
                     <div style={{fontWeight:700,fontSize:12}}>{s.item.descricao}</div>
-                    <div style={{fontSize:9,color:C.textMuted}}>{s.item.categoriaTxt}</div>
+                    <div style={{fontSize:9,color:C.textMuted}}>{s.item.categoriaTxt}{s.item.status==="EXECUTADO"&&<span style={{marginLeft:5,color:C.green}}>✓</span>}</div>
                   </div>
                   <div style={{fontWeight:800,fontSize:12,color:s.item.valor<0?C.red:C.green}}>{fmt(s.item.valor)}</div>
                 </div>
@@ -7150,6 +7228,11 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
 function Tesouraria(){
   const [data,setData]=useState(null);const [load,setLoad]=useState(true);const [err,setErr]=useState(null);
   const [tab,setTab]=useState("dashboard");const [chatInit,setChatInit]=useState(null);
+  // [24/07] Timeline "esconde" Previsao/Historico da barra principal por
+  // padrao -- tocar de novo na Timeline (com ela ja ativa) revela as duas
+  // ao lado, como transicao gradual ate confiar 100% na Timeline (ou pra
+  // sempre, se o Marcus decidir manter as duas versoes -- e so um toggle).
+  const [timelineExpandida,setTimelineExpandida]=useState(false);
   const [destaque,setDestaque]=useState(null); // {tab,row,cartao} -- pra onde "ir pro lancamento" na aba DCP aponta
 
   // Navegacao com historico do navegador: TODA troca de aba passa por aqui
@@ -7157,6 +7240,12 @@ function Tesouraria(){
   // voltar do Android/navegador navega dentro do app em vez de sair dele.
   function navegar(novaTab,opts){
     opts=opts||{};
+    // Tocar na Timeline com ela ja ativa alterna a revelacao de Previsao/
+    // Historico, em vez de "navegar" pra ela de novo (nao muda de aba).
+    if(novaTab==="timeline"&&tab==="timeline"){
+      setTimelineExpandida(v=>!v);
+      return;
+    }
     setTab(novaTab);
     if(!opts.semHistorico && novaTab!==tab){
       try{ history.pushState({tesourariaTab:novaTab},"","#"+novaTab); }catch(e){}
@@ -7175,7 +7264,15 @@ function Tesouraria(){
     return ()=>window.removeEventListener("popstate",aoVoltar);
   },[]);
 
-  function irPara(destino){ setDestaque(destino); navegar(destino.tab); }
+  function irPara(destino){
+    setDestaque(destino);
+    // Se o destino for Previsao/Historico (ex: tocou num item na Timeline)
+    // e essas abas ainda estiverem escondidas, revela junto -- senao a aba
+    // ficaria sem destaque nenhum na barra, parecendo que a navegacao
+    // "sumiu".
+    if((destino.tab==="fluxo"||destino.tab==="historico")&&!timelineExpandida) setTimelineExpandida(true);
+    navegar(destino.tab);
+  }
   useEffect(()=>{
     if(!destaque) return;
     const t=setTimeout(()=>setDestaque(null),3000); // pisca e depois esquece sozinho
@@ -7194,7 +7291,9 @@ function Tesouraria(){
 
   function goChat(txt){setChatInit(txt);navegar("conversar");}
 
-  const TABS=[{id:"dashboard",l:"Dashboard"},{id:"fluxo",l:"Previsão"},{id:"historico",l:"Histórico"},{id:"timeline",l:"🧪 Timeline"},{id:"ferramentas",l:"Ferramentas"}];
+  const TABS=timelineExpandida
+    ? [{id:"dashboard",l:"Dashboard"},{id:"timeline",l:"🧪 Timeline"},{id:"fluxo",l:"Previsão"},{id:"historico",l:"Histórico"},{id:"ferramentas",l:"Ferramentas"}]
+    : [{id:"dashboard",l:"Dashboard"},{id:"timeline",l:"🧪 Timeline"},{id:"ferramentas",l:"Ferramentas"}];
   const TAB_CORES={
     dashboard:{cor:C.blue,bg:C.blueLight},
     fluxo:{cor:C.accent,bg:C.accentLight},
@@ -7213,7 +7312,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260724.0215 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260724.1230 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7252,7 +7351,7 @@ function Tesouraria(){
         tab==="dashboard"   ? <Dashboard data={data}/> :
         tab==="fluxo"       ? <Fluxo data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
         tab==="historico"   ? <Historico data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
-        tab==="timeline"    ? <Timeline data={data}/> :
+        tab==="timeline"    ? <Timeline data={data} onIrPara={irPara}/> :
         tab==="ferramentas" ? <Ferramentas onIrPara={t=>{navegar(t);}}/> :
         tab==="recorr"      ? <Recorrencias data={data} onUpdate={setData}/> :
         tab==="cartoes"     ? <Cartoes data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
@@ -7295,7 +7394,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260724.0215
+      // HTML v3.20260724.1230
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
