@@ -1683,7 +1683,7 @@ function FormCriarEmprestimo({onSalvo,onClose}){
   const [parcelas,setParcelas]=useState("");
   const [dataCredito,setDataCredito]=useState(hoje());
   const [diaVenc,setDiaVenc]=useState("10");
-  const [forma,setForma]=useState("CONTA");
+  const [contaUI,setContaUI]=useState("PF");
   const [load,setLoad]=useState(false);
 
   async function salvar(){
@@ -1692,6 +1692,7 @@ function FormCriarEmprestimo({onSalvo,onClose}){
       return;
     }
     setLoad(true);
+    const forma=contaUI==="PJ"?"CONTA PJ":"CONTA";
     try{
       // 1. Credito recebido -- lancamento unico, categoria RECEITA
       await api({action:"lancar",data:dataCredito,
@@ -1737,9 +1738,10 @@ function FormCriarEmprestimo({onSalvo,onClose}){
       <div style={{display:"flex",gap:8}}>
         <div style={{flex:1}}><label style={lbl}>Dia de vencimento</label>
           <input type="number" min="1" max="31" value={diaVenc} onChange={e=>setDiaVenc(e.target.value)} style={{...inp,textAlign:"center"}}/></div>
-        <div style={{flex:1}}><label style={lbl}>Forma</label>
-          <select value={forma} onChange={e=>setForma(e.target.value)} style={{...inp,background:C.surface}}>
-            <option>CONTA</option><option>DEBITO</option><option>CONTA PJ</option>
+        <div style={{flex:1}}><label style={lbl}>Conta</label>
+          <select value={contaUI} onChange={e=>setContaUI(e.target.value)} style={{...inp,background:C.surface}}>
+            <option value="PF">Conta PF (pessoal)</option>
+            <option value="PJ">Conta PJ (empresa)</option>
           </select></div>
       </div>
       <div style={{fontSize:11,color:C.textMuted,fontStyle:"italic"}}>
@@ -7146,7 +7148,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260724.0030 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260724.0100 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7228,7 +7230,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260724.0030
+      // HTML v3.20260724.0100
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
