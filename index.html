@@ -6963,9 +6963,27 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
         ✏️ Usar dados do CSV (sobrescreve descrição e valor abaixo)
       </button>
     </div>}
+    {/* [23/07] Espelhando Fluxo/Historico: Nome de exibicao sempre primeiro,
+        Nome no extrato logo abaixo -- so que aqui ja existia apelido, so
+        precisava reordenar (estava embaixo de tudo). */}
+    <div style={{display:"flex",flexDirection:"column",gap:3,marginBottom:8}}>
+      <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME DE EXIBIÇÃO (opcional)</span>
+      <input value={eApelido} onChange={e=>setEApelido(e.target.value.toUpperCase())}
+        placeholder={r[1]}
+        style={{padding:"6px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:12,fontFamily:"inherit",background:C.surface}}/>
+      {data&&(()=>{const cands=apelidosCandidatos(r[1],data);
+        return cands.length>1&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:2}}>
+          <span style={{fontSize:9,color:"#92400E",width:"100%"}}>Esse texto bate com mais de uma regra salva — escolhe qual vale aqui:</span>
+          {cands.map((c,ci)=><button key={ci} type="button" onClick={()=>setEApelido(c.apelido)}
+            style={{fontSize:10,padding:"3px 8px",borderRadius:12,border:"1px solid "+C.accent,background:eApelido===c.apelido?C.accent:"transparent",color:eApelido===c.apelido?"#fff":C.accent,cursor:"pointer",fontFamily:"inherit"}}>
+            {c.apelido}
+          </button>)}
+        </div>;
+      })()}
+    </div>
     <div style={{display:"flex",gap:8,marginBottom:8}}>
       <div style={{display:"flex",flexDirection:"column",gap:3,flex:2}}>
-        <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>DESCRIÇÃO</span>
+        <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME NO EXTRATO/CONCILIAÇÃO</span>
         <input value={eDesc} onChange={e=>setEDesc(e.target.value)} disabled={travada}
           style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:13,fontFamily:"inherit",width:"100%",background:travada?C.borderLight:C.surface}}/>
       </div>
@@ -6987,35 +7005,44 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
       <input type="date" value={eData||""} onChange={e=>setEData(e.target.value)} disabled={travada}
         style={{padding:"6px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:13,fontFamily:"inherit",background:travada?C.borderLight:C.surface}}/>
     </div>
-    <div style={{display:"flex",flexDirection:"column",gap:3,marginBottom:8}}>
-      <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA</span>
-      <select value={eCategoria} onChange={e=>setECategoria(e.target.value)}
-        style={{padding:"6px 8px",borderRadius:6,border:"1px solid "+(eCategoria?C.accent:C.red),fontSize:13,fontFamily:"inherit",background:C.surface}}>
-        <option value="">Escolha uma categoria...</option>
-        {["DCP","DESPESA FIXA","EXTRAORDINARIA","IMPOSTO"].map(c=><option key={c} value={c}>{CAT_LABEL[c]||c}</option>)}
-      </select>
-    </div>
+    {/* [23/07] Categoria -- so 3 opcoes aqui (item de cartao nao tem
+        Fatura/Emprestimo/Cofre, so existem no Fluxo) -- mesma trava:
+        Despesas Fixas so troca se NAO tiver recorrencia ativa por tras
+        (esta editando ANTES de virar recorrencia de verdade), DCP<->Extra
+        sempre intercambiavel. */}
+    {(()=>{
+      const bucketCartaoDe=c=>{const t=String(c||"").toUpperCase();return(t==="DESPESA FIXA"||t==="IMPOSTO")?"DESPESA FIXA":t;};
+      const bucketAtualCartao=bucketCartaoDe(r[5]);
+      const temRecorrenciaCartao=data&&(data.recorr||[]).some(rec=>String(rec[0]).toUpperCase()===String(r[1]).toUpperCase()&&String(rec[6]).toUpperCase()==="S");
+      const travadoCategoriaCartao=bucketAtualCartao==="DESPESA FIXA"&&temRecorrenciaCartao;
+      const LIVRES_CARTAO=["DCP","EXTRAORDINARIA"];
+      return <div style={{display:"flex",flexDirection:"column",gap:3,marginBottom:8}}>
+        <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA{travadoCategoriaCartao&&
+          <span style={{marginLeft:6,fontSize:8,background:"#fff",color:C.textMuted,padding:"1px 6px",borderRadius:8,fontWeight:700,letterSpacing:0}}>travada</span>}
+        </span>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          {["DESPESA FIXA","DCP","EXTRAORDINARIA"].map(c=>{
+            const ehAtual=eCategoria===c;
+            const ehLivreDeVerdade=LIVRES_CARTAO.includes(c);
+            const clicavel=!travada&&!travadoCategoriaCartao&&ehLivreDeVerdade&&!ehAtual;
+            return <button key={c} type="button" disabled={!clicavel} onClick={()=>clicavel&&setECategoria(c)}
+              style={{padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap",
+                cursor:clicavel?"pointer":"default",
+                border:"1px solid "+(ehAtual?C.accent:C.border),
+                background:ehAtual?C.accentLight:(clicavel?"#fff":C.borderLight),
+                color:ehAtual?C.accent:(clicavel?C.textSub:C.textMuted)}}>
+              {TITULO_CAT_UNIFICADO[c]||c}
+            </button>;
+          })}
+        </div>
+      </div>;
+    })()}
     <div style={{display:"flex",flexDirection:"column",gap:3,marginBottom:8}}>
       <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>TERMOS ALTERNATIVOS (como o banco pode chamar esse gasto)</span>
       <input value={eAlias} onChange={e=>setEAlias(e.target.value)}
         placeholder="ex: CANAIS STREAMING; AMAZON VAREJO"
         style={{padding:"6px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:12,fontFamily:"inherit",background:C.surface}}/>
       <span style={{fontSize:9,color:"#92400E"}}>Separe vários com ";". Ajuda a conciliação a reconhecer o mesmo gasto com nome diferente no CSV.</span>
-    </div>
-    <div style={{display:"flex",flexDirection:"column",gap:3,marginBottom:8}}>
-      <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME DE EXIBIÇÃO (opcional)</span>
-      <input value={eApelido} onChange={e=>setEApelido(e.target.value.toUpperCase())}
-        placeholder={r[1]}
-        style={{padding:"6px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:12,fontFamily:"inherit",background:C.surface}}/>
-      {data&&(()=>{const cands=apelidosCandidatos(r[1],data);
-        return cands.length>1&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:2}}>
-          <span style={{fontSize:9,color:"#92400E",width:"100%"}}>Esse texto bate com mais de uma regra salva — escolhe qual vale aqui:</span>
-          {cands.map((c,ci)=><button key={ci} type="button" onClick={()=>setEApelido(c.apelido)}
-            style={{fontSize:10,padding:"3px 8px",borderRadius:12,border:"1px solid "+C.accent,background:eApelido===c.apelido?C.accent:"transparent",color:eApelido===c.apelido?"#fff":C.accent,cursor:"pointer",fontFamily:"inherit"}}>
-            {c.apelido}
-          </button>)}
-        </div>;
-      })()}
     </div>
     {data&&onUpdate&&<SeletorEnvelopeItem aba={abaCartao} row={_linhaCartao(r)} obsAtual={_obsCartaoRaw(r)} data={data} onUpdate={onUpdate}/>}
     <div style={{display:"flex",gap:8}}>
@@ -7028,10 +7055,18 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
         Cancelar
       </button>
     </div>
-    <button onClick={onApagar} disabled={eLoad||travada}
-      style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:11,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
-      🗑 Apagar este item
-    </button>
+    {(()=>{
+      const temRecorrenciaApagar=data&&(data.recorr||[]).some(rec=>String(rec[0]).toUpperCase()===String(r[1]).toUpperCase()&&String(rec[6]).toUpperCase()==="S");
+      const bucketAtualApagar=(()=>{const t=String(r[5]||"").toUpperCase();return(t==="DESPESA FIXA"||t==="IMPOSTO")?"DESPESA FIXA":t;})();
+      const apagarTravadoCartao=bucketAtualApagar==="DESPESA FIXA"&&temRecorrenciaApagar;
+      if(apagarTravadoCartao) return <div style={{marginTop:8,padding:"6px 10px",borderRadius:6,background:C.borderLight,color:C.textMuted,fontSize:11,fontWeight:700,textAlign:"center"}}>
+        🔒 Apagar indisponível — nasceu de recorrência, use "Gerenciar recorrência" abaixo
+      </div>;
+      return <button onClick={onApagar} disabled={eLoad||travada}
+        style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:11,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
+        🗑 Apagar este item
+      </button>;
+    })()}
     {onApagarTodos&&<button onClick={onApagarTodos} disabled={eLoad||travada}
       style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:10,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
       🗑 Apagar TODOS os "{eDesc}" pendentes neste cartão
@@ -7111,7 +7146,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260723.2330 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260724.0015 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7193,7 +7228,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260723.2330
+      // HTML v3.20260724.0015
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
