@@ -3027,36 +3027,24 @@ function CardCofre({cofre,onUpdate,data}){
       </div>)}
     </div>}
 
-    <div style={{display:"flex",gap:6,marginTop:8}}>
+    {/* [25/07] Pilulas no mesmo molde da CATEGORIA do PainelEdicaoItem
+        (pedido do Marcus) -- deixa claro que e um SELETOR (aporte ou
+        resgate), nao um botao de acao (quem manda e o Confirmar). Pra RV,
+        fica logo ACIMA do Confirmar (perto de onde a decisao realmente
+        acontece), nao lá em cima antes do campo de busca do papel. */}
+    {!ehRV&&<div style={{display:"flex",gap:6,marginTop:8}}>
       <button onClick={()=>setTipoAcao("aporte")}
-        style={{flex:1,padding:"6px",borderRadius:6,border:"1px solid "+(tipoAcao==="aporte"?C.teal:C.border),
-          background:tipoAcao==="aporte"?C.teal:C.surface,color:tipoAcao==="aporte"?"#fff":C.textSub,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+        style={{flex:1,padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,fontFamily:"inherit",cursor:"pointer",
+          border:"1px solid "+(tipoAcao==="aporte"?C.teal:C.border),
+          background:tipoAcao==="aporte"?C.tealLight:"#fff",color:tipoAcao==="aporte"?C.teal:C.textSub}}>
         ⬇ Guardar
       </button>
       <button onClick={()=>setTipoAcao("resgate")}
-        style={{flex:1,padding:"6px",borderRadius:6,border:"1px solid "+(tipoAcao==="resgate"?C.teal:C.border),
-          background:tipoAcao==="resgate"?C.teal:C.surface,color:tipoAcao==="resgate"?"#fff":C.textSub,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+        style={{flex:1,padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,fontFamily:"inherit",cursor:"pointer",
+          border:"1px solid "+(tipoAcao==="resgate"?C.teal:C.border),
+          background:tipoAcao==="resgate"?C.tealLight:"#fff",color:tipoAcao==="resgate"?C.teal:C.textSub}}>
         ⬆ Resgatar
       </button>
-    </div>
-
-    {ehRV&&<div style={{display:"flex",gap:6,marginTop:6,alignItems:"center"}}>
-      <input value={papelInput} onChange={e=>setPapelInput(e.target.value.toUpperCase())}
-        onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();buscarCotacao();}}}
-        placeholder="Papel (ex: BBAS3) + Enter" style={{flex:1,minWidth:0,padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",textTransform:"uppercase"}}/>
-      <input type="text" inputMode="numeric" value={cotacaoInput} onChange={e=>setCotacaoInput(formatarMoedaInput(e.target.value))} placeholder="Cotação"
-        style={{width:84,flexShrink:0,padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
-      <button onClick={buscarCotacao} disabled={loadCotacao||!papelInput.trim()} type="button"
-        style={{flexShrink:0,background:C.tealLight,color:C.teal,border:"1px solid "+C.teal,borderRadius:6,padding:"7px 9px",fontSize:14,cursor:"pointer"}}>
-        {loadCotacao?"…":"🔎"}
-      </button>
-    </div>}
-    {ehRV&&<div style={{display:"flex",gap:6,marginTop:6}}>
-      <input type="text" inputMode="numeric" value={valor} onChange={e=>setValor(formatarMoedaInput(e.target.value))}
-        placeholder="Valor total (opcional)" style={{flex:1,minWidth:0,padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
-      <input type="text" inputMode="numeric" value={qtdInput}
-        onChange={e=>{setQtdEditadaAMao(true);setQtdInput(e.target.value.replace(",","."));}}
-        placeholder="Qtd ações" style={{width:110,flexShrink:0,padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
     </div>}
     {!ehRV&&<div style={{display:"flex",gap:6,marginTop:6}}>
       <input type="text" inputMode="numeric" value={valor} onChange={e=>setValor(formatarMoedaInput(e.target.value))}
@@ -3066,10 +3054,51 @@ function CardCofre({cofre,onUpdate,data}){
         {load?"…":"Confirmar"}
       </button>
     </div>}
-    {ehRV&&<button onClick={lancar} disabled={load}
-      style={{width:"100%",marginTop:6,background:C.text,color:"#fff",border:"none",borderRadius:6,padding:"9px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-      {load?"…":"Confirmar"}
-    </button>}
+
+    {/* [25/07] Secao "pesquisa e compra de novos ativos" -- separada da
+        carteira (papeis + Atualizar carteira, la em cima) por uma linha
+        tracejada + titulo discreto, pedido explicito do Marcus 25/07 pra
+        deixar visualmente claro que sao 2 blocos diferentes. */}
+    {ehRV&&<>
+      <div style={{borderTop:"1px dashed #99F6E4",margin:"12px 0 8px"}}/>
+      <div style={{fontSize:9,fontWeight:800,color:C.textMuted,letterSpacing:".06em",marginBottom:6}}>PESQUISA E COMPRA DE NOVOS ATIVOS</div>
+      <div style={{display:"flex",gap:6,alignItems:"center"}}>
+        <input value={papelInput} onChange={e=>setPapelInput(e.target.value.toUpperCase())}
+          onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();buscarCotacao();}}}
+          placeholder="Papel (ex: BBAS3) + Enter" style={{flex:1,minWidth:0,padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",textTransform:"uppercase"}}/>
+        <input type="text" inputMode="numeric" value={cotacaoInput} onChange={e=>setCotacaoInput(formatarMoedaInput(e.target.value))} placeholder="Cotação"
+          style={{width:84,flexShrink:0,padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
+        <button onClick={buscarCotacao} disabled={loadCotacao||!papelInput.trim()} type="button"
+          style={{flexShrink:0,background:C.tealLight,color:C.teal,border:"1px solid "+C.teal,borderRadius:6,padding:"7px 9px",fontSize:14,cursor:"pointer"}}>
+          {loadCotacao?"…":"🔎"}
+        </button>
+      </div>
+      <div style={{display:"flex",gap:6,marginTop:6}}>
+        <input type="text" inputMode="numeric" value={valor} onChange={e=>setValor(formatarMoedaInput(e.target.value))}
+          placeholder="Valor total (opcional)" style={{flex:1,minWidth:0,padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
+        <input type="text" inputMode="numeric" value={qtdInput}
+          onChange={e=>{setQtdEditadaAMao(true);setQtdInput(e.target.value.replace(",","."));}}
+          placeholder="Qtd ações" style={{width:110,flexShrink:0,padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
+      </div>
+      <div style={{display:"flex",gap:6,marginTop:6}}>
+        <button onClick={()=>setTipoAcao("aporte")}
+          style={{flex:1,padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,fontFamily:"inherit",cursor:"pointer",
+            border:"1px solid "+(tipoAcao==="aporte"?C.teal:C.border),
+            background:tipoAcao==="aporte"?C.tealLight:"#fff",color:tipoAcao==="aporte"?C.teal:C.textSub}}>
+          ⬇ Guardar
+        </button>
+        <button onClick={()=>setTipoAcao("resgate")}
+          style={{flex:1,padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,fontFamily:"inherit",cursor:"pointer",
+            border:"1px solid "+(tipoAcao==="resgate"?C.teal:C.border),
+            background:tipoAcao==="resgate"?C.tealLight:"#fff",color:tipoAcao==="resgate"?C.teal:C.textSub}}>
+          ⬆ Resgatar
+        </button>
+      </div>
+      <button onClick={lancar} disabled={load}
+        style={{width:"100%",marginTop:6,background:C.text,color:"#fff",border:"none",borderRadius:6,padding:"9px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+        {load?"…":"Confirmar"}
+      </button>
+    </>}
     <div style={{fontSize:10,color:C.textMuted,marginTop:4,fontStyle:"italic"}}>
       {ehRV?"Quantidade calculada de valor÷cotação, mas editável.":tipoAcao==="aporte"?"Sai do saldo da conta, fica guardado aqui.":"Volta pro saldo da conta, livre pra qualquer uso."}
     </div>
@@ -7336,7 +7365,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260725.0330 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260725.0415 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7418,7 +7447,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260725.0330
+      // HTML v3.20260725.0415
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
