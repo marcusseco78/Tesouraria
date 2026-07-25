@@ -2855,14 +2855,31 @@ function EnvelopesCustom({data,onUpdate}){
 // Envelope (isso é a etapa 2) nem correção CDI (etapa 3) -- o campo % CDI já
 // fica salvo no cadastro pra não precisar migrar depois, mas não faz nada
 // ainda.
-// [25/07] Rotulo curto do tipo de investimento, usado no cabecalho do card
-// e no historico -- centralizado aqui pra nao duplicar a logica em 2 lugares.
-function _labelTipoInvestimento(cofre){
+// [25/07] Detalhe de taxa do tipo de investimento -- so a parte numerica,
+// pra virar um badge de destaque (o rotulo do tipo em si agora vira
+// pilula, ver PilulasTipoInvestimento).
+function _detalheTaxaCofre(cofre){
   const t=cofre.tipoInvestimento||"cdi";
-  if(t==="prefixado") return "pré-fixado "+(cofre.taxaAnual||0)+"% a.a.";
+  if(t==="prefixado") return "Pré-fixada "+(cofre.taxaAnual||0)+"% a.a.";
   if(t==="ipca") return "IPCA+"+(cofre.spreadAnual||0)+"% a.a.";
-  if(t==="renda_variavel") return "renda variável (carteira de ações)";
-  return "pós-fixado "+(cofre.percentualCdi||100)+"% CDI";
+  if(t==="renda_variavel") return "Carteira de ações";
+  return (cofre.percentualCdi||100)+"% do CDI";
+}
+const TIPOS_INVESTIMENTO_COFRE=[["cdi","CDI"],["prefixado","Pré-fixada"],["ipca","IPCA+"],["renda_variavel","Renda Var."]];
+// [25/07] Pedido do Marcus: tipo de investimento tao evidente quanto as
+// pilulas de Categoria -- a do tipo do cofre "acesa" (cor cheia), as
+// outras 3 "apagadas" (cinza, translucidas). Nao e um seletor (o tipo
+// trava na criacao do cofre, ver salvarCofre) -- e so indicador visual,
+// por isso sem onClick.
+function PilulasTipoInvestimento({cofre}){
+  const atual=cofre.tipoInvestimento||"cdi";
+  return <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:5}}>
+    {TIPOS_INVESTIMENTO_COFRE.map(([id,label])=>{
+      const ativo=id===atual;
+      return <span key={id} style={{padding:"3px 8px",borderRadius:12,fontSize:9,fontWeight:800,
+        background:ativo?C.teal:C.borderLight,color:ativo?"#fff":C.textMuted,opacity:ativo?1:0.55}}>{label}</span>;
+    })}
+  </div>;
 }
 
 function CardCofre({cofre,onUpdate,data}){
@@ -2873,6 +2890,13 @@ function CardCofre({cofre,onUpdate,data}){
   const [cotacaoInput,setCotacaoInput]=useState("");
   const [qtdInput,setQtdInput]=useState("");
   const [qtdEditadaAMao,setQtdEditadaAMao]=useState(false);
+  // [NOVO 25/07] Aporte/resgate programado -- data default hoje (executa
+  // na hora, como sempre foi), mas editavel pra uma data futura, que faz o
+  // lancamento entrar como PROGRAMADO (so aparece na Previsao ate alguem
+  // "Executar" na data certa, mesmo mecanismo generico que qualquer outro
+  // item do Fluxo ja usa -- nao precisou de nada novo no backend alem do
+  // status calculado certo em lancarCofre).
+  const [dataLanc,setDataLanc]=useState(()=>hoje());
   const [load,setLoad]=useState(false);
   const [loadApagar,setLoadApagar]=useState(false);
   const [loadRendimento,setLoadRendimento]=useState(false);
@@ -2950,7 +2974,7 @@ function CardCofre({cofre,onUpdate,data}){
   async function lancar(){
     setLoad(true);
     try{
-      const params={action:"lancarCofre",cofreId:cofre.id,tipoCofre:tipoAcao};
+      const params={action:"lancarCofre",cofreId:cofre.id,tipoCofre:tipoAcao,data:dataLanc};
       if(ehRV){
         const papel=papelInput.trim().toUpperCase();
         const cotacao=numBR(cotacaoInput);
@@ -2967,7 +2991,7 @@ function CardCofre({cofre,onUpdate,data}){
       }
       const r=await api(params);
       onUpdate&&onUpdate(r);
-      setValor("");setPapelInput("");setCotacaoInput("");setQtdInput("");setQtdEditadaAMao(false);
+      setValor("");setPapelInput("");setCotacaoInput("");setQtdInput("");setQtdEditadaAMao(false);setDataLanc(hoje());
     }catch(e){alert(e.message);}
     setLoad(false);
   }
@@ -3019,11 +3043,17 @@ function CardCofre({cofre,onUpdate,data}){
 
   return <div style={{background:C.tealLight,border:"1px solid #99F6E4",borderRadius:10,padding:10,marginBottom:8}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-      <div>
+      <div style={{flex:1,minWidth:0}}>
         <div style={{fontSize:13,fontWeight:700,color:C.text}}>🏦 {cofre.nome}</div>
-        <div style={{fontSize:10,color:C.textMuted}}>{_labelTipoInvestimento(cofre)}{!ehRV&&<> · rendimento acumulado: {fmt(cofre.rendimentoAcumulado||0)}</>}</div>
+        <PilulasTipoInvestimento cofre={cofre}/>
+        <div style={{display:"flex",alignItems:"center",flexWrap:"wrap",gap:6,marginTop:5}}>
+          <span style={{padding:"4px 10px",borderRadius:14,fontSize:12,fontWeight:800,background:C.tealLight,color:C.teal}}>
+            {_detalheTaxaCofre(cofre)}
+          </span>
+          {!ehRV&&<span style={{fontSize:10,color:C.textMuted}}>rendimento acumulado: {fmt(cofre.rendimentoAcumulado||0)}</span>}
+        </div>
       </div>
-      <div style={{fontSize:16,fontWeight:800,color:C.teal}}>{fmt(cofre.saldo)}</div>
+      <div style={{fontSize:16,fontWeight:800,color:C.teal,flexShrink:0,marginLeft:8}}>{fmt(cofre.saldo)}</div>
     </div>
 
     {/* [25/07] Renda Variavel mostra a posicao por papel -- um numero so de
@@ -3110,7 +3140,9 @@ function CardCofre({cofre,onUpdate,data}){
         ⬆ Resgatar
       </button>
     </div>}
-    {!ehRV&&<div style={{display:"flex",gap:6,marginTop:6}}>
+    {!ehRV&&<div style={{display:"flex",gap:6,marginTop:6,alignItems:"center"}}>
+      <input type="date" value={dataLanc} onChange={e=>setDataLanc(e.target.value)}
+        style={{padding:"7px 6px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
       <input type="text" inputMode="numeric" value={valor} onChange={e=>setValor(formatarMoedaInput(e.target.value))}
         placeholder="0,00" style={{flex:1,padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
       <button onClick={lancar} disabled={load}
@@ -3118,6 +3150,7 @@ function CardCofre({cofre,onUpdate,data}){
         {load?"…":"Confirmar"}
       </button>
     </div>}
+    {!ehRV&&dataLanc>hoje()&&<div style={{fontSize:9,color:C.teal,fontWeight:700,marginTop:2}}>📅 Agendado pra {fmtD(dataLanc)} — só executa nessa data (aparece na Previsão até lá).</div>}
 
     {/* [25/07] Secao "pesquisa e compra de novos ativos" -- separada da
         carteira (papeis + Atualizar carteira, la em cima) por uma linha
@@ -3157,6 +3190,11 @@ function CardCofre({cofre,onUpdate,data}){
             background:tipoAcao==="resgate"?C.tealLight:"#fff",color:tipoAcao==="resgate"?C.teal:C.textSub}}>
           ⬆ Resgatar
         </button>
+      </div>
+      <div style={{display:"flex",gap:6,marginTop:6,alignItems:"center"}}>
+        <input type="date" value={dataLanc} onChange={e=>setDataLanc(e.target.value)}
+          style={{padding:"7px 6px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+        <span style={{fontSize:9,color:C.textMuted,flex:1}}>{dataLanc>hoje()?"📅 agendado pra "+fmtD(dataLanc):"executa hoje"}</span>
       </div>
       <button onClick={lancar} disabled={load}
         style={{width:"100%",marginTop:6,background:C.text,color:"#fff",border:"none",borderRadius:6,padding:"9px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
@@ -4542,6 +4580,27 @@ function Historico({data,onUpdate,destaque,onIrPara}){
 // combinados), agrupa por dia, e usa o saldoReal/saldoProjetado que o
 // backend ja calcula por linha (mesmo campo que Previsao/Historico usam --
 // nao reinventa o calculo).
+// [25/07] Soma o valor projetado de TODOS os cofres (nao-RV cresce pela
+// taxa, RV mantem so a ultima cotacao conhecida) numa data futura
+// qualquer -- usado na Timeline pra mostrar "conta + investimentos" no dia
+// em que a pessoa parar de rolar, nao so o saldo da conta. Reaproveita o
+// mesmo fatorProjetado/cache de taxa da Previsao de Cofres (nao reinventa
+// o calculo). Aportes/resgates de cofre sao sempre EXECUTADO na hora
+// (lancarCofre nunca agenda pro futuro), entao nao ha "evento real futuro"
+// de cofre a considerar aqui -- so o crescimento do saldo atual mesmo.
+function valorCofresProjetadoNaData(cofres,dataISO,cfg){
+  const hj=hoje();
+  const dias=_diasEntreISO(hj,dataISO);
+  return (cofres||[]).reduce((soma,c)=>{
+    if(c.tipoInvestimento==="renda_variavel"||dias<=0) return soma+c.saldo;
+    const taxas={percentualCdi:c.percentualCdi,taxaAnual:c.taxaAnual,spreadAnual:c.spreadAnual,
+      ultimaTaxaCdiDiaria:cfg.ULTIMA_TAXA_CDI_DIARIA!=null?Number(cfg.ULTIMA_TAXA_CDI_DIARIA):null,
+      ultimaTaxaIpcaMensal:cfg.ULTIMA_TAXA_IPCA_MENSAL!=null?Number(cfg.ULTIMA_TAXA_IPCA_MENSAL):null};
+    const fator=fatorProjetado(c.tipoInvestimento||"cdi",taxas,dias);
+    return soma+c.saldo*fator;
+  },0);
+}
+
 function _gerarLinhasTimeline(data,hj){
   const todos=(data.fluxo||[]).filter(r=>r.categoria!=="DCP_PROVISAO");
   const porDia={};
@@ -4727,6 +4786,9 @@ function Timeline({data,onUpdate,onIrPara}){
                 </div>
                 <div style={{textAlign:"right"}}>
                   <div style={{color:C.blue,fontWeight:900,fontSize:isHoje?17:13}}>→ {fmt(s.linha.saldo)}</div>
+                  {(data.cofres||[]).length>0&&<div style={{fontSize:9,color:C.teal,fontWeight:700,marginTop:1}}>
+                    🏦 patrimônio: {fmt(s.linha.saldo+valorCofresProjetadoNaData(data.cofres,s.linha.data,data.config||{}))}
+                  </div>}
                 </div>
               </div>
             ) : (
@@ -7429,7 +7491,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260725.0630 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260725.0900 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7511,7 +7573,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260725.0630
+      // HTML v3.20260725.0900
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
