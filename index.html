@@ -4483,9 +4483,14 @@ function Timeline({data,onUpdate,onIrPara}){
         })}
         <div style={{height:alturaContainer/2-19}}/>
       </div>
-      <div style={{position:"absolute",top:"50%",left:0,right:0,height:40,transform:"translateY(-50%)",
+      {/* [25/07] A faixa marca o "centro" do carrossel -- mas quando o
+          painel abre, a lista rola pra deixar o item perto do topo (nao
+          mais centralizado), entao a faixa passava a cruzar o meio do
+          painel aberto sem sentido nenhum (2 listras horizontais soltas).
+          Some enquanto algum painel estiver aberto. */}
+      {!itemAbertoRow&&<div style={{position:"absolute",top:"50%",left:0,right:0,height:40,transform:"translateY(-50%)",
         borderTop:"2px solid "+C.accent,borderBottom:"2px solid "+C.accent,background:C.accentLight,
-        opacity:0.35,pointerEvents:"none"}}/>
+        opacity:0.35,pointerEvents:"none"}}/>}
       <button onClick={voltarHoje} style={{position:"absolute",bottom:10,right:10,background:C.accent,color:"#fff",
         border:"none",borderRadius:20,padding:"8px 14px",fontSize:12,fontWeight:700,cursor:"pointer",boxShadow:"0 2px 6px rgba(0,0,0,.2)"}}>
         📍 Hoje
@@ -7149,7 +7154,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260725.0030 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260725.0045 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7231,7 +7236,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260725.0030
+      // HTML v3.20260725.0045
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
