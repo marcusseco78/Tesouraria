@@ -64,6 +64,72 @@ function janelaCiclo(cicloInicioStr,deslocamento){
   const toISO=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
   return {inicio:toISO(inicio),fim:toISO(fim)};
 }
+// [25/07] Projecao de rendimento futuro (Correcao CDI/pre-fixada/IPCA+
+// projetada), pedido do Marcus: "usaria a ultima taxa disponivel", num
+// horizonte de 12 ciclos -- mesmo horizonte padrao do resto do app (grafico
+// do Dashboard). NUNCA chama o Banco Central aqui -- so desenha uma
+// ESTIMATIVA na tela usando a ultima taxa que uma correcao real ja
+// confirmou (cache global em CONFIG.ULTIMA_TAXA_*, gravado pelo backend
+// toda vez que uma correcao de verdade roda). Renda Variavel fica de fora
+// -- imprevisivel por natureza, so mantem a ultima cotacao conhecida.
+function proximasViradas(cicloInicio,qtd){
+  if(!cicloInicio) return [];
+  const arr=[];
+  for(let k=1;k<=qtd;k++) arr.push(janelaCiclo(cicloInicio,k).inicio);
+  return arr;
+}
+function _diasEntreISO(a,b){
+  return Math.round((new Date(b+"T00:00:00")-new Date(a+"T00:00:00"))/86400000);
+}
+function fatorProjetado(tipoInvestimento,params,dias){
+  if(dias<=0) return 1;
+  if(tipoInvestimento==="prefixado"){
+    return Math.pow(1+(params.taxaAnual||0)/100,dias/365);
+  }
+  if(tipoInvestimento==="ipca"){
+    if(params.ultimaTaxaIpcaMensal==null) return 1;
+    const fatorIpca=Math.pow(1+params.ultimaTaxaIpcaMensal/100,dias/30);
+    const fatorSpread=Math.pow(1+(params.spreadAnual||0)/100,dias/365);
+    return fatorIpca*fatorSpread;
+  }
+  // cdi (padrao, cobre tambem Divida Pos-Fixada que so tem esse tipo)
+  if(params.ultimaTaxaCdiDiaria==null) return 1;
+  const diaria=(params.ultimaTaxaCdiDiaria/100)*((params.percentualCdi||100)/100);
+  return Math.pow(1+diaria,dias);
+}
+// saldoBase = magnitude atual (sempre positiva). eventosReais = [{data,
+// deltaAbs,tipo,desc}] em magnitude (positivo aumenta o saldo, negativo
+// diminui). sinalFinal = 1 pra Cofre (saldo positivo cresce) ou -1 pra
+// Divida (mostrada negativa -- crescer em magnitude piora o saldo exibido).
+function projetarLinhaFutura(saldoBase,tipoInvestimento,params,cicloInicio,eventosReais,sinalFinal){
+  if(tipoInvestimento==="renda_variavel"||!cicloInicio||!(saldoBase>0)) {
+    let acc=saldoBase;
+    return (eventosReais||[]).map(e=>{acc+=e.deltaAbs;return {data:e.data,tipo:e.tipo,delta:e.deltaAbs*sinalFinal,desc:e.desc,saldoApos:acc*sinalFinal};});
+  }
+  const viradas=proximasViradas(cicloInicio,12).map(d=>({data:d,ehVirada:true}));
+  const reais=(eventosReais||[]).map(e=>({...e,ehVirada:false}));
+  const todos=[...viradas,...reais].sort((a,b)=>String(a.data).localeCompare(String(b.data)));
+  let dataAnterior=hoje();
+  let saldoAcum=saldoBase;
+  const resultado=[];
+  todos.forEach(item=>{
+    const dias=_diasEntreISO(dataAnterior,item.data);
+    if(dias>0){
+      const fator=fatorProjetado(tipoInvestimento,params,dias);
+      const juros=saldoAcum*(fator-1);
+      saldoAcum+=juros;
+      if(Math.abs(juros)>0.005){
+        resultado.push({data:item.data,tipo:"Correção projetada (estimativa)",delta:juros*sinalFinal,desc:"",saldoApos:saldoAcum*sinalFinal});
+      }
+    }
+    dataAnterior=item.data;
+    if(!item.ehVirada){
+      saldoAcum+=item.deltaAbs;
+      resultado.push({data:item.data,tipo:item.tipo,delta:item.deltaAbs*sinalFinal,desc:item.desc,saldoApos:saldoAcum*sinalFinal});
+    }
+  });
+  return resultado;
+}
 const fmtD=s=>{const m=String(s||"").match(/^(\d{4})-(\d{2})-(\d{2})/);return m?m[3]+"/"+m[2]+"/"+m[1].slice(2):""};
 // [NOVO 19/07] "Nome fantasia" do cartao -- so exibicao, nunca muda o TIPO
 // interno ("CARTAO PF"/"CARTAO PJ" continuam sendo os mesmos em toda
@@ -1562,7 +1628,7 @@ function TimelineSaldo({historico,futuro,corPositivo,corNegativo}){
     <div style={{fontSize:10,fontWeight:800,color:C.textMuted,letterSpacing:".05em",marginBottom:4}}>HISTÓRICO</div>
     {historico.length?historico.map((e,i)=><Linha key={i} e={e} i={i}/>):<div style={{fontSize:11,color:C.textMuted,padding:"6px 0"}}>Nada registrado ainda.</div>}
     <div style={{fontSize:10,fontWeight:800,color:C.textMuted,letterSpacing:".05em",marginTop:12,marginBottom:4}}>PREVISÃO (agendado)</div>
-    {futuro.length?futuro.map((e,i)=><Linha key={i} e={e} i={i}/>):<div style={{fontSize:11,color:C.textMuted,padding:"6px 0"}}>Nada agendado. (Correção mensal projetada ainda não entra aqui — só o que já está lançado.)</div>}
+    {futuro.length?futuro.map((e,i)=><Linha key={i} e={e} i={i}/>):<div style={{fontSize:11,color:C.textMuted,padding:"6px 0"}}>Nada agendado nem projetado ainda.</div>}
   </div>;
 }
 
@@ -1622,7 +1688,12 @@ function CardDividaPosFixada({divida,onUpdate,data}){
     {data:divida.dataAquisicao,tipo:"Dívida inicial",delta:-Math.abs(divida.saldoInicial),desc:"",saldoApos:-Math.abs(divida.saldoInicial)},
     ...logDivida.map(l=>({data:l.data,tipo:NOMES_EVENTO_DPF[l.tipoEvento]||l.tipoEvento,delta:l.valor,desc:l.descricao,saldoApos:-Math.abs(l.saldoResultante)}))
   ];
-  const futuroDivida=[]; // amortizacao hoje e sempre imediata (EXECUTADO) -- nao ha "agendado" pra dividas ainda
+  // [25/07] Antes ficava sempre vazio ("amortizacao e sempre imediata") --
+  // agora projeta a correcao CDI estimada pros proximos 12 ciclos, mesma
+  // logica do Cofre (Divida Pos-Fixada so tem o tipo CDI por enquanto).
+  const taxasDivida={percentualCdi:divida.percentualCdi,
+    ultimaTaxaCdiDiaria:data.config?.ULTIMA_TAXA_CDI_DIARIA!=null?Number(data.config.ULTIMA_TAXA_CDI_DIARIA):null};
+  const futuroDivida=projetarLinhaFutura(divida.saldoAtual,"cdi",taxasDivida,data.config?.CICLO_INICIO,[],-1);
 
   return <div style={{background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:10,padding:10,marginBottom:8}}>
     <div style={{fontSize:13,fontWeight:700,color:C.text}}>{divida.nome} <span style={{fontWeight:500,color:C.textMuted}}>· correção {divida.percentualCdi}% CDI</span></div>
@@ -2931,8 +3002,20 @@ function CardCofre({cofre,onUpdate,data}){
   let _accCofre=0;
   const historicoCofre=passadoCofre.map(e=>{_accCofre+=e.delta;return {...e,saldoApos:_accCofre};});
   const futuroBrutoCofre=eventosFluxoCofre.filter(e=>e.status==="PROGRAMADO").sort((a,b)=>String(a.data).localeCompare(String(b.data)));
-  let _accFuturoCofre=_accCofre;
-  const futuroCofre=futuroBrutoCofre.map(e=>{_accFuturoCofre+=e.delta;return {...e,saldoApos:_accFuturoCofre};});
+  let futuroCofre;
+  if(ehRV){
+    let _accFuturoCofre=_accCofre;
+    futuroCofre=futuroBrutoCofre.map(e=>{_accFuturoCofre+=e.delta;return {...e,saldoApos:_accFuturoCofre};});
+  } else {
+    // [25/07] Projeta a correção (CDI/pré-fixada/IPCA+) pros próximos 12
+    // ciclos, usando a última taxa conhecida, intercalada com qualquer
+    // aporte/resgate já agendado de verdade.
+    const eventosReaisCofre=futuroBrutoCofre.map(e=>({data:e.data,deltaAbs:e.delta,tipo:e.tipo,desc:e.desc}));
+    const taxasCofre={percentualCdi:cofre.percentualCdi,taxaAnual:cofre.taxaAnual,spreadAnual:cofre.spreadAnual,
+      ultimaTaxaCdiDiaria:data.config?.ULTIMA_TAXA_CDI_DIARIA!=null?Number(data.config.ULTIMA_TAXA_CDI_DIARIA):null,
+      ultimaTaxaIpcaMensal:data.config?.ULTIMA_TAXA_IPCA_MENSAL!=null?Number(data.config.ULTIMA_TAXA_IPCA_MENSAL):null};
+    futuroCofre=projetarLinhaFutura(_accCofre,cofre.tipoInvestimento||"cdi",taxasCofre,data.config?.CICLO_INICIO,eventosReaisCofre,1);
+  }
 
   return <div style={{background:C.tealLight,border:"1px solid #99F6E4",borderRadius:10,padding:10,marginBottom:8}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -7346,7 +7429,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260725.0500 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260725.0630 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7428,7 +7511,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260725.0500
+      // HTML v3.20260725.0630
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
