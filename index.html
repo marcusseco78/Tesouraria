@@ -4309,11 +4309,14 @@ function Timeline({data,onUpdate,onIrPara}){
   const nodeRefs=useRef([]);
   const [busca,setBusca]=useState("");
   const [filtro,setFiltro]=useState("todos"); // todos|previsao|historico
-  // [24/07] Item selecionado abre o MESMO painel de edicao que Fluxo/
-  // Historico usam (PainelEdicaoItem), como um modal por cima da lista --
-  // evita mexer no scroll-snap (que depende de cada slot ter altura fixa).
-  // Antes so navegava pra Fluxo/Historico; agora edita direto aqui.
-  const [itemAberto,setItemAberto]=useState(null);
+  // [24/07->25/07] Item selecionado abre o MESMO painel de edicao que Fluxo/
+  // Historico usam (PainelEdicaoItem), mas agora INLINE dentro do proprio
+  // slot do item (mesmo padrao que Fluxo/Historico ja usam), em vez de
+  // modal sobreposto -- pedido do Marcus, achava o modal "grosseiro". A
+  // lista rola pra deixar o painel logo abaixo do item tocado, dentro do
+  // proprio scroll-snap. Guarda so o ROW (nao o objeto item inteiro) pra
+  // comparar por igualdade simples, igual o "conf" do Fluxo/Historico.
+  const [itemAbertoRow,setItemAbertoRow]=useState(null);
   const hj=hoje();
   const linhasBrutas=useMemo(()=>_gerarLinhasTimeline(data,hj),[data.fluxo,hj]);
   // [24/07] Filtro e busca agora filtram de verdade -- antes eram so visuais
@@ -4353,6 +4356,15 @@ function Timeline({data,onUpdate,onIrPara}){
     const centerY=rect.top+rect.height/2;
     nodeRefs.current.forEach(node=>{
       if(!node) return;
+      // [25/07] Slot com o painel de edicao aberto fica sempre "reto" (sem
+      // escala/rotacao/fade) -- distorcer um formulario com campos e
+      // botoes fica ilegivel/estranho, diferente de so um texto de item.
+      if(node.dataset.openPanel==="1"){
+        node.style.transform="none";
+        const fadeAberto=node.querySelector("[data-fade]");
+        if(fadeAberto) fadeAberto.style.opacity="1";
+        return;
+      }
       const r=node.getBoundingClientRect();
       const itemCenter=r.top+r.height/2;
       const signedNorm=Math.max(-1,Math.min(1,(itemCenter-centerY)/(rect.height/2)));
@@ -4394,6 +4406,17 @@ function Timeline({data,onUpdate,onIrPara}){
     if(alvo) alvo.scrollIntoView({behavior:"smooth",block:"center"});
   }
 
+  // [25/07] Ao abrir o painel inline num item, rola a lista pra deixar o
+  // item tocado perto do topo -- assim o painel (que cresce logo abaixo)
+  // fica visivel dentro do scroll, sem precisar de modal sobreposto.
+  useEffect(()=>{
+    if(itemAbertoRow==null) return;
+    const idx=slots.findIndex(s=>s.tipo==="item"&&s.item.item&&s.item.item.row===itemAbertoRow);
+    if(idx<0) return;
+    const alvo=nodeRefs.current[idx];
+    if(alvo) alvo.scrollIntoView({behavior:"smooth",block:"start"});
+  },[itemAbertoRow]);
+
   const alturaContainer=520;
 
   return <div>
@@ -4417,8 +4440,11 @@ function Timeline({data,onUpdate,onIrPara}){
         {slots.map((s,i)=>{
           const isHoje=s.tipo==="saldo"&&s.linha.hoje;
           const ehDCP=s.tipo==="item"&&s.item.item&&s.item.item.categoria==="DCP";
-          return <div key={i} ref={n=>nodeRefs.current[i]=n}
-            style={{scrollSnapAlign:"center",transition:"transform .06s linear",padding:"5px 13px"}}>
+          // [25/07] Painel aberto: comparamos por ROW (nao por referencia de
+          // objeto), igual o "conf===item.row" do Fluxo/Historico.
+          const painelAberto=s.tipo==="item"&&s.item.item&&s.item.item.row===itemAbertoRow;
+          return <div key={i} ref={n=>nodeRefs.current[i]=n} data-open-panel={painelAberto?"1":undefined}
+            style={{scrollSnapAlign:painelAberto?"start":"center",transition:"transform .06s linear",padding:"5px 13px"}}>
             {s.tipo==="saldo" ? (
               <div data-fade style={{display:"flex",justifyContent:"space-between",alignItems:"center",transition:"opacity .06s linear"}}>
                 <div>
@@ -4429,11 +4455,12 @@ function Timeline({data,onUpdate,onIrPara}){
                 </div>
               </div>
             ) : (
-              <div onClick={()=>setItemAberto(s.item.item)}
+              <>
+              <div onClick={()=>setItemAbertoRow(painelAberto?null:s.item.item.row)}
                 style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",
-                background:ehDCP?C.yellowLight:"transparent",borderRadius:ehDCP?8:0,
-                borderLeft:ehDCP?"3px solid #D97706":"3px solid transparent",
-                borderBottom:ehDCP?"none":"1px solid "+C.border,padding:"4px 7px"}}>
+                background:painelAberto?C.accentLight:(ehDCP?C.yellowLight:"transparent"),borderRadius:(painelAberto||ehDCP)?8:0,
+                borderLeft:painelAberto?"3px solid "+C.accent:(ehDCP?"3px solid #D97706":"3px solid transparent"),
+                borderBottom:(ehDCP&&!painelAberto)?"none":"1px solid "+C.border,padding:"4px 7px"}}>
                 <div data-fade style={{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%",transition:"opacity .06s linear"}}>
                   <div>
                     <div style={{fontWeight:700,fontSize:12}}>{s.item.descricao}</div>
@@ -4442,6 +4469,15 @@ function Timeline({data,onUpdate,onIrPara}){
                   <div style={{fontWeight:800,fontSize:12,color:s.item.valor<0?C.red:C.green}}>{fmt(s.item.valor)}</div>
                 </div>
               </div>
+              {/* [25/07] Painel INLINE, mesmo padrao do Fluxo/Historico --
+                  substitui o modal antigo. Abre logo abaixo do item tocado,
+                  dentro do proprio scroll (ver useEffect de auto-scroll). */}
+              {painelAberto&&<div style={{background:C.surface,borderRadius:10,marginTop:4,
+                border:"1px solid "+C.border,overflow:"hidden"}}>
+                <PainelEdicaoItem key={s.item.item.row} item={s.item.item} data={data} onUpdate={onUpdate}
+                  onClose={()=>setItemAbertoRow(null)} onIrPara={onIrPara}/>
+              </div>}
+              </>
             )}
           </div>;
         })}
@@ -4455,19 +4491,6 @@ function Timeline({data,onUpdate,onIrPara}){
         📍 Hoje
       </button>
     </div>
-    {/* [24/07] Modal de edicao -- mesmo PainelEdicaoItem do Fluxo/Historico,
-        sobreposto por cima da lista. Fecha ao tocar fora ou no X. */}
-    {itemAberto&&<div onClick={()=>setItemAberto(null)}
-      style={{position:"fixed",inset:0,background:"rgba(0,0,0,.4)",zIndex:50,display:"flex",alignItems:"flex-end"}}>
-      <div onClick={e=>e.stopPropagation()}
-        style={{width:"100%",maxHeight:"85vh",overflowY:"auto",background:C.surface,borderRadius:"16px 16px 0 0",boxShadow:"0 -4px 20px rgba(0,0,0,.2)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderBottom:"1px solid "+C.border}}>
-          <span style={{fontSize:13,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",flex:1}}>{nomeExibicao(itemAberto,data)}</span>
-          <button onClick={()=>setItemAberto(null)} style={{background:"none",border:"none",fontSize:18,color:C.textMuted,cursor:"pointer",padding:"0 4px"}}>✕</button>
-        </div>
-        <PainelEdicaoItem item={itemAberto} data={data} onUpdate={onUpdate} onClose={()=>setItemAberto(null)} onIrPara={onIrPara}/>
-      </div>
-    </div>}
   </div>;
 }
 
@@ -7126,7 +7149,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260724.2030 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260725.0030 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7208,7 +7231,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260724.2030
+      // HTML v3.20260725.0030
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
