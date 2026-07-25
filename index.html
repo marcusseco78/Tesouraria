@@ -3144,12 +3144,12 @@ function CardCofre({cofre,onUpdate,data}){
       <input type="date" value={dataLanc} onChange={e=>setDataLanc(e.target.value)}
         style={{padding:"7px 6px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
       <input type="text" inputMode="numeric" value={valor} onChange={e=>setValor(formatarMoedaInput(e.target.value))}
-        placeholder="0,00" style={{flex:1,padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
-      <button onClick={lancar} disabled={load}
-        style={{background:C.text,color:"#fff",border:"none",borderRadius:6,padding:"0 14px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
-        {load?"…":"Confirmar"}
-      </button>
+        placeholder="0,00" style={{flex:1,minWidth:0,padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
     </div>}
+    {!ehRV&&<button onClick={lancar} disabled={load}
+      style={{width:"100%",marginTop:6,background:C.text,color:"#fff",border:"none",borderRadius:6,padding:"9px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+      {load?"…":"Confirmar"}
+    </button>}
     {!ehRV&&dataLanc>hoje()&&<div style={{fontSize:9,color:C.teal,fontWeight:700,marginTop:2}}>📅 Agendado pra {fmtD(dataLanc)} — só executa nessa data (aparece na Previsão até lá).</div>}
 
     {/* [25/07] Secao "pesquisa e compra de novos ativos" -- separada da
@@ -4828,11 +4828,16 @@ function Timeline({data,onUpdate,onIrPara}){
       {!itemAbertoRow&&<div style={{position:"absolute",top:"50%",left:0,right:0,height:40,transform:"translateY(-50%)",
         borderTop:"2px solid "+C.accent,borderBottom:"2px solid "+C.accent,background:C.accentLight,
         opacity:0.35,pointerEvents:"none"}}/>}
-      <button onClick={voltarHoje} style={{position:"absolute",bottom:10,right:10,background:C.accent,color:"#fff",
+      <button onClick={voltarHoje} style={{position:"absolute",bottom:10,left:10,background:C.accent,color:"#fff",
         border:"none",borderRadius:20,padding:"8px 14px",fontSize:12,fontWeight:700,cursor:"pointer",boxShadow:"0 2px 6px rgba(0,0,0,.2)"}}>
         📍 Hoje
       </button>
     </div>
+    {/* [25/07] Faltava aqui -- Fluxo e Historico ja tinham o "+" flutuante,
+        Timeline (aba padrao agora) tinha ficado de fora. Mesmo botao, mesma
+        posicao (bottom:24,right:20) -- por isso o Hoje foi pro lado
+        esquerdo, pra nao disputar o mesmo canto. */}
+    <BotaoLancar data={data} onUpdate={onUpdate} onIrPara={onIrPara}/>
   </div>;
 }
 
@@ -7491,7 +7496,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260725.0900 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260725.0945 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7573,7 +7578,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260725.0900
+      // HTML v3.20260725.0945
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
