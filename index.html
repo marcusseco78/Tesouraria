@@ -2809,11 +2809,10 @@ function CardCofre({cofre,onUpdate,data}){
   const [ajustando,setAjustando]=useState(false);
   const [saldoReal,setSaldoReal]=useState("");
   const [loadAjuste,setLoadAjuste]=useState(false);
-  // [25/07] Renda Variavel: atualizar carteira -- cotacao manual por papel
-  // (default vazio, so envia se preenchido) + opcao de completar via
-  // GOOGLEFINANCE os que ficarem em branco.
-  const [atualizandoCarteira,setAtualizandoCarteira]=useState(false);
-  const [cotacoesForm,setCotacoesForm]=useState({});
+  // [25/07, simplificado no mesmo dia] Renda Variavel: atualizar carteira
+  // e um unico toque -- busca a cotacao de TODOS os papeis via
+  // GOOGLEFINANCE de uma vez (a caixa so liga/desliga a busca automatica).
+  // Sem painel intermediario, sem "Confirmar" separado.
   const [usarGF,setUsarGF]=useState(true);
   const [loadCarteira,setLoadCarteira]=useState(false);
   const [resultadoCarteira,setResultadoCarteira]=useState(null);
@@ -2870,12 +2869,9 @@ function CardCofre({cofre,onUpdate,data}){
   async function atualizarCarteira(){
     setLoadCarteira(true);
     try{
-      const cotacoes=Object.keys(cotacoesForm).filter(t=>numBR(cotacoesForm[t])>0)
-        .map(t=>({ticker:t,cotacao:numBR(cotacoesForm[t])}));
-      const r=await api({action:"atualizarCarteiraCofre",cofreId:cofre.id,cotacoes,usar_google_finance:usarGF});
+      const r=await api({action:"atualizarCarteiraCofre",cofreId:cofre.id,cotacoes:[],usar_google_finance:usarGF});
       setResultadoCarteira(r._resultadoCarteiraCofre||null);
       onUpdate&&onUpdate(r);
-      setCotacoesForm({});
     }catch(e){alert(e.message);}
     setLoadCarteira(false);
   }
@@ -2990,36 +2986,21 @@ function CardCofre({cofre,onUpdate,data}){
         </div>}
     </>}
 
-    {/* [25/07] Renda Variavel: sem formula nenhuma -- so o botao de
-        atualizar carteira, um campo de cotacao manual por papel (deixa em
-        branco pra tentar buscar via GOOGLEFINANCE, se marcado). */}
-    {ehRV&&(cofre.papeis||[]).length>0&&(!atualizandoCarteira
-      ?<button onClick={()=>setAtualizandoCarteira(true)}
-        style={{width:"100%",marginTop:6,background:"none",border:"1px solid "+C.teal,color:C.teal,borderRadius:6,padding:"5px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-        🔄 Atualizar carteira
+    {/* [25/07] Simplificado a pedido do Marcus: sem painel intermediario
+        pra preencher cotacao manual uma por uma -- a caixa fica direto
+        acima do botao, e um toque ja busca e atualiza TODOS os papeis da
+        carteira via GOOGLEFINANCE de uma vez, sem passo de "Confirmar"
+        separado. */}
+    {ehRV&&(cofre.papeis||[]).length>0&&<>
+      <label style={{display:"flex",alignItems:"center",gap:6,fontSize:10,color:C.textMuted,marginTop:6,cursor:"pointer"}}>
+        <input type="checkbox" checked={usarGF} onChange={e=>setUsarGF(e.target.checked)}/>
+        Buscar automático (GOOGLEFINANCE) a cotação de cada papel
+      </label>
+      <button onClick={atualizarCarteira} disabled={loadCarteira}
+        style={{width:"100%",marginTop:4,background:"none",border:"1px solid "+C.teal,color:C.teal,borderRadius:6,padding:"5px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+        {loadCarteira?"Atualizando…":"🔄 Atualizar carteira"}
       </button>
-      :<div style={{background:C.surface,borderRadius:8,padding:10,marginTop:6}}>
-        {cofre.papeis.map(p=><div key={p.ticker} style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}>
-          <span style={{fontSize:11,fontWeight:700,width:56,flexShrink:0}}>{p.ticker}</span>
-          <input type="text" inputMode="numeric" placeholder={p.cotacaoAtual?fmt(p.cotacaoAtual):"cotação"}
-            value={cotacoesForm[p.ticker]||""} onChange={e=>setCotacoesForm(f=>({...f,[p.ticker]:formatarMoedaInput(e.target.value)}))}
-            style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
-        </div>)}
-        <label style={{display:"flex",alignItems:"center",gap:6,fontSize:10,color:C.textMuted,marginTop:2,marginBottom:8}}>
-          <input type="checkbox" checked={usarGF} onChange={e=>setUsarGF(e.target.checked)}/>
-          Buscar automático (GOOGLEFINANCE) pros papéis que eu deixar em branco
-        </label>
-        <div style={{display:"flex",gap:6}}>
-          <button onClick={atualizarCarteira} disabled={loadCarteira}
-            style={{flex:1,background:C.teal,color:"#fff",border:"none",borderRadius:6,padding:"7px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
-            {loadCarteira?"Atualizando…":"Confirmar"}
-          </button>
-          <button onClick={()=>{setAtualizandoCarteira(false);setCotacoesForm({});}}
-            style={{background:"none",color:C.textMuted,border:"1px solid "+C.border,borderRadius:6,padding:"0 10px",fontSize:12,cursor:"pointer"}}>
-            X
-          </button>
-        </div>
-      </div>)}
+    </>}
     {resultadoCarteira&&<div style={{fontSize:10,marginTop:4}}>
       {resultadoCarteira.resultados.length===0&&<span style={{color:C.textMuted,fontStyle:"italic"}}>Nenhum papel em carteira.</span>}
       {resultadoCarteira.resultados.map(r=><div key={r.ticker} style={{color:r.atualizado?C.textSub:C.textMuted,fontStyle:r.atualizado?"normal":"italic"}}>
@@ -7365,7 +7346,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260725.0415 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260725.0500 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7447,7 +7428,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260725.0415
+      // HTML v3.20260725.0500
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
