@@ -2784,9 +2784,24 @@ function EnvelopesCustom({data,onUpdate}){
 // Envelope (isso é a etapa 2) nem correção CDI (etapa 3) -- o campo % CDI já
 // fica salvo no cadastro pra não precisar migrar depois, mas não faz nada
 // ainda.
+// [25/07] Rotulo curto do tipo de investimento, usado no cabecalho do card
+// e no historico -- centralizado aqui pra nao duplicar a logica em 2 lugares.
+function _labelTipoInvestimento(cofre){
+  const t=cofre.tipoInvestimento||"cdi";
+  if(t==="prefixado") return "pré-fixado "+(cofre.taxaAnual||0)+"% a.a.";
+  if(t==="ipca") return "IPCA+"+(cofre.spreadAnual||0)+"% a.a.";
+  if(t==="renda_variavel") return "renda variável (carteira de ações)";
+  return "pós-fixado "+(cofre.percentualCdi||100)+"% CDI";
+}
+
 function CardCofre({cofre,onUpdate,data}){
+  const ehRV=cofre.tipoInvestimento==="renda_variavel";
   const [tipoAcao,setTipoAcao]=useState("aporte");
   const [valor,setValor]=useState("");
+  const [papelInput,setPapelInput]=useState("");
+  const [cotacaoInput,setCotacaoInput]=useState("");
+  const [qtdInput,setQtdInput]=useState("");
+  const [qtdEditadaAMao,setQtdEditadaAMao]=useState(false);
   const [load,setLoad]=useState(false);
   const [loadApagar,setLoadApagar]=useState(false);
   const [loadRendimento,setLoadRendimento]=useState(false);
@@ -2794,6 +2809,23 @@ function CardCofre({cofre,onUpdate,data}){
   const [ajustando,setAjustando]=useState(false);
   const [saldoReal,setSaldoReal]=useState("");
   const [loadAjuste,setLoadAjuste]=useState(false);
+  // [25/07] Renda Variavel: atualizar carteira -- cotacao manual por papel
+  // (default vazio, so envia se preenchido) + opcao de completar via
+  // GOOGLEFINANCE os que ficarem em branco.
+  const [atualizandoCarteira,setAtualizandoCarteira]=useState(false);
+  const [cotacoesForm,setCotacoesForm]=useState({});
+  const [usarGF,setUsarGF]=useState(true);
+  const [loadCarteira,setLoadCarteira]=useState(false);
+  const [resultadoCarteira,setResultadoCarteira]=useState(null);
+
+  // Quantidade calculada de valor/cotacao, mas editavel (pedido do Marcus
+  // 25/07) -- so recalcula sozinha enquanto o campo nao foi editado a mao;
+  // depois que a pessoa mexe direto na quantidade, para de sobrescrever.
+  useEffect(()=>{
+    if(!ehRV||qtdEditadaAMao) return;
+    const v=numBR(valor), c=numBR(cotacaoInput);
+    if(v>0&&c>0) setQtdInput((v/c).toFixed(4).replace(/\.?0+$/,""));
+  },[valor,cotacaoInput]);
 
   async function ajustar(){
     const v=numBR(saldoReal);
@@ -2819,14 +2851,40 @@ function CardCofre({cofre,onUpdate,data}){
     setLoadRendimento(false);
   }
 
+  async function atualizarCarteira(){
+    setLoadCarteira(true);
+    try{
+      const cotacoes=Object.keys(cotacoesForm).filter(t=>numBR(cotacoesForm[t])>0)
+        .map(t=>({ticker:t,cotacao:numBR(cotacoesForm[t])}));
+      const r=await api({action:"atualizarCarteiraCofre",cofreId:cofre.id,cotacoes,usar_google_finance:usarGF});
+      setResultadoCarteira(r._resultadoCarteiraCofre||null);
+      onUpdate&&onUpdate(r);
+      setCotacoesForm({});
+    }catch(e){alert(e.message);}
+    setLoadCarteira(false);
+  }
+
   async function lancar(){
-    const v=numBR(valor);
-    if(!v||v<=0){ alert("Informe um valor válido."); return; }
     setLoad(true);
     try{
-      const r=await api({action:"lancarCofre",cofreId:cofre.id,tipoCofre:tipoAcao,valor:v});
+      const params={action:"lancarCofre",cofreId:cofre.id,tipoCofre:tipoAcao};
+      if(ehRV){
+        const papel=papelInput.trim().toUpperCase();
+        const cotacao=numBR(cotacaoInput);
+        const quantidade=numBR(qtdInput);
+        if(!papel){ alert("Informe o papel (ticker), ex: BBAS3."); setLoad(false); return; }
+        if(!cotacao){ alert("Informe a cotação."); setLoad(false); return; }
+        if(!quantidade){ alert("Informe a quantidade de ações."); setLoad(false); return; }
+        params.papel=papel; params.cotacao=cotacao; params.quantidade=quantidade;
+        const v=numBR(valor); if(v>0) params.valor=v;
+      } else {
+        const v=numBR(valor);
+        if(!v||v<=0){ alert("Informe um valor válido."); setLoad(false); return; }
+        params.valor=v;
+      }
+      const r=await api(params);
       onUpdate&&onUpdate(r);
-      setValor("");
+      setValor("");setPapelInput("");setCotacaoInput("");setQtdInput("");setQtdEditadaAMao(false);
     }catch(e){alert(e.message);}
     setLoad(false);
   }
@@ -2846,11 +2904,15 @@ function CardCofre({cofre,onUpdate,data}){
   const eventosFluxoCofre=(data.fluxo||[]).map(r=>{
     let obs={};try{obs=JSON.parse(r.obs||"{}");}catch(e){}
     if(obs.cofre!==cofre.id) return null;
-    return {data:r.data,tipo:obs.tipoCofre==="resgate"?"Resgate":"Aporte",delta:-Number(r.valor||0),desc:r.descricao,status:r.status};
+    return {data:r.data,tipo:(obs.tipoCofre==="resgate"?"Resgate":"Aporte")+(obs.papel?" "+obs.papel:""),delta:-Number(r.valor||0),desc:r.descricao,status:r.status};
   }).filter(Boolean);
-  const eventosLogCofre=(cofre.log||[]).map(l=>({
-    data:l.data,tipo:l.tipoEvento==="CORRECAO_CDI"?"Correção CDI":l.tipoEvento==="AJUSTE_MANUAL"?"Ajuste manual":l.tipoEvento,
-    delta:l.valor,desc:l.descricao,status:"EXECUTADO"
+  // [25/07] Novos tipoEvento do log (Pre-fixada/IPCA/cotacao de papel) --
+  // rotulo amigavel pro historico, mesmo padrao ja usado pro CDI/Ajuste.
+  const _rotuloEvento={CORRECAO_CDI:"Correção CDI",CORRECAO_PREFIXADO:"Correção pré-fixada",
+    CORRECAO_IPCA:"Correção IPCA+",AJUSTE_MANUAL:"Ajuste manual",COTACAO_ATUALIZADA:"Cotação atualizada"};
+  const eventosLogCofre=(cofre.log||[]).filter(l=>l.tipoEvento!=="COTACAO_ATUALIZADA").map(l=>({
+    data:l.data,tipo:_rotuloEvento[l.tipoEvento]||l.tipoEvento,
+    delta:l.valor||0,desc:l.descricao,status:"EXECUTADO"
   }));
   const passadoCofre=[...eventosFluxoCofre.filter(e=>e.status==="EXECUTADO"),...eventosLogCofre]
     .sort((a,b)=>String(a.data).localeCompare(String(b.data)));
@@ -2864,41 +2926,91 @@ function CardCofre({cofre,onUpdate,data}){
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
       <div>
         <div style={{fontSize:13,fontWeight:700,color:C.text}}>🏦 {cofre.nome}</div>
-        <div style={{fontSize:10,color:C.textMuted}}>correção {cofre.percentualCdi}% CDI · rendimento acumulado: {fmt(cofre.rendimentoAcumulado||0)}</div>
+        <div style={{fontSize:10,color:C.textMuted}}>{_labelTipoInvestimento(cofre)}{!ehRV&&<> · rendimento acumulado: {fmt(cofre.rendimentoAcumulado||0)}</>}</div>
       </div>
       <div style={{fontSize:16,fontWeight:800,color:C.teal}}>{fmt(cofre.saldo)}</div>
     </div>
-    <button onClick={atualizarRendimento} disabled={loadRendimento}
-      style={{width:"100%",marginTop:6,background:"none",border:"1px solid "+C.teal,color:C.teal,borderRadius:6,padding:"5px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-      {loadRendimento?"Buscando CDI no Banco Central…":"🔄 Atualizar rendimento agora"}
-    </button>
-    {resultadoRendimento&&<div style={{fontSize:10,color:resultadoRendimento.atualizado?C.textSub:C.textMuted,marginTop:4,fontStyle:resultadoRendimento.atualizado?"normal":"italic"}}>
-      {resultadoRendimento.atualizado
-        ?`${resultadoRendimento.diasUteis} dia(s) útil(eis): +${fmt(resultadoRendimento.jurosAcumulado)} de rendimento`
-        :resultadoRendimento.motivo}
-    </div>}
-    <div style={{fontSize:9,color:C.textMuted,marginTop:4,fontStyle:"italic"}}>Também roda sozinho, automaticamente, na virada de ciclo (dia 16).</div>
 
-    {!ajustando
-      ?<button onClick={()=>{setSaldoReal(formatarValorInicial(cofre.saldo));setAjustando(true);}}
-        style={{width:"100%",marginTop:6,background:"none",border:"none",color:C.textMuted,fontSize:10,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>
-        ✏️ Corrigir com o saldo real do banco
+    {/* [25/07] Renda Variavel mostra a posicao por papel -- um numero so de
+        saldo esconderia informacao real (quantas acoes, a que cotacao). */}
+    {ehRV&&(cofre.papeis||[]).length>0&&<div style={{background:C.surface,borderRadius:8,padding:"6px 9px",marginTop:6}}>
+      {cofre.papeis.map(p=><div key={p.ticker} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"2px 0"}}>
+        <span style={{color:C.text,fontWeight:600}}>{p.ticker} <span style={{color:C.textMuted,fontWeight:400}}>· {p.quantidade} ações {p.cotacaoAtual?("× "+fmt(p.cotacaoAtual)):"(sem cotação ainda)"}</span></span>
+        <span style={{fontWeight:700,color:C.teal}}>{fmt(p.valor)}</span>
+      </div>)}
+    </div>}
+
+    {!ehRV&&<>
+      <button onClick={atualizarRendimento} disabled={loadRendimento}
+        style={{width:"100%",marginTop:6,background:"none",border:"1px solid "+C.teal,color:C.teal,borderRadius:6,padding:"5px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+        {loadRendimento?"Buscando no Banco Central…":"🔄 Atualizar rendimento agora"}
+      </button>
+      {resultadoRendimento&&<div style={{fontSize:10,color:resultadoRendimento.atualizado?C.textSub:C.textMuted,marginTop:4,fontStyle:resultadoRendimento.atualizado?"normal":"italic"}}>
+        {resultadoRendimento.atualizado
+          ?(resultadoRendimento.diasUteis!=null?`${resultadoRendimento.diasUteis} dia(s) útil(eis)`:resultadoRendimento.mesesFechados!=null?`${resultadoRendimento.mesesFechados} mês(es) fechado(s)`:`${resultadoRendimento.dias} dia(s)`)+`: +${fmt(resultadoRendimento.jurosAcumulado)} de rendimento`
+          :resultadoRendimento.motivo}
+      </div>}
+      <div style={{fontSize:9,color:C.textMuted,marginTop:4,fontStyle:"italic"}}>Também roda sozinho, automaticamente, na virada de ciclo (dia 16).</div>
+
+      {!ajustando
+        ?<button onClick={()=>{setSaldoReal(formatarValorInicial(cofre.saldo));setAjustando(true);}}
+          style={{width:"100%",marginTop:6,background:"none",border:"none",color:C.textMuted,fontSize:10,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>
+          ✏️ Corrigir com o saldo real do banco
+        </button>
+        :<div style={{background:C.surface,borderRadius:8,padding:10,marginTop:6}}>
+          <div style={{fontSize:9,color:C.textMuted,marginBottom:6}}>A correção automática é sempre uma estimativa. Cola aqui o saldo que você vê de verdade no banco — a correção continua rodando a partir desse valor.</div>
+          <div style={{display:"flex",gap:6}}>
+            <input type="text" inputMode="numeric" value={saldoReal} onChange={e=>setSaldoReal(formatarMoedaInput(e.target.value))}
+              style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
+            <button onClick={ajustar} disabled={loadAjuste}
+              style={{background:C.teal,color:"#fff",border:"none",borderRadius:6,padding:"0 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+              {loadAjuste?"…":"Corrigir"}
+            </button>
+            <button onClick={()=>setAjustando(false)}
+              style={{background:"none",color:C.textMuted,border:"1px solid "+C.border,borderRadius:6,padding:"0 10px",fontSize:12,cursor:"pointer"}}>
+              X
+            </button>
+          </div>
+        </div>}
+    </>}
+
+    {/* [25/07] Renda Variavel: sem formula nenhuma -- so o botao de
+        atualizar carteira, um campo de cotacao manual por papel (deixa em
+        branco pra tentar buscar via GOOGLEFINANCE, se marcado). */}
+    {ehRV&&(cofre.papeis||[]).length>0&&(!atualizandoCarteira
+      ?<button onClick={()=>setAtualizandoCarteira(true)}
+        style={{width:"100%",marginTop:6,background:"none",border:"1px solid "+C.teal,color:C.teal,borderRadius:6,padding:"5px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+        🔄 Atualizar carteira
       </button>
       :<div style={{background:C.surface,borderRadius:8,padding:10,marginTop:6}}>
-        <div style={{fontSize:9,color:C.textMuted,marginBottom:6}}>Estimativa por CDI pode divergir do real (não tem extrato de caixinha exportável, e não desconta IR). Cola aqui o saldo que você vê de verdade no banco — a correção automática continua rodando a partir desse valor.</div>
+        {cofre.papeis.map(p=><div key={p.ticker} style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}>
+          <span style={{fontSize:11,fontWeight:700,width:56,flexShrink:0}}>{p.ticker}</span>
+          <input type="text" inputMode="numeric" placeholder={p.cotacaoAtual?fmt(p.cotacaoAtual):"cotação"}
+            value={cotacoesForm[p.ticker]||""} onChange={e=>setCotacoesForm(f=>({...f,[p.ticker]:formatarMoedaInput(e.target.value)}))}
+            style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
+        </div>)}
+        <label style={{display:"flex",alignItems:"center",gap:6,fontSize:10,color:C.textMuted,marginTop:2,marginBottom:8}}>
+          <input type="checkbox" checked={usarGF} onChange={e=>setUsarGF(e.target.checked)}/>
+          Buscar automático (GOOGLEFINANCE) pros papéis que eu deixar em branco
+        </label>
         <div style={{display:"flex",gap:6}}>
-          <input type="text" inputMode="numeric" value={saldoReal} onChange={e=>setSaldoReal(formatarMoedaInput(e.target.value))}
-            style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
-          <button onClick={ajustar} disabled={loadAjuste}
-            style={{background:C.teal,color:"#fff",border:"none",borderRadius:6,padding:"0 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
-            {loadAjuste?"…":"Corrigir"}
+          <button onClick={atualizarCarteira} disabled={loadCarteira}
+            style={{flex:1,background:C.teal,color:"#fff",border:"none",borderRadius:6,padding:"7px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+            {loadCarteira?"Atualizando…":"Confirmar"}
           </button>
-          <button onClick={()=>setAjustando(false)}
+          <button onClick={()=>{setAtualizandoCarteira(false);setCotacoesForm({});}}
             style={{background:"none",color:C.textMuted,border:"1px solid "+C.border,borderRadius:6,padding:"0 10px",fontSize:12,cursor:"pointer"}}>
             X
           </button>
         </div>
-      </div>}
+      </div>)}
+    {resultadoCarteira&&<div style={{fontSize:10,marginTop:4}}>
+      {resultadoCarteira.resultados.length===0&&<span style={{color:C.textMuted,fontStyle:"italic"}}>Nenhum papel em carteira.</span>}
+      {resultadoCarteira.resultados.map(r=><div key={r.ticker} style={{color:r.atualizado?C.textSub:C.textMuted,fontStyle:r.atualizado?"normal":"italic"}}>
+        {r.ticker}: {r.atualizado?`${fmt(r.cotacaoAnterior)} → ${fmt(r.cotacaoNova)}`:r.motivo}
+      </div>)}
+    </div>}
+
     <div style={{display:"flex",gap:6,marginTop:8}}>
       <button onClick={()=>setTipoAcao("aporte")}
         style={{flex:1,padding:"6px",borderRadius:6,border:"1px solid "+(tipoAcao==="aporte"?C.teal:C.border),
@@ -2911,16 +3023,26 @@ function CardCofre({cofre,onUpdate,data}){
         ⬆ Resgatar
       </button>
     </div>
+
+    {ehRV&&<div style={{display:"flex",gap:6,marginTop:6}}>
+      <input value={papelInput} onChange={e=>setPapelInput(e.target.value.toUpperCase())} placeholder="Papel (ex: BBAS3)"
+        style={{flex:1,padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",textTransform:"uppercase"}}/>
+      <input type="text" inputMode="numeric" value={cotacaoInput} onChange={e=>setCotacaoInput(formatarMoedaInput(e.target.value))} placeholder="Cotação"
+        style={{width:90,padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
+    </div>}
     <div style={{display:"flex",gap:6,marginTop:6}}>
       <input type="text" inputMode="numeric" value={valor} onChange={e=>setValor(formatarMoedaInput(e.target.value))}
-        placeholder="0,00" style={{flex:1,padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
+        placeholder={ehRV?"Valor total (opcional)":"0,00"} style={{flex:1,padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
+      {ehRV&&<input type="text" inputMode="numeric" value={qtdInput}
+        onChange={e=>{setQtdEditadaAMao(true);setQtdInput(e.target.value.replace(",","."));}}
+        placeholder="Qtd ações" style={{width:90,padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>}
       <button onClick={lancar} disabled={load}
         style={{background:C.text,color:"#fff",border:"none",borderRadius:6,padding:"0 14px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
         {load?"…":"Confirmar"}
       </button>
     </div>
     <div style={{fontSize:10,color:C.textMuted,marginTop:4,fontStyle:"italic"}}>
-      {tipoAcao==="aporte"?"Sai do saldo da conta, fica guardado aqui.":"Volta pro saldo da conta, livre pra qualquer uso."}
+      {ehRV?"Quantidade calculada de valor÷cotação, mas editável.":tipoAcao==="aporte"?"Sai do saldo da conta, fica guardado aqui.":"Volta pro saldo da conta, livre pra qualquer uso."}
     </div>
     <button onClick={apagar} disabled={loadApagar}
       style={{width:"100%",marginTop:8,padding:"5px",borderRadius:6,background:"transparent",color:C.red,fontSize:10,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
@@ -2934,16 +3056,23 @@ function Cofres({data,onUpdate}){
   const cofres=data.cofres||[];
   const [showForm,setShowForm]=useState(false);
   const [nome,setNome]=useState("");
+  const [tipoInv,setTipoInv]=useState("cdi");
   const [percCdi,setPercCdi]=useState("100");
+  const [taxaAnual,setTaxaAnual]=useState("10");
+  const [spreadAnual,setSpreadAnual]=useState("6");
   const [load,setLoad]=useState(false);
 
   async function criar(){
     if(!nome.trim()){ alert("Informe o nome do cofre."); return; }
     setLoad(true);
     try{
-      const r=await api({action:"salvarCofre",nome,percentual_cdi:parseFloat(percCdi)||100});
+      const params={action:"salvarCofre",nome,tipo_investimento:tipoInv};
+      if(tipoInv==="cdi") params.percentual_cdi=parseFloat(percCdi)||100;
+      else if(tipoInv==="prefixado") params.taxa_anual=parseFloat(taxaAnual)||0;
+      else if(tipoInv==="ipca") params.spread_anual=parseFloat(spreadAnual)||0;
+      const r=await api(params);
       onUpdate&&onUpdate(r);
-      setNome("");setPercCdi("100");setShowForm(false);
+      setNome("");setPercCdi("100");setTaxaAnual("10");setSpreadAnual("6");setTipoInv("cdi");setShowForm(false);
     }catch(e){alert(e.message);}
     setLoad(false);
   }
@@ -2965,11 +3094,35 @@ function Cofres({data,onUpdate}){
         <input value={nome} onChange={e=>setNome(e.target.value)} placeholder="Ex: Viagem final de ano"
           style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
       </div>
-      <div style={{marginBottom:10}}>
+      <div style={{marginBottom:8}}>
+        <label style={{fontSize:10,fontWeight:700,color:C.textSub,textTransform:"uppercase"}}>Tipo de investimento</label>
+        <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:4}}>
+          {[["cdi","Pós-fixado (CDI)"],["prefixado","Pré-fixada"],["ipca","IPCA+"],["renda_variavel","Renda Variável"]].map(([id,l])=>
+            <button key={id} onClick={()=>setTipoInv(id)} type="button"
+              style={{padding:"6px 9px",borderRadius:7,border:"1px solid "+(tipoInv===id?C.teal:C.border),
+                background:tipoInv===id?C.tealLight:C.surface,color:tipoInv===id?C.teal:C.textSub,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>)}
+        </div>
+      </div>
+      {tipoInv==="cdi"&&<div style={{marginBottom:10}}>
         <label style={{fontSize:10,fontWeight:700,color:C.textSub,textTransform:"uppercase"}}>% do CDI (correção automática na virada de ciclo)</label>
         <input type="number" step="1" value={percCdi} onChange={e=>setPercCdi(e.target.value)}
           style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
-      </div>
+      </div>}
+      {tipoInv==="prefixado"&&<div style={{marginBottom:10}}>
+        <label style={{fontSize:10,fontWeight:700,color:C.textSub,textTransform:"uppercase"}}>Taxa fixa % ao ano</label>
+        <input type="number" step="0.1" value={taxaAnual} onChange={e=>setTaxaAnual(e.target.value)}
+          style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
+        <div style={{fontSize:9,color:C.textMuted,marginTop:3}}>Calculado localmente sobre dias corridos, sem depender do Banco Central.</div>
+      </div>}
+      {tipoInv==="ipca"&&<div style={{marginBottom:10}}>
+        <label style={{fontSize:10,fontWeight:700,color:C.textSub,textTransform:"uppercase"}}>IPCA + quantos % ao ano</label>
+        <input type="number" step="0.1" value={spreadAnual} onChange={e=>setSpreadAnual(e.target.value)}
+          style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
+        <div style={{fontSize:9,color:C.textMuted,marginTop:3}}>O IPCA fechado sai com atraso (~dia 10 do mês seguinte) — a correção fica sempre um pouco atrasada, é esperado.</div>
+      </div>}
+      {tipoInv==="renda_variavel"&&<div style={{marginBottom:10,fontSize:10,color:C.textMuted,background:C.borderLight,borderRadius:6,padding:8}}>
+        Sem taxa fixa aqui — cada aporte/resgate registra o papel (ticker), cotação e quantidade de ações. O saldo é a soma de cada papel × última cotação atualizada.
+      </div>}
       <button onClick={criar} disabled={load||!nome.trim()}
         style={{width:"100%",padding:"9px",borderRadius:8,background:C.teal,color:"#fff",fontSize:13,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
         {load?"Criando...":"Criar cofre"}
@@ -7154,7 +7307,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260725.0045 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260725.0200 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7236,7 +7389,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260725.0045
+      // HTML v3.20260725.0200
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
