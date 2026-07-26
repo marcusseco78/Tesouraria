@@ -3610,6 +3610,30 @@ function ConciliarExtratoTab({data,onUpdate}){
     setResultado(res=>({...res,novos:res.novos.filter(x=>chaveNovo(x)!==chaveNovo(n))}));
   }
 
+  // [NOVO 25/07] Candidatos de vinculo: dentre o que ja esta lancado no
+  // Fluxo mas o extrato ainda nao reconheceu ("aguardando", ja calculado
+  // pelo mesmo conciliarExtrato), acha quem tem valor parecido com esse
+  // "novo" nao reconhecido -- so EXECUTADO entra aqui (PROGRAMADO segue o
+  // caminho normal de "Dar baixa", nao faz sentido so colar alias nele).
+  function candidatosVinculo(n){
+    const exec=(resultado.aguardando||[]).filter(a=>a.status==="EXECUTADO");
+    const exatos=exec.filter(a=>Math.abs(Math.abs(a.valor)-Math.abs(n.valor))<0.01&&Math.sign(a.valor)===Math.sign(n.valor));
+    const pool=exatos.length?exatos:exec.filter(a=>Math.sign(a.valor)===Math.sign(n.valor)&&Math.abs(Math.abs(a.valor)-Math.abs(n.valor))<=Math.max(2,Math.abs(n.valor)*0.02));
+    return pool.sort((a,b)=>Math.abs(new Date(a.data)-new Date(n.data))-Math.abs(new Date(b.data)-new Date(n.data))).slice(0,5);
+  }
+
+  async function vincularExistente(n,candidato){
+    setLoad(true);
+    try{
+      const r=await api({action:"vincularAliasConciliacao",row:candidato.row,descricaoExtrato:n.descricao,identificador:n.identificador||null});
+      onUpdate(r);
+      setResultado(res=>({...res,
+        novos:res.novos.filter(x=>chaveNovo(x)!==chaveNovo(n)),
+        aguardando:res.aguardando.filter(a=>a.row!==candidato.row)}));
+    }catch(e){ alert(e.message); }
+    setLoad(false);
+  }
+
   return <div style={{padding:"12px 14px"}}>
     <div style={{fontSize:12,color:C.textMuted,marginBottom:12,lineHeight:1.5}}>
       Sobe o extrato da conta corrente (.csv ou .ofx do Nubank) — o app compara com o que já está no Fluxo e separa em três grupos: contas programadas que já debitaram de verdade (pra dar baixa), gastos novos que ainda não foram lançados, e lançamentos que ainda não apareceram no extrato.
@@ -3721,6 +3745,22 @@ function ConciliarExtratoTab({data,onUpdate}){
             </div>
             <div style={{fontSize:11,color:C.textSub,marginBottom:8,wordBreak:"break-word"}}>{n.descricao}</div>
             {s.motivo&&<div style={{fontSize:10,color:"#92400E",background:"#FEF3C7",borderRadius:6,padding:"6px 8px",marginBottom:8}}>ℹ️ {s.motivo} — desmarcado por padrão, mas você pode lançar mesmo assim.</div>}
+
+            {/* [25/07] "Isso já existe no Histórico, só com outro nome" --
+                candidatos por valor parecido, pra vincular em vez de
+                duplicar. Vincular cria um alias (termo alternativo) e
+                propaga pras próximas ocorrências da mesma recorrência. */}
+            {(()=>{const cands=candidatosVinculo(n);return cands.length>0&&<div style={{background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:6,padding:"8px 9px",marginBottom:8}}>
+              <div style={{fontSize:9,fontWeight:800,color:"#1D4ED8",letterSpacing:".04em",marginBottom:5}}>JÁ EXISTE NO HISTÓRICO, SÓ COM OUTRO NOME?</div>
+              {cands.map(c=><div key={c.row} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:6,padding:"3px 0"}}>
+                <span style={{fontSize:11,color:C.textSub,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{fmtD(c.data)} · {c.desc} · {fmt(c.valor)}</span>
+                <button onClick={()=>vincularExistente(n,c)} disabled={load}
+                  style={{flexShrink:0,background:"#1D4ED8",color:"#fff",border:"none",borderRadius:6,padding:"4px 9px",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                  Vincular
+                </button>
+              </div>)}
+            </div>;})()}
+
             <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
               <input type="checkbox" checked={cfg.incluir} onChange={e=>setCfgNovos({...cfgNovos,[chave]:{...cfg,incluir:e.target.checked}})}/>
               <span style={{fontSize:11,color:C.textSub}}>Lançar este item</span>
@@ -7496,7 +7536,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260725.0945 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260725.1100 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7578,7 +7618,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260725.0945
+      // HTML v3.20260725.1100
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
