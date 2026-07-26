@@ -5644,8 +5644,22 @@ function Recorrencias({data,onUpdate}){
       const novaTolerancia=tolerancia===""?null:parseInt(tolerancia);
       let ultimoResultado=null;
       const destinoAntigo=String(item.destino||"FLUXO").toUpperCase().replace(/[^A-Z0-9_]/g,"");
-      if(destinoEdit!==destinoAntigo)
+      if(destinoEdit!==destinoAntigo){
         ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"DESTINO",valor:destinoEdit,resumo:""});
+        // [NOVO 25/07] Mudar Destino so afeta as PROXIMAS ocorrencias por
+        // padrao (nunca mexe sozinho no que ja foi gerado) -- pergunta se
+        // quer tambem apagar o que ainda esta programado/pendente com o
+        // destino antigo e gerar de novo ja no destino certo. Nunca toca
+        // em executado/pago/conciliado, em nenhum dos dois casos.
+        if(confirm("Destino alterado. Quer também apagar as ocorrências futuras já geradas com o destino antigo (\""+destinoAntigo+"\") e recriar com o novo (\""+destinoEdit+"\")? Executado/pago/conciliado nunca é tocado.")){
+          try{
+            const rReg=await api({action:"regerarOcorrenciasRecorrencia",descricao:item.desc});
+            ultimoResultado=rReg;
+            const res=rReg._resultadoRegerar;
+            if(res) alert("Pronto: apagou "+(res.apagadosFluxo+res.apagadosCartaoPF+res.apagadosCartaoPJ)+" ocorrência(s) antiga(s) e gerou "+(res.geradosFluxo+res.geradosCartaoPF+res.geradosCartaoPJ)+" nova(s) com o destino certo.");
+          }catch(eReg){ alert("Destino salvo, mas a regeração falhou: "+eReg.message); }
+        }
+      }
       if(novoValor!==item.valor)
         ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"VALOR",valor:String(novoValor),resumo:""});
       if(novoDia!==parseInt(item.diaVenc))
@@ -7536,7 +7550,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260725.1100 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260725.1215 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7618,7 +7632,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260725.1100
+      // HTML v3.20260725.1215
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
