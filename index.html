@@ -3536,7 +3536,7 @@ function ConciliarExtratoTab({data,onUpdate}){
       const pre={};
       r.novos.forEach(n=>{
         const s=n.sugestao||{};
-        pre[chaveNovo(n)]={incluir:!s.ignorar, categoria:s.categoria||(n.valor>0?"DEPOSITO_AVULSO":"EXTRAORDINARIA"), descricao:s.descricaoSugerida||n.descricao.slice(0,60).toUpperCase(), pagFatura:null};
+        pre[chaveNovo(n)]={incluir:!s.ignorar, categoria:s.categoria||(n.valor>0?"DEPOSITO_AVULSO":"EXTRAORDINARIA"), descricao:s.descricaoSugerida||n.descricao.slice(0,60).toUpperCase(), apelido:"", pagFatura:null};
       });
       setCfgNovos(pre);
     }catch(e){ alert(e.message); }
@@ -3583,7 +3583,7 @@ function ConciliarExtratoTab({data,onUpdate}){
         if(cfg.envelopeId) obsNovo.envelope=cfg.envelopeId;
         r=await api({action:"lancar",data:n.data,descricao:cfg.descricao.toUpperCase(),
           valor:Number(n.valor),tipo:cfg.categoria,categoria:cfg.categoria,forma:"CONTA",
-          status:"EXECUTADO",obs:JSON.stringify(obsNovo)});
+          status:"EXECUTADO",obs:JSON.stringify(obsNovo),apelido:cfg.apelido||""});
       }
       onUpdate(r);
       setResultado(res=>({...res,novos:res.novos.filter(x=>chaveNovo(x)!==chaveNovo(n))}));
@@ -3611,6 +3611,7 @@ function ConciliarExtratoTab({data,onUpdate}){
           let obsNovo={};
           if(n.identificador) obsNovo.extratoId=n.identificador;
           if(cfg.envelopeId) obsNovo.envelope=cfg.envelopeId;
+          if(cfg.apelido) obsNovo.apelido=cfg.apelido.toUpperCase().trim();
           return {data:n.data, descricao:cfg.descricao.toUpperCase(), valor:Number(n.valor), tipo:cfg.categoria,
             categoria:cfg.categoria, forma:"CONTA", status:"EXECUTADO",
             obs:Object.keys(obsNovo).length?JSON.stringify(obsNovo):""};
@@ -3650,7 +3651,8 @@ function ConciliarExtratoTab({data,onUpdate}){
   async function vincularExistente(n,candidato){
     setLoad(true);
     try{
-      const r=await api({action:"vincularAliasConciliacao",row:candidato.row,descricaoExtrato:n.descricao,identificador:n.identificador||null});
+      const apelidoAtual=(cfgNovos[chaveNovo(n)]||{}).apelido||"";
+      const r=await api({action:"vincularAliasConciliacao",row:candidato.row,descricaoExtrato:n.descricao,identificador:n.identificador||null,apelido:apelidoAtual});
       onUpdate(r);
       setResultado(res=>({...res,
         novos:res.novos.filter(x=>chaveNovo(x)!==chaveNovo(n)),
@@ -3792,6 +3794,13 @@ function ConciliarExtratoTab({data,onUpdate}){
             </div>
             <input value={cfg.descricao} onChange={e=>setCfgNovos({...cfgNovos,[chave]:{...cfg,descricao:e.target.value.toUpperCase()}})}
               placeholder="Descrição"
+              style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",marginBottom:6,textTransform:"uppercase"}}/>
+            {/* [NOVO 25/07] Momento certo de pedir apelido -- e exatamente
+                agora que o nome cru do banco esta na tela (o campo acima),
+                em vez de pedir na criacao manual pelo "+" (quando ainda nem
+                se sabe como o banco vai chamar aquilo). Opcional. */}
+            <input value={cfg.apelido||""} onChange={e=>setCfgNovos({...cfgNovos,[chave]:{...cfg,apelido:e.target.value.toUpperCase()}})}
+              placeholder="Apelido pra esse nome (opcional)"
               style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",marginBottom:6,textTransform:"uppercase"}}/>
 
             <div style={{fontSize:9,color:C.textMuted,fontWeight:700,letterSpacing:".05em",marginBottom:4}}>ISSO É PAGAMENTO DE FATURA?</div>
@@ -6524,29 +6533,23 @@ function BotaoLancar({data,onUpdate,onIrPara}){
     {ehPagamento&&faturasAbertas.length===0&&<div style={{fontSize:11,color:C.textMuted,marginBottom:10,fontStyle:"italic"}}>
       Nenhuma fatura em aberto encontrada nesse cartão.
     </div>}
-    {/* [22/07] Nome de exibicao SEMPRE primeiro, nome no extrato/conciliacao
-       logo abaixo -- ordem combinada com o Marcus (apelido e o campo
-       principal, nome real e so referencia pra bater com CSV/OFX depois). */}
+    {/* [INVERTIDO 25/07] Pedido do Marcus: nome no extrato vira a entrada
+       padrao (e o unico campo aqui) -- na hora de criar manualmente ainda
+       nao da pra saber como o banco vai chamar aquilo com certeza, entao
+       nao faz sentido pedir apelido logo de cara. Apelido agora e pedido
+       na Conciliacao, no momento exato em que o nome cru do banco aparece
+       de verdade (ver cfgNovos.apelido). Mantem so o auto-preenchimento
+       silencioso quando bate uma unica regra ja salva -- sem chip, sem
+       pergunta, so um bonus invisivel quando ja se sabe a resposta certa. */}
     {!ehPagamento&&<div style={{marginBottom:10}}>
-      <input value={apelido} onChange={e=>setApelido(e.target.value.toUpperCase())}
-        placeholder="Nome de exibição (opcional)"
-        style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",boxSizing:"border-box",marginBottom:8}}/>
       <input value={desc} onChange={e=>{
           const v=e.target.value.toUpperCase();
           setDesc(v);
           if(!envelopeId){const sug=envelopeRegraSugerido(v,data);if(sug)setEnvelopeId(sug);}
-          if(!apelido){const cands=apelidosCandidatos(v,data);if(cands.length===1)setApelido(cands[0].apelido);}
-        }} placeholder="Nome no extrato/conciliação (opcional)"
-        style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",textTransform:"uppercase",boxSizing:"border-box"}}/>
-      {(()=>{const cands=apelidosCandidatos(desc,data);
-        return cands.length>1&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:5}}>
-          <span style={{fontSize:9,color:C.textMuted,width:"100%"}}>Bate com mais de uma regra salva — escolhe qual vale aqui:</span>
-          {cands.map((c,ci)=><button key={ci} type="button" onClick={()=>setApelido(c.apelido)}
-            style={{fontSize:10,padding:"3px 8px",borderRadius:12,border:"1px solid "+C.accent,background:apelido===c.apelido?C.accent:"transparent",color:apelido===c.apelido?"#fff":C.accent,cursor:"pointer",fontFamily:"inherit"}}>
-            {c.apelido}
-          </button>)}
-        </div>;
-      })()}
+          const cands=apelidosCandidatos(v,data);
+          if(cands.length===1) setApelido(cands[0].apelido);
+        }} placeholder="Nome (aparece assim no extrato depois)"
+        style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",textTransform:"uppercase",boxSizing:"border-box"}}/>
     </div>}
     <div style={{display:"flex",gap:8,marginBottom:8}}>
       <button type="button" onClick={()=>setVNeg(n=>!n)}
@@ -7706,7 +7709,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260725.1700 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260725.1730 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7788,7 +7791,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260725.1700
+      // HTML v3.20260725.1730
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
