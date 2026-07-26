@@ -57,10 +57,15 @@ const hoje=()=>new Date().toISOString().slice(0,10);
 // Janela de datas (inicio/fim, formato ISO) de um ciclo deslocado N meses a
 // partir do ciclo atual -- deslocamento 0 = ciclo atual, 1 = proximo, 2 =
 // o seguinte. Usa CONFIG.CICLO_INICIO (sempre dia 16) como ancora.
+// [25/07] Dia de ciclo agora configuravel -- em vez de hardcoded 16, extrai
+// o dia diretamente de cicloInicioStr (que ja carrega o dia real dentro do
+// proprio "AAAA-MM-DD"). Sem precisar de um parametro novo em cada um dos
+// varios lugares que chamam essa funcao -- a data ja diz tudo que precisa.
 function janelaCiclo(cicloInicioStr,deslocamento){
-  const [ano,mes]=String(cicloInicioStr||"").split("-").map(Number);
-  const inicio=new Date(ano,(mes-1)+deslocamento,16);
-  const fim=new Date(ano,mes+deslocamento,15);
+  const [ano,mes,diaStr]=String(cicloInicioStr||"").split("-").map(Number);
+  const dia=diaStr||16;
+  const inicio=new Date(ano,(mes-1)+deslocamento,dia);
+  const fim=new Date(ano,mes+deslocamento,dia-1);
   const toISO=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
   return {inicio:toISO(inicio),fim:toISO(fim)};
 }
@@ -3333,6 +3338,25 @@ function ConfiguracoesGerais({data,onUpdate,onIrPara}){
     location.reload();
   }
   const fv=configFatura(data);
+  // [NOVO 25/07] Dia de virada de ciclo configuravel -- pensado pra permitir
+  // que outras pessoas usem o sistema a partir de uma planilha em branco
+  // (nem todo mundo fecha o mes no dia 16).
+  const cicloDiaAtual=parseInt(data.config?.CICLO_DIA)||16;
+  const [cicloDia,setCicloDia]=useState(String(cicloDiaAtual));
+  const [loadCiclo,setLoadCiclo]=useState(false);
+  async function salvarCicloDia(){
+    const d=parseInt(cicloDia);
+    if(!d||d<1||d>28){ alert("Informe um dia entre 1 e 28 (evita cair num dia que não existe em fevereiro)."); return; }
+    setLoadCiclo(true);
+    try{
+      const r=await api({action:"salvarCicloDia",dia:d});
+      onUpdate(r);
+      const res=r._resultadoCicloDia;
+      if(res?.bootado) alert("Dia salvo e ciclo inicial já configurado (planilha nova) — pode usar o app normalmente agora.");
+      else alert("Dia salvo. Só passa a valer a partir da próxima virada de ciclo — o ciclo atual continua como já estava.");
+    }catch(e){alert(e.message);}
+    setLoadCiclo(false);
+  }
 
   return <div style={{padding:"12px 16px"}}>
     <Card style={{padding:"14px 16px",marginBottom:14}}>
@@ -3374,8 +3398,16 @@ function ConfiguracoesGerais({data,onUpdate,onIrPara}){
 
     <Card style={{padding:"14px 16px"}}>
       <div style={{fontSize:13,fontWeight:800,color:C.text,marginBottom:6}}>🔄 Ciclo</div>
-      <div style={{fontSize:11,color:C.textMuted}}>
-        Dia de virada de ciclo (hoje fixo em 16) ainda não é configurável — quando isso for construído, o campo entra aqui.
+      <div style={{fontSize:11,color:C.textMuted,marginBottom:10}}>
+        Dia do mês em que o ciclo vira (hoje: dia {cicloDiaAtual}). Mudar esse número <b>não mexe no ciclo atual</b> — só vale a partir da próxima virada. Se a planilha ainda não tem nenhum ciclo configurado (uso novo, a partir de um modelo em branco), salvar aqui já inicializa tudo a partir de hoje.
+      </div>
+      <div style={{display:"flex",gap:6}}>
+        <input type="number" min="1" max="28" value={cicloDia} onChange={e=>setCicloDia(e.target.value)}
+          style={{width:70,padding:"8px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
+        <button onClick={salvarCicloDia} disabled={loadCiclo}
+          style={{flex:1,padding:"8px",borderRadius:6,background:C.accent,color:"#fff",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+          {loadCiclo?"Salvando…":"Salvar"}
+        </button>
       </div>
     </Card>
   </div>;
@@ -7709,7 +7741,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260725.1730 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260725.1830 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7791,7 +7823,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260725.1730
+      // HTML v3.20260725.1830
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
