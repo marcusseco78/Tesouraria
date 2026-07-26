@@ -6176,19 +6176,26 @@ function BotaoLancar({data,onUpdate,onIrPara}){
   // vira select dentro da bandeja classica (mesmo padrao ja usado em Fatura
   // Avulsa e Receita Esporadica), porque sao listas de dados, nao categorias.
   const NODES={
-    raiz:[{id:"gastos",label:"Gastos"},{id:"ganhos",label:"Ganhos"}],
-    gastos:[{id:"gastos_cartao",label:"Cartão"},{id:"gastos_conta",label:"Conta"}],
-    gastos_cartao:[{id:"gastos_cartao_pf",label:nomeCartao("PF",data)},{id:"gastos_cartao_pj",label:nomeCartao("PJ",data)}],
+    // [NOVO 25/07] Reforma pedida pelo Marcus: 5 raizes em vez de 2
+    // (Gastos/Ganhos), separando Emprestimos/Cofres/Cartoes -- fica mais
+    // intuitivo, cada raiz e uma "acao de dinheiro" clara. Gastos vira so
+    // as 3 categorias de CONTA + um link direto pra Compras de Cartao (que
+    // agora mora na raiz Cartoes, nao mais debaixo de Gastos). Ganhos vira
+    // so Receitas/Avulso (Emprestimo e Cofre ganharam raiz propria).
+    raiz:[{id:"gastos",label:"Gastos"},{id:"ganhos",label:"Ganhos"},{id:"emprestimos",label:"Empréstimos"},
+      {id:"cofresinvest",label:"Cofres/Invest."},{id:"cartoes",label:"Cartões"}],
+    gastos:[{id:"fixa_conta",label:"Despesas Fixas"},{id:"dcp_conta",label:"Gastos Semanais"},{id:"extra_conta",label:"Extraordinário"},
+      {id:"gastos_compras_link",label:"Compras no Cartão →",acao:()=>setTrilha(["cartoes","cartoes_compras"])}],
+    ganhos:[{id:"ganhos_receitas",label:"Receitas"},{id:"ganhos_avulso",label:"Avulso"}],
+    emprestimos:[{id:"emp_tomar",label:"Tomar Empréstimo"},{id:"emp_pagamento",label:"Pagamento de Empréstimo"}],
+    emp_pagamento:[{id:"cred_parcelados",label:"Parcelado"},{id:"cred_posfixados",label:"Pós-Fixado"}],
+    cofresinvest:[{id:"cofre_aporte",label:"Aporte"},{id:"cofre_resgate",label:"Resgate"}],
+    cartoes:[{id:"cartoes_prox",label:"Pagamento Próxima Fatura"},{id:"cartoes_avulso",label:"Pagamento Avulso"},{id:"cartoes_compras",label:"Compras"}],
+    cartoes_prox:[{id:"fat_pf_proxima",label:nomeCartao("PF",data)},{id:"fat_pj_proxima",label:nomeCartao("PJ",data)}],
+    cartoes_avulso:[{id:"fat_pf_avulsa",label:nomeCartao("PF",data)},{id:"fat_pj_avulsa",label:nomeCartao("PJ",data)}],
+    cartoes_compras:[{id:"gastos_cartao_pf",label:nomeCartao("PF",data)},{id:"gastos_cartao_pj",label:nomeCartao("PJ",data)}],
     gastos_cartao_pf:[{id:"fixa_pf",label:"Despesas Fixas"},{id:"dcp_pf",label:"Gastos Semanais"},{id:"extra_pf",label:"Extraordinário"}],
     gastos_cartao_pj:[{id:"fixa_pj",label:"Despesas Fixas"},{id:"dcp_pj",label:"Gastos Semanais"},{id:"extra_pj",label:"Extraordinário"}],
-    gastos_conta:[{id:"fixa_conta",label:"Despesas Fixas"},{id:"dcp_conta",label:"Gastos Semanais"},{id:"extra_conta",label:"Extraordinário"},
-      {id:"gastos_conta_faturas",label:"Pagamento de Faturas"},{id:"gastos_conta_credito",label:"Pagamento Empréstimos"},{id:"cofre_aporte",label:"Cofre/Invest. (Aporte)"}],
-    gastos_conta_faturas:[{id:"fat_pf",label:nomeCartao("PF",data)},{id:"fat_pj",label:nomeCartao("PJ",data)}],
-    fat_pf:[{id:"fat_pf_avulsa",label:"Avulsa"},{id:"fat_pf_proxima",label:"Próxima"}],
-    fat_pj:[{id:"fat_pj_avulsa",label:"Avulsa"},{id:"fat_pj_proxima",label:"Próxima"}],
-    gastos_conta_credito:[{id:"cred_parcelados",label:"Parcelados"},{id:"cred_posfixados",label:"Pós-Fixados"}],
-    ganhos:[{id:"ganhos_receitas",label:"Receitas"},{id:"ganhos_emprestimos",label:"Empréstimos"},
-      {id:"ganhos_cofre",label:"Cofre/Invest. (Resgate)"},{id:"ganhos_avulso",label:"Avulso"}],
   };
   const LEAF_ACOES={
     // [22/07] Despesa Fixa em CARTAO nunca antecipa individualmente -- vem
@@ -6215,13 +6222,13 @@ function BotaoLancar({data,onUpdate,onIrPara}){
     cred_parcelados:()=>{setDest("emprestimoparc");setFormAberto(true);},
     // [CORRIGIDO 25/07] Pos-Fixados/Cofre (Aporte/Resgate) agora tem
     // formulario inline direto aqui -- ver ehCofreLanc/ehPosFixadoAmort
-    // mais abaixo. Contratar Emprestimo novo continua redirecionando (e
+    // mais abaixo. Tomar Emprestimo novo continua redirecionando (e
     // cadastro, nao lancamento de valor livre).
     cofre_aporte:()=>{setDest("cofre_aporte");setFormAberto(true);},
+    cofre_resgate:()=>{setDest("cofre_resgate");setFormAberto(true);},
     cred_posfixados:()=>{setDest("posfixado_amortizar");setFormAberto(true);},
     ganhos_receitas:()=>{setDest("receita");setFormAberto(true);},
-    ganhos_emprestimos:()=>{fecharTudo();onIrPara&&onIrPara({tab:"emprestimos"});},
-    ganhos_cofre:()=>{setDest("cofre_resgate");setFormAberto(true);},
+    emp_tomar:()=>{fecharTudo();onIrPara&&onIrPara({tab:"emprestimos"});},
     ganhos_avulso:()=>{setDest("conta");setCat("DEPOSITO_AVULSO");setVNeg(false);setFormAberto(true);},
   };
   const ehFixaConta=dest==="fixaconta";
@@ -6328,7 +6335,8 @@ function BotaoLancar({data,onUpdate,onIrPara}){
                 fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px rgba(0,0,0,.12)"}
               :{padding:"11px 17px",borderRadius:22,border:"none",background:C.accent,color:"#fff",
                 fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px rgba(0,0,0,.12)"}}>
-            {ehRaizAtual&&<span style={{fontWeight:900,marginRight:5,color:it.id==="gastos"?"#F87171":"#60A5FA"}}>{it.id==="gastos"?"▼":"▲"}</span>}
+            {ehRaizAtual&&it.id==="gastos"&&<span style={{fontWeight:900,marginRight:5,color:"#F87171"}}>▼</span>}
+            {ehRaizAtual&&it.id==="ganhos"&&<span style={{fontWeight:900,marginRight:5,color:"#60A5FA"}}>▲</span>}
             {it.label}
           </button>;
         })}
@@ -7698,7 +7706,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260725.1600 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260725.1700 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7780,7 +7788,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260725.1600
+      // HTML v3.20260725.1700
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
