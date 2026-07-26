@@ -189,7 +189,32 @@ const diaSemana=s=>{const m=String(s||"").match(/^(\d{4})-(\d{2})-(\d{2})/);if(!
 // Nome de exibicao: linha de provisao "DCP N" aparece como "Saldo Despesas
 // Cotidianas N" (so estetica de tela -- na planilha continua "DCP N").
 const CAT_LABEL={DCP:"Despesas Cotidianas Semanais",DEPOSITO_AVULSO:"Outras Entradas",
-  DIVIDA_PARCELADA:"Parcela de Dívida",DIVIDA_NAO_PARCELADA:"Amortização Dívida",PASSIVO:"Dívida"};
+  DIVIDA_PARCELADA:"Parcela de Dívida",DIVIDA_NAO_PARCELADA:"Amortização Dívida",PASSIVO:"Dívida",
+  // [25/07] Completado -- essas 5 nao tinham entrada e caiam no fallback
+  // (mostravam o codigo cru em maiuscula, tipo "DESPESA FIXA"), enquanto as
+  // de cima ja apareciam em Title Case -- inconsistencia visual real que o
+  // Marcus notou na tela de Conciliacao. Mesmo padrao das pilulas que ja
+  // existem em quase toda tela do app (Despesas Fixas/Gastos Semanais/etc).
+  "DESPESA FIXA":"Despesa Fixa","RECEITA":"Receita","EXTRAORDINARIA":"Extraordinária",
+  "IMPOSTO":"Imposto","INVESTIMENTO":"Investimento"};
+// [NOVO 25/07] Pedido do Marcus: trocar os <select> nativos de categoria
+// (que abriam aquele picker feio do Android, mistura de maiuscula/Title
+// Case) por pilulas -- mesmo molde visual que a matriz de categoria
+// unificada ja usa em toda edicao de item. Componente unico, reaproveitado
+// nos 3 lugares que ainda usavam select puro.
+function PilulasCategoria({categorias,valor,onChange}){
+  return <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
+    {categorias.map(c=>{
+      const ativo=c===valor;
+      return <button key={c} type="button" onClick={()=>onChange(c)}
+        style={{padding:"7px 12px",borderRadius:20,fontSize:12,fontWeight:700,fontFamily:"inherit",cursor:"pointer",
+          border:"1px solid "+(ativo?C.accent:C.border),
+          background:ativo?C.accentLight:"#fff",color:ativo?C.accent:C.textSub}}>
+        {CAT_LABEL[c]||c}
+      </button>;
+    })}
+  </div>;
+}
 // [22/07] Rotulos da lista unificada de categorias desenhada no "+"/menu de
 // edicao (Despesas Fixas · Gastos Semanais · Extraordinario · Pagamento de
 // Fatura · Pagamento de Emprestimo · Cofre) -- usado pra nao depender do
@@ -3786,10 +3811,7 @@ function ConciliarExtratoTab({data,onUpdate}){
               ? <div style={{fontSize:11,color:C.accent,background:C.accentLight,borderRadius:6,padding:"6px 8px",marginBottom:8}}>
                   💳 Vai abater a fatura {cfg.pagFatura} vencendo em {fmtD(vencAuto)} (calculado pela data do pagamento).
                 </div>
-              : <select value={cfg.categoria} onChange={e=>setCfgNovos({...cfgNovos,[chave]:{...cfg,categoria:e.target.value}})}
-                  style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",background:C.surface,marginBottom:8}}>
-                  {CATEGORIAS.map(c=><option key={c} value={c}>{CAT_LABEL[c]||c}</option>)}
-                </select>}
+              : <PilulasCategoria categorias={CATEGORIAS} valor={cfg.categoria} onChange={v=>setCfgNovos({...cfgNovos,[chave]:{...cfg,categoria:v}})}/>}
 
             {!cfg.pagFatura&&parseEnvelopesCustom(data).length>0&&
               <select value={cfg.envelopeId||""} onChange={e=>setCfgNovos({...cfgNovos,[chave]:{...cfg,envelopeId:e.target.value}})}
@@ -4373,7 +4395,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
   return <div>
     <div style={{padding:"10px 14px"}}>
       <input type="text" value={busca} onChange={e=>setBusca(e.target.value)} placeholder="🔍 Buscar por descrição ou categoria"
-        style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
+        style={{width:"100%",padding:"9px 14px",borderRadius:24,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
     </div>
     {busca.trim()&&!gruposExibidos.length&&<div style={{padding:"20px 14px",textAlign:"center",color:C.textMuted,fontSize:13}}>Nada encontrado para "{busca}".</div>}
     {gruposExibidos.map(({gdt,itensExibir,cartaoExibir,spIni},gi)=>{const at=gdt<hj,sp=spIni,ehPrimeiro=!busca.trim()&&gi===primeiroIdxComSaldo;return <div key={gdt}>
@@ -4546,7 +4568,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
     <div style={{padding:"10px 14px",background:"#F9FAFB",borderBottom:"1px solid "+C.border}}>
       <input type="text" value={busca} onChange={e=>{setBusca(e.target.value);setLimite(30);}}
         placeholder="🔎 Buscar por descrição ou categoria..."
-        style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box",background:C.surface}}/>
+        style={{width:"100%",padding:"7px 12px",borderRadius:24,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box",background:C.surface}}/>
     </div>
     {!ex.length&&<div style={{padding:"40px 20px",textAlign:"center",color:C.textMuted,fontSize:14}}>{busca?"Nenhum resultado pra essa busca.":"Nenhum lançamento executado."}</div>}
     {grupos.map(([gdt,itens])=>{
@@ -4817,11 +4839,11 @@ function Timeline({data,onUpdate,onIrPara}){
     <Card style={{padding:"7px 12px",marginBottom:7}}>
       <div style={{display:"flex",alignItems:"center",gap:8}}>
         <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar por descrição ou categoria..."
-          style={{flex:1,padding:"7px 11px",border:"1px solid "+C.border,borderRadius:9,fontSize:13,fontFamily:"inherit"}}/>
+          style={{flex:1,padding:"7px 13px",border:"1px solid "+C.border,borderRadius:24,fontSize:13,fontFamily:"inherit"}}/>
       </div>
       <div style={{display:"flex",gap:6,marginTop:7}}>
         {[["todos","Todos"],["previsao","Só Previsão"],["historico","Só Histórico"]].map(([id,l])=>
-          <button key={id} onClick={()=>setFiltro(id)} style={{flex:1,padding:"6px 4px",borderRadius:7,border:"none",cursor:"pointer",
+          <button key={id} onClick={()=>setFiltro(id)} style={{flex:1,padding:"6px 4px",borderRadius:20,border:"none",cursor:"pointer",
             fontFamily:"inherit",fontSize:11,fontWeight:700,
             background:filtro===id?C.accentLight:C.borderLight,color:filtro===id?C.accent:C.textSub}}>{l}</button>)}
       </div>
@@ -6529,11 +6551,8 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido, data, onSync}){
       <input type="number" min="1" value={parc} onChange={e=>setParc(e.target.value)} placeholder="Parc."
         style={{width:64,padding:"7px 9px",borderRadius:7,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",textAlign:"center"}}/>
     </div>
-    <select value={cat} onChange={e=>setCat(e.target.value)}
-      style={{width:"100%",padding:"7px 9px",borderRadius:7,border:"1px solid "+(cat?C.border:C.red),fontSize:13,fontFamily:"inherit",background:C.surface,marginBottom:6}}>
-      <option value="">Escolha uma categoria...</option>
-      {["DCP","DESPESA FIXA","EXTRAORDINARIA","IMPOSTO","INVESTIMENTO","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA"].map(c=><option key={c} value={c}>{CAT_LABEL[c]||c}</option>)}
-    </select>
+    <PilulasCategoria categorias={["DCP","DESPESA FIXA","EXTRAORDINARIA","IMPOSTO","INVESTIMENTO","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA"]} valor={cat} onChange={setCat}/>
+    {!cat&&<div style={{fontSize:10,color:C.red,marginTop:-4,marginBottom:6}}>Escolha uma categoria.</div>}
     {envelopes.length>0&&<select value={envelopeId} onChange={e=>setEnvelopeId(e.target.value)}
       style={{width:"100%",padding:"7px 9px",borderRadius:7,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",background:C.surface,marginBottom:8}}>
       <option value="">Envelope: nenhum</option>
@@ -7298,11 +7317,8 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
             background:nParc===n?C.accentLight:"transparent",color:nParc===n?C.accent:C.textSub,
             fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{n}x</button>)}
       </div>
-      <select value={nCat} onChange={e=>setNCat(e.target.value)}
-        style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid "+(nCat?C.border:C.red),fontSize:13,fontFamily:"inherit",background:C.surface,marginBottom:8}}>
-        <option value="">Escolha uma categoria...</option>
-        {["DCP","DESPESA FIXA","EXTRAORDINARIA","IMPOSTO"].map(c=><option key={c} value={c}>{CAT_LABEL[c]||c}</option>)}
-      </select>
+      <PilulasCategoria categorias={["DCP","DESPESA FIXA","EXTRAORDINARIA","IMPOSTO"]} valor={nCat} onChange={setNCat}/>
+      {!nCat&&<div style={{fontSize:10,color:C.red,marginTop:-4,marginBottom:6}}>Escolha uma categoria.</div>}
       <button onClick={lancarNovo} disabled={load||!nDesc.trim()||!nValor||!nCat}
         style={{width:"100%",padding:"9px",borderRadius:8,background:C.accent,color:"#fff",
           fontSize:13,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
@@ -7600,7 +7616,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260725.1415 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260725.1500 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7682,7 +7698,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260725.1415
+      // HTML v3.20260725.1500
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
