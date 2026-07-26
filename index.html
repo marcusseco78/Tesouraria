@@ -4641,10 +4641,24 @@ function valorCofresProjetadoNaData(cofres,dataISO,cfg){
   },0);
 }
 
+// [NOVO 25/07] Gastos de cartao (PF/PJ) tambem entram na Timeline agora --
+// antes so apareciam em Fluxo/Historico/Previsao, nunca aqui (achado real
+// do Marcus 25/07, comparando print da Previsao com o da Timeline no mesmo
+// dia). Mesmo tratamento visual de sempre (esmaecido, "nao conta aqui, ja
+// esta na fatura") -- puramente informativo, NUNCA entra no saldo (o
+// impacto ja esta contado uma vez na linha agregada da fatura).
 function _gerarLinhasTimeline(data,hj){
   const todos=(data.fluxo||[]).filter(r=>r.categoria!=="DCP_PROVISAO");
   const porDia={};
-  todos.forEach(r=>{ if(!porDia[r.data]) porDia[r.data]=[]; porDia[r.data].push(r); });
+  todos.forEach(r=>{ if(!porDia[r.data]) porDia[r.data]=[]; porDia[r.data].push({origem:"fluxo",r}); });
+  const addCartao=(r,cartao)=>{
+    const d=r[0];
+    if(!d) return;
+    if(!porDia[d]) porDia[d]=[];
+    porDia[d].push({origem:"cartao",cartao,linhaCartao:_linhaCartao(r),descricao:r[1],valor:r[2],status:r[7],dcpEnvelope:r[9]||null});
+  };
+  (data.cartaoPF||[]).forEach(r=>addCartao(r,"PF"));
+  (data.cartaoPJ||[]).forEach(r=>addCartao(r,"PJ"));
   // [24/07] Garante que HOJE sempre tem uma linha, mesmo sem nenhum
   // lancamento nesse dia -- sem isso, o botao "Hoje" e o auto-scroll ao
   // abrir nao achavam pra onde ir (bug reportado pelo Marcus). O mock
@@ -4653,22 +4667,28 @@ function _gerarLinhasTimeline(data,hj){
   const datasOrdenadas=Object.keys(porDia).sort();
   let ultimoSaldo=null;
   return datasOrdenadas.map(iso=>{
-    const itens=porDia[iso].slice().sort((a,b)=>(a.row||0)-(b.row||0));
+    const brutos=porDia[iso];
+    const itensFluxo=brutos.filter(x=>x.origem==="fluxo").map(x=>x.r).sort((a,b)=>(a.row||0)-(b.row||0));
     let saldo;
-    if(itens.length){
-      const ultimoDoDia=itens[itens.length-1];
+    if(itensFluxo.length){
+      const ultimoDoDia=itensFluxo[itensFluxo.length-1];
       saldo=ultimoDoDia.status==="EXECUTADO"?ultimoDoDia.saldoReal:ultimoDoDia.saldoProjetado;
       ultimoSaldo=saldo;
     } else {
-      // Dia sem lancamento (incluindo hoje, se for o caso) herda o saldo
-      // do ultimo dia conhecido -- mesmo principio que Previsao ja usa.
+      // Dia sem lancamento de Fluxo (incluindo hoje, se for o caso) herda o
+      // saldo do ultimo dia conhecido -- mesmo principio que Previsao ja
+      // usa. Um dia com SO gasto de cartao tambem cai aqui de proposito
+      // (cartao nunca mexe no saldo).
       saldo=ultimoSaldo;
     }
     const dt=parseDateLocal(iso);
-    return {tipo:"dia",data:iso,dataObj:dt,saldo,hoje:iso===hj,seg:dt.getDay()===1,
-      itens:itens.map(r=>({tipo:"item",row:r.row,descricao:nomeExibicao(r,data),categoriaTxt:
+    const itensNormais=itensFluxo.map(r=>({tipo:"item",ehCartao:false,row:r.row,descricao:nomeExibicao(r,data),categoriaTxt:
         (r.categoria==="DCP_PROVISAO"?"":(tipoDisplay(r.tipo,data)+(r.categoria&&r.categoria!==r.tipo?" · "+r.categoria:"")+" · "+r.forma)),
-        valor:r.valor,status:r.status,item:r}))};
+        valor:r.valor,status:r.status,item:r}));
+    const itensCartao=brutos.filter(x=>x.origem==="cartao").map(x=>({tipo:"item",ehCartao:true,cartao:x.cartao,
+        linhaCartao:x.linhaCartao,descricao:x.descricao,valor:x.valor,status:x.status,dcpEnvelope:x.dcpEnvelope,item:null}));
+    return {tipo:"dia",data:iso,dataObj:dt,saldo,hoje:iso===hj,seg:dt.getDay()===1,
+      itens:[...itensNormais,...itensCartao]};
   });
 }
 function parseDateLocal(iso){const[y,m,d]=iso.split("-").map(Number);return new Date(y,m-1,d);}
@@ -4701,8 +4721,8 @@ function Timeline({data,onUpdate,onIrPara}){
     const b=busca.trim().toUpperCase();
     return linhasBrutas.map(l=>{
       let itens=l.itens;
-      if(filtro==="previsao") itens=itens.filter(it=>it.status==="PROGRAMADO");
-      else if(filtro==="historico") itens=itens.filter(it=>it.status==="EXECUTADO");
+      if(filtro==="previsao") itens=itens.filter(it=>it.ehCartao?it.status==="PENDENTE":it.status==="PROGRAMADO");
+      else if(filtro==="historico") itens=itens.filter(it=>it.ehCartao?it.status==="PAGO":it.status==="EXECUTADO");
       if(b) itens=itens.filter(it=>String(it.descricao||"").toUpperCase().indexOf(b)>=0||String(it.categoriaTxt||"").toUpperCase().indexOf(b)>=0);
       return {...l,itens};
     }).filter(l=>l.itens.length||l.hoje);
@@ -4815,8 +4835,9 @@ function Timeline({data,onUpdate,onIrPara}){
           const isHoje=s.tipo==="saldo"&&s.linha.hoje;
           const ehDCP=s.tipo==="item"&&s.item.item&&s.item.item.categoria==="DCP";
           // [25/07] Painel aberto: comparamos por ROW (nao por referencia de
-          // objeto), igual o "conf===item.row" do Fluxo/Historico.
-          const painelAberto=s.tipo==="item"&&s.item.item&&s.item.item.row===itemAbertoRow;
+          // objeto), igual o "conf===item.row" do Fluxo/Historico. Item de
+          // cartao nunca abre painel (s.item.item e null pra ele).
+          const painelAberto=s.tipo==="item"&&!s.item.ehCartao&&s.item.item&&s.item.item.row===itemAbertoRow;
           return <div key={i} ref={n=>nodeRefs.current[i]=n} data-open-panel={painelAberto?"1":undefined}
             style={{scrollSnapAlign:painelAberto?"start":"center",transition:"transform .06s linear",padding:"5px 13px"}}>
             {s.tipo==="saldo" ? (
@@ -4830,6 +4851,19 @@ function Timeline({data,onUpdate,onIrPara}){
                     🏦 patrimônio: {fmt(s.linha.saldo+valorCofresProjetadoNaData(data.cofres,s.linha.data,data.config||{}))}
                   </div>}
                 </div>
+              </div>
+            ) : s.item.ehCartao ? (
+              // [NOVO 25/07] Gasto de cartao -- mesmo tratamento esmaecido/
+              // informativo de sempre, toque navega pra tela de Cartoes
+              // (nunca abre painel de edicao, nao e um lancamento do Fluxo).
+              <div onClick={()=>onIrPara&&onIrPara({tab:"cartoes",row:s.item.linhaCartao,cartao:s.item.cartao})}
+                style={{display:"flex",alignItems:"center",gap:8,padding:"4px 7px",borderRadius:8,
+                  background:C.borderLight,opacity:0.8,cursor:onIrPara?"pointer":"default"}}>
+                <div data-fade style={{flex:1,minWidth:0,transition:"opacity .06s linear"}}>
+                  <div style={{fontSize:12,fontWeight:600,color:C.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontStyle:"italic"}}>{s.item.descricao}</div>
+                  <div style={{fontSize:9,color:C.textMuted,marginTop:1}}>🏷 Cartão {s.item.cartao} · não conta aqui, já está na fatura</div>
+                </div>
+                <span style={{fontSize:12,fontWeight:700,color:C.textMuted,flexShrink:0}}>{fmt(s.item.valor)}</span>
               </div>
             ) : (
               <>
@@ -7566,7 +7600,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260725.1245 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260725.1415 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7648,7 +7682,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260725.1245
+      // HTML v3.20260725.1415
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
