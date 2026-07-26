@@ -6039,6 +6039,10 @@ function BotaoLancar({data,onUpdate,onIrPara}){
   // (que ja existia, intacto) deve aparecer usando dest/cat ja setados.
   const [trilha,setTrilha]=useState([]);
   const [formAberto,setFormAberto]=useState(false);
+  // [NOVO 25/07] Cofre (Aporte/Resgate) e Divida Pos-Fixada (Amortizar)
+  // direto no "+" -- antes so redirecionava pra aba propria.
+  const [cofreEscolhido,setCofreEscolhido]=useState("");
+  const [dividaEscolhida,setDividaEscolhida]=useState("");
   const CATS=["DCP","DESPESA FIXA","RECEITA","DEPOSITO_AVULSO","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA","EXTRAORDINARIA","INVESTIMENTO"];
   const envelopesAbertos=useMemo(()=>calcularEnvelopesCustom(data).filter(e=>!e.encerrado),[data.fluxo,data.cartaoPF,data.cartaoPJ,data.config]);
 
@@ -6125,7 +6129,7 @@ function BotaoLancar({data,onUpdate,onIrPara}){
     setDest("conta");setCat("");setDesc("");setValor("");setParc("1");setData_(hoje());
     setEnvelopeId("");setApelido("");setVNeg(true);setVencAlvo("");
     setModoEspId("");setBruto("");setPercDescReceita("");setValorEstavel("");setPlantoesEsp("");
-    setEmpEscolhido("");
+    setEmpEscolhido("");setCofreEscolhido("");setDividaEscolhida("");
   }
   function voltarTrilha(){
     if(formAberto){setFormAberto(false);return;}
@@ -6209,22 +6213,45 @@ function BotaoLancar({data,onUpdate,onIrPara}){
       irAntecipar("fluxo",alvo.row);},
     // Parcelados: abre a bandeja com os 2 selects em cascata (emprestimo -> parcela)
     cred_parcelados:()=>{setDest("emprestimoparc");setFormAberto(true);},
-    // [22/07] Pos-Fixados/Cofre (Aporte/Resgate)/contratar Emprestimo ainda
-    // nao tem um atalho rapido construido (amortizar/aportar sao valor
-    // livre, nao uma ocorrencia pra antecipar) -- por ora redireciona pra
-    // aba especializada. Nunca deixar a folha "morta" sem acao.
-    cofre_aporte:()=>{fecharTudo();onIrPara&&onIrPara({tab:"cofres"});},
-    cred_posfixados:()=>{fecharTudo();onIrPara&&onIrPara({tab:"emprestimos"});},
+    // [CORRIGIDO 25/07] Pos-Fixados/Cofre (Aporte/Resgate) agora tem
+    // formulario inline direto aqui -- ver ehCofreLanc/ehPosFixadoAmort
+    // mais abaixo. Contratar Emprestimo novo continua redirecionando (e
+    // cadastro, nao lancamento de valor livre).
+    cofre_aporte:()=>{setDest("cofre_aporte");setFormAberto(true);},
+    cred_posfixados:()=>{setDest("posfixado_amortizar");setFormAberto(true);},
     ganhos_receitas:()=>{setDest("receita");setFormAberto(true);},
     ganhos_emprestimos:()=>{fecharTudo();onIrPara&&onIrPara({tab:"emprestimos"});},
-    ganhos_cofre:()=>{fecharTudo();onIrPara&&onIrPara({tab:"cofres"});},
+    ganhos_cofre:()=>{setDest("cofre_resgate");setFormAberto(true);},
     ganhos_avulso:()=>{setDest("conta");setCat("DEPOSITO_AVULSO");setVNeg(false);setFormAberto(true);},
   };
   const ehFixaConta=dest==="fixaconta";
   const ehEmprestimoParc=dest==="emprestimoparc";
+  const ehCofreLanc=dest==="cofre_aporte"||dest==="cofre_resgate";
+  const ehPosFixadoAmort=dest==="posfixado_amortizar";
   const [empEscolhido,setEmpEscolhido]=useState("");
 
   async function salvar(){
+    if(ehCofreLanc){
+      if(!cofreEscolhido||!numBR(valor))return;
+      setLoad(true);
+      try{
+        const r=await api({action:"lancarCofre",cofreId:cofreEscolhido,tipoCofre:dest==="cofre_aporte"?"aporte":"resgate",
+          valor:Math.abs(numBR(valor)),data:data_});
+        onUpdate(r);fecharTudo();
+      }catch(e){alert(e.message);}
+      setLoad(false);
+      return;
+    }
+    if(ehPosFixadoAmort){
+      if(!dividaEscolhida||!numBR(valor))return;
+      setLoad(true);
+      try{
+        const r=await api({action:"abaterSaldoDividaPosFixada",nome:dividaEscolhida,valor:Math.abs(numBR(valor)),data:data_});
+        onUpdate(r);fecharTudo();
+      }catch(e){alert(e.message);}
+      setLoad(false);
+      return;
+    }
     if(ehPagamento){
       if(!valor||!vencAlvo)return;
       setLoad(true);
@@ -6312,6 +6339,8 @@ function BotaoLancar({data,onUpdate,onIrPara}){
   function tituloForm(){
     if(ehReceita) return "Receita Esporádica";
     if(ehPagamento) return "Fatura Avulsa";
+    if(ehCofreLanc) return dest==="cofre_aporte"?"Cofre (Aporte)":"Cofre (Resgate)";
+    if(ehPosFixadoAmort) return "Dívida Pós-Fixada (Amortizar)";
     return TITULO_CAT_UNIFICADO[cat]||cat||"";
   }
 
@@ -6423,8 +6452,61 @@ function BotaoLancar({data,onUpdate,onIrPara}){
         {load?"Salvando…":"Salvar lançamento"}
       </button>
     </>
+    :ehCofreLanc?<>
+      {(()=>{
+        // [NOVO 25/07] Renda Variavel fica de fora daqui -- precisa de
+        // papel/cotacao/quantidade, campos demais pra um atalho rapido.
+        // Continua so pela aba Cofres mesmo (que ja tem tudo isso pronto).
+        const cofresDisponiveis=(data.cofres||[]).filter(c=>c.tipoInvestimento!=="renda_variavel");
+        if(!cofresDisponiveis.length) return <div style={{fontSize:12,color:C.textMuted,padding:"12px 0",textAlign:"center"}}>
+          Nenhum cofre disponível aqui (Renda Variável não entra por esse atalho — usa a aba Cofres). Cadastre um cofre em Ferramentas → Cofres.
+        </div>;
+        return <>
+          <select value={cofreEscolhido} onChange={e=>setCofreEscolhido(e.target.value)}
+            style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",marginBottom:10,background:C.surface}}>
+            <option value="">Qual cofre?</option>
+            {cofresDisponiveis.map(c=><option key={c.id} value={c.id}>{c.nome} · {fmt(c.saldo)}</option>)}
+          </select>
+          <input type="text" inputMode="numeric" value={valor} onChange={e=>setValor(formatarMoedaInput(e.target.value))} placeholder="Valor"
+            style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",marginBottom:10,boxSizing:"border-box"}}/>
+          <input type="date" value={data_} onChange={e=>setData_(e.target.value)}
+            style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",marginBottom:6,boxSizing:"border-box"}}/>
+          <div style={{fontSize:10,color:data_>hoje()?C.teal:C.textMuted,marginBottom:10}}>
+            {data_>hoje()?"📅 Data futura -- entra como agendado, só executa nessa data.":(dest==="cofre_aporte"?"Sai do saldo da conta, fica guardado aqui.":"Volta pro saldo da conta, livre pra qualquer uso.")}
+          </div>
+        </>;
+      })()}
+      <button onClick={salvar} disabled={load||!cofreEscolhido||!numBR(valor)}
+        style={{width:"100%",padding:"12px",borderRadius:10,background:(cofreEscolhido&&numBR(valor))?C.accent:C.borderLight,color:(cofreEscolhido&&numBR(valor))?"#fff":C.textMuted,fontSize:14,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+        {load?"Salvando…":(dest==="cofre_aporte"?"Guardar":"Resgatar")}
+      </button>
+    </>
+    :ehPosFixadoAmort?<>
+      {(()=>{
+        const dividasAtivas=(data.dividasPosFixadas||[]).filter(d=>d.status==="ATIVA");
+        if(!dividasAtivas.length) return <div style={{fontSize:12,color:C.textMuted,padding:"12px 0",textAlign:"center"}}>
+          Nenhuma dívida pós-fixada ativa. Cadastre em Ferramentas → Empréstimos e Passivos.
+        </div>;
+        return <>
+          <select value={dividaEscolhida} onChange={e=>setDividaEscolhida(e.target.value)}
+            style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",marginBottom:10,background:C.surface}}>
+            <option value="">Qual dívida?</option>
+            {dividasAtivas.map(d=><option key={d.nome} value={d.nome}>{d.nome} · {fmt(d.saldoAtual)}</option>)}
+          </select>
+          <input type="text" inputMode="numeric" value={valor} onChange={e=>setValor(formatarMoedaInput(e.target.value))} placeholder="Valor do abatimento"
+            style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",marginBottom:10,boxSizing:"border-box"}}/>
+          <input type="date" value={data_} onChange={e=>setData_(e.target.value)}
+            style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",marginBottom:6,boxSizing:"border-box"}}/>
+          <div style={{fontSize:10,color:C.textMuted,marginBottom:10}}>Amortização é sempre imediata (não dá pra agendar pro futuro).</div>
+        </>;
+      })()}
+      <button onClick={salvar} disabled={load||!dividaEscolhida||!numBR(valor)}
+        style={{width:"100%",padding:"12px",borderRadius:10,background:(dividaEscolhida&&numBR(valor))?C.accent:C.borderLight,color:(dividaEscolhida&&numBR(valor))?"#fff":C.textMuted,fontSize:14,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+        {load?"Salvando…":"Amortizar"}
+      </button>
+    </>
     :null}
-    {formAberto&&!ehReceita&&!ehFixaConta&&!ehEmprestimoParc&&<>
+    {formAberto&&!ehReceita&&!ehFixaConta&&!ehEmprestimoParc&&!ehCofreLanc&&!ehPosFixadoAmort&&<>
     {/* Seletor de fatura alvo (so pagamento) */}
     {ehPagamento&&<select value={vencAlvo} onChange={e=>setVencAlvo(e.target.value)}
       style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",marginBottom:10,background:C.surface}}>
@@ -7616,7 +7698,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260725.1500 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260725.1600 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7698,7 +7780,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260725.1500
+      // HTML v3.20260725.1600
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
