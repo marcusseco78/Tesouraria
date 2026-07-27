@@ -1777,7 +1777,7 @@ function CardDividaPosFixada({divida,onUpdate,data}){
     <TimelineSaldo historico={historicoDivida} futuro={futuroDivida} corPositivo={C.green} corNegativo={C.red}/>
   </div>;
 }
-function FormCriarEmprestimo({onSalvo,onClose}){
+function FormCriarEmprestimo({onSalvo,onClose,data}){
   const [desc,setDesc]=useState("");
   const [valorTotal,setValorTotal]=useState("");
   const [valorParcela,setValorParcela]=useState("");
@@ -1785,7 +1785,9 @@ function FormCriarEmprestimo({onSalvo,onClose}){
   const [dataCredito,setDataCredito]=useState(hoje());
   const [diaVenc,setDiaVenc]=useState("10");
   const [contaUI,setContaUI]=useState("PF");
+  const [envelopeId,setEnvelopeId]=useState("");
   const [load,setLoad]=useState(false);
+  const envelopes=useMemo(()=>parseEnvelopesCustom(data||{}),[data]);
 
   async function salvar(){
     if(!desc.trim()||!valorTotal||!valorParcela||!parcelas){
@@ -1800,11 +1802,14 @@ function FormCriarEmprestimo({onSalvo,onClose}){
         descricao:desc.toUpperCase()+" - CRÉDITO RECEBIDO",
         valor:Math.abs(numBR(valorTotal)),tipo:"RECEITA",categoria:"RECEITA",
         forma,status:"EXECUTADO",obs:JSON.stringify({origemEmprestimo:desc})});
-      // 2. Cronograma das parcelas -- mesmo mecanismo do "+ Nova recorrencia"
+      // 2. Cronograma das parcelas -- mesmo mecanismo do "+ Nova recorrencia".
+      // [NOVO 25/07] Envelope padrao opcional -- backend ja suportava esse
+      // campo pra qualquer recorrencia (inclusive parcelada), so faltava
+      // esse formulario oferecer o campo.
       const r=await api({action:"lancarRecorrencia",descricao:desc,
         valor:-Math.abs(numBR(valorParcela)),forma,dia_venc:parseInt(diaVenc),
         semanal:false,destino:"FLUXO",parc_total:parseInt(parcelas),
-        tipo:"EMPRESTIMO",intervalo_meses:1,obs:""});
+        tipo:"EMPRESTIMO",intervalo_meses:1,obs:"",envelope_padrao:envelopeId});
       onSalvo(r);
     }catch(e){alert(e.message);}
     setLoad(false);
@@ -1845,6 +1850,13 @@ function FormCriarEmprestimo({onSalvo,onClose}){
             <option value="PJ">Conta PJ (empresa)</option>
           </select></div>
       </div>
+      {envelopes.length>0&&<div><label style={lbl}>Envelope (opcional)</label>
+        <select value={envelopeId} onChange={e=>setEnvelopeId(e.target.value)} style={{...inp,background:C.surface}}>
+          <option value="">Nenhum</option>
+          {envelopes.map(env=><option key={env.id} value={env.id}>{env.nome}</option>)}
+        </select>
+        <div style={{fontSize:9,color:C.textMuted,marginTop:3}}>Todas as parcelas já nascem marcadas nesse envelope, sem precisar marcar uma por uma.</div>
+      </div>}
       <div style={{fontSize:11,color:C.textMuted,fontStyle:"italic"}}>
         Lança o crédito recebido hoje (categoria Receita) e já monta o cronograma completo de parcelas — a primeira já aparece agendada, sem esperar virada de ciclo.
       </div>
@@ -1873,7 +1885,8 @@ function EmprestimosPassivos({data,onUpdate}){
   const items=(data.recorr||[]).map((r,i)=>({
     idx:i,desc:r[0],valor:Number(r[1]),forma:r[2],
     diaVenc:r[3],parcAtual:r[4],parcTotal:r[5],
-    ativo:r[6],tipo:r[7],obs:r[8],destino:r[9],tolerancia:r[10]
+    ativo:r[6],tipo:r[7],obs:r[8],destino:r[9],tolerancia:r[10],
+    alias:r[11],envelopePadrao:r[12]
   }));
 
   const hj=hoje();
@@ -1922,6 +1935,14 @@ function EmprestimosPassivos({data,onUpdate}){
   const [showForm,setShowForm]=useState(false);
   const [showFormDPF,setShowFormDPF]=useState(false);
   const [loadApagarEmp,setLoadApagarEmp]=useState(null);
+  const [loadEnvEmp,setLoadEnvEmp]=useState(null);
+  const envelopesDisponiveis=useMemo(()=>parseEnvelopesCustom(data),[data.config]);
+  async function mudarEnvelopeEmprestimo(desc,envelopeId){
+    setLoadEnvEmp(desc);
+    try{ onUpdate&&onUpdate(await api({action:"editarRecorrencia",descricao:desc,campo:"ENVELOPE_PADRAO",valor:envelopeId,resumo:""})); }
+    catch(e){ alert(e.message); }
+    setLoadEnvEmp(null);
+  }
   async function apagarEmprestimoInteiro(desc){
     if(!confirm('Apagar o empréstimo "'+desc+'" inteiro (crédito + todas as parcelas)? Só é bloqueado se algo já foi conciliado com o extrato. Essa ação não pode ser desfeita.'))return;
     setLoadApagarEmp(desc);
@@ -1949,7 +1970,7 @@ function EmprestimosPassivos({data,onUpdate}){
         {showForm?"Cancelar":"+ Criar empréstimo"}
       </button>
     </div>
-    {showForm&&<FormCriarEmprestimo onSalvo={r=>{onUpdate&&onUpdate(r);setShowForm(false);}} onClose={()=>setShowForm(false)}/>}
+    {showForm&&<FormCriarEmprestimo data={data} onSalvo={r=>{onUpdate&&onUpdate(r);setShowForm(false);}} onClose={()=>setShowForm(false)}/>}
     {!emprestimos.length&&!dividasAtivas.length&&<div style={{padding:"30px 16px",textAlign:"center",fontSize:12,color:C.textMuted,fontStyle:"italic"}}>Nenhum item com número de parcelas definido.</div>}
     {emprestimos.length>0&&<div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:10,padding:10}}>
       <div style={{fontSize:10,fontWeight:800,color:C.red,letterSpacing:".08em",marginBottom:8}}>EMPRÉSTIMOS PARCELADOS</div>
@@ -1972,6 +1993,14 @@ function EmprestimosPassivos({data,onUpdate}){
         <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>
           Faltam {it.restantes} · última em <b>{fmtD(it.dataUltimaISO)}</b>
         </div>
+        {envelopesDisponiveis.length>0&&<div style={{marginTop:6}}>
+          <select value={it.envelopePadrao||""} disabled={loadEnvEmp===it.desc}
+            onChange={e=>mudarEnvelopeEmprestimo(it.desc,e.target.value)}
+            style={{width:"100%",padding:"5px 7px",borderRadius:6,border:"1px solid "+C.border,fontSize:11,fontFamily:"inherit",background:C.surface,color:C.text}}>
+            <option value="">Sem envelope</option>
+            {envelopesDisponiveis.map(env=><option key={env.id} value={env.id}>💌 {env.nome}</option>)}
+          </select>
+        </div>}
         <button onClick={()=>apagarEmprestimoInteiro(it.desc)} disabled={loadApagarEmp===it.desc}
           style={{width:"100%",marginTop:6,padding:"5px",borderRadius:6,background:"transparent",color:C.red,fontSize:10,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
           {loadApagarEmp===it.desc?"…":'🗑 Apagar este empréstimo inteiro'}
@@ -7741,7 +7770,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260725.1830 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260725.1900 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7823,7 +7852,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260725.1830
+      // HTML v3.20260725.1900
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
