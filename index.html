@@ -3387,6 +3387,73 @@ function ConfiguracoesGerais({data,onUpdate,onIrPara}){
     setLoadCiclo(false);
   }
 
+  // [NOVO 26/07] Fase 1 da generalizacao de conta -- lista as contas
+  // (CONTA/CONTA PJ ja migradas automaticamente pelo backend + qualquer
+  // conta nova criada aqui), com saldo atual calculado do mesmo jeito que
+  // o saldo total ja e calculado (soma acumulada de EXECUTADO ate hoje),
+  // so que filtrado por conta (campo novo saldoRealConta que o backend ja
+  // manda em cada linha do fluxo).
+  const contas=data.contas||[];
+  const hojeStr=hoje();
+  function saldoAtualConta(contaId){
+    const linhas=(data.fluxo||[]).filter(r=>(r.forma||"CONTA")===contaId&&r.data<=hojeStr);
+    if(!linhas.length){
+      const c=contas.find(c=>c.id===contaId);
+      return c?c.saldoInicial:0;
+    }
+    return linhas.reduce((max,r)=>r.data>=max.data?r:max,linhas[0]).saldoRealConta;
+  }
+  function contaTemLancamentos(contaId){
+    return (data.fluxo||[]).some(r=>(r.forma||"CONTA")===contaId);
+  }
+  const [novaContaAberta,setNovaContaAberta]=useState(false);
+  const [novoNomeConta,setNovoNomeConta]=useState("");
+  const [novoTipoConta,setNovoTipoConta]=useState("PF");
+  const [novoSaldoConta,setNovoSaldoConta]=useState("");
+  const [loadConta,setLoadConta]=useState(false);
+  const [contaEditandoId,setContaEditandoId]=useState(null);
+  const [editNomeConta,setEditNomeConta]=useState("");
+  const [editTipoConta,setEditTipoConta]=useState("");
+  async function salvarNovaConta(){
+    if(!novoNomeConta.trim()){ alert("Informe um nome pra conta."); return; }
+    setLoadConta(true);
+    try{
+      const r=await api({action:"criarConta",nome:novoNomeConta.trim(),tipo:novoTipoConta,saldoInicial:numBR(novoSaldoConta)||0});
+      onUpdate(r);
+      setNovoNomeConta("");setNovoSaldoConta("");setNovaContaAberta(false);
+    }catch(e){alert(e.message);}
+    setLoadConta(false);
+  }
+  function abrirEdicaoConta(c){
+    setContaEditandoId(c.id);setEditNomeConta(c.nome);setEditTipoConta(c.tipo);
+  }
+  async function salvarEdicaoConta(id){
+    setLoadConta(true);
+    try{
+      const r=await api({action:"editarConta",id,nome:editNomeConta,tipo:editTipoConta});
+      onUpdate(r);setContaEditandoId(null);
+    }catch(e){alert(e.message);}
+    setLoadConta(false);
+  }
+  async function alternarAtivaConta(c){
+    if(c.ativa&&!confirm('Desativar "'+c.nome+'"? Ela some dos seletores de lançamento novo, mas o histórico continua intacto. Dá pra reativar depois.')) return;
+    setLoadConta(true);
+    try{
+      const r=await api({action:c.ativa?"desativarConta":"reativarConta",id:c.id});
+      onUpdate(r);
+    }catch(e){alert(e.message);}
+    setLoadConta(false);
+  }
+  async function apagarContaClick(c){
+    if(!confirm('Apagar a conta "'+c.nome+'" de vez? Só funciona se ela nunca teve nenhum lançamento. Essa ação não pode ser desfeita.')) return;
+    setLoadConta(true);
+    try{
+      const r=await api({action:"apagarConta",id:c.id});
+      onUpdate(r);
+    }catch(e){alert(e.message);}
+    setLoadConta(false);
+  }
+
   return <div style={{padding:"12px 16px"}}>
     <Card style={{padding:"14px 16px",marginBottom:14}}>
       <div style={{fontSize:13,fontWeight:800,color:C.text,marginBottom:6}}>🖥 Servidor</div>
@@ -3438,6 +3505,82 @@ function ConfiguracoesGerais({data,onUpdate,onIrPara}){
           {loadCiclo?"Salvando…":"Salvar"}
         </button>
       </div>
+    </Card>
+
+    {/* [NOVO 26/07] Fase 1 -- Contas como entidade. Lista as contas (PF/PJ
+        ja migradas + qualquer conta nova), saldo atual de cada uma, e
+        formulario pra criar mais (varios bancos, poupanca separada, etc). */}
+    <Card style={{padding:"14px 16px",marginTop:14}}>
+      <div style={{fontSize:13,fontWeight:800,color:C.text,marginBottom:6}}>🏦 Contas</div>
+      <div style={{fontSize:11,color:C.textMuted,marginBottom:10}}>
+        Cada lançamento (Recorrência, Empréstimo, Cofre, avulso) pode ser vinculado a uma dessas contas. Desativar não apaga histórico — só some dos seletores de lançamento novo.
+      </div>
+      {contas.map(c=>
+        <div key={c.id} style={{border:"1px solid "+C.border,borderRadius:10,padding:"10px 12px",marginBottom:8,opacity:c.ativa?1:0.5}}>
+          {contaEditandoId===c.id?
+            <div>
+              <input value={editNomeConta} onChange={e=>setEditNomeConta(e.target.value)} placeholder="Nome"
+                style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",marginBottom:6}}/>
+              <input value={editTipoConta} onChange={e=>setEditTipoConta(e.target.value)} placeholder="Tipo (PF/PJ/livre)"
+                style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",marginBottom:6}}/>
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={()=>salvarEdicaoConta(c.id)} disabled={loadConta}
+                  style={{flex:1,padding:"6px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>Salvar</button>
+                <button onClick={()=>setContaEditandoId(null)}
+                  style={{padding:"6px 10px",borderRadius:6,background:"transparent",color:C.textMuted,fontSize:11,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>Cancelar</button>
+              </div>
+            </div>
+          :
+            <div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:700,color:C.text}}>{c.nome}{c.tipo?" · "+c.tipo:""}</div>
+                  <div style={{fontSize:12,color:C.textMuted}}>{fmt(saldoAtualConta(c.id))}</div>
+                </div>
+                <div style={{display:"flex",gap:6}}>
+                  <button onClick={()=>abrirEdicaoConta(c)}
+                    style={{padding:"5px 9px",borderRadius:6,background:"transparent",color:C.blue,fontSize:11,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>Editar</button>
+                  <button onClick={()=>alternarAtivaConta(c)} disabled={loadConta}
+                    style={{padding:"5px 9px",borderRadius:6,background:"transparent",color:C.textMuted,fontSize:11,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>{c.ativa?"Desativar":"Reativar"}</button>
+                  {!contaTemLancamentos(c.id)&&<button onClick={()=>apagarContaClick(c)} disabled={loadConta}
+                    style={{padding:"5px 9px",borderRadius:6,background:"transparent",color:C.red,fontSize:11,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>Apagar</button>}
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+      )}
+      {novaContaAberta?
+        <div style={{border:"1px solid "+C.border,borderRadius:10,padding:"10px 12px",marginTop:6}}>
+          <input value={novoNomeConta} onChange={e=>setNovoNomeConta(e.target.value)} placeholder="Nome (ex: Poupança Itaú)"
+            style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",marginBottom:6}}/>
+          <div style={{display:"flex",gap:6,marginBottom:6}}>
+            <select value={novoTipoConta} onChange={e=>setNovoTipoConta(e.target.value)}
+              style={{padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit"}}>
+              <option value="PF">PF</option>
+              <option value="PJ">PJ</option>
+              <option value="">Livre</option>
+            </select>
+            <input type="text" inputMode="numeric" value={novoSaldoConta} onChange={e=>setNovoSaldoConta(formatarMoedaInput(e.target.value))} placeholder="Saldo inicial (opcional)"
+              style={{flex:1,padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+          </div>
+          <div style={{display:"flex",gap:6}}>
+            <button onClick={salvarNovaConta} disabled={loadConta}
+              style={{flex:1,padding:"8px",borderRadius:6,background:C.accent,color:"#fff",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+              {loadConta?"Criando…":"Criar conta"}
+            </button>
+            <button onClick={()=>setNovaContaAberta(false)}
+              style={{padding:"8px 12px",borderRadius:6,background:"transparent",color:C.textMuted,fontSize:12,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      :
+        <button onClick={()=>setNovaContaAberta(true)}
+          style={{width:"100%",padding:"8px",borderRadius:6,background:"transparent",color:C.accent,fontSize:12,fontWeight:700,border:"1px dashed "+C.accent,cursor:"pointer",fontFamily:"inherit",marginTop:2}}>
+          + Nova conta
+        </button>
+      }
     </Card>
   </div>;
 }
@@ -6664,6 +6807,7 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido, data, onSync}){
   const [cat,setCat]=useState("");
   const [parc,setParc]=useState(item.parcela!=="1/1"?(item.parcela.split("/")[1]||"1"):"1");
   const [envelopeId,setEnvelopeId]=useState(()=>envelopeRegraSugerido(item.title,data));
+  const [apelido,setApelido]=useState("");
   const [incluir,setIncluir]=useState(true);
   const [load,setLoad]=useState(false);
   const envelopes=useMemo(()=>parseEnvelopesCustom(data),[data&&data.config]);
@@ -6672,15 +6816,15 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido, data, onSync}){
   // permite "Lançar todos os marcados" sem perder a digitacao responsiva
   // (estado continua local aqui, so um resumo sobe pro pai via callback).
   useEffect(()=>{
-    onSync&&onSync({desc,valor,cat,parc,envelopeId,incluir});
-  },[desc,valor,cat,parc,envelopeId,incluir]);
+    onSync&&onSync({desc,valor,cat,parc,envelopeId,apelido,incluir});
+  },[desc,valor,cat,parc,envelopeId,apelido,incluir]);
 
   async function lancar(){
     setLoad(true);
     try{
       const r=await api({action:"lancarCartao",cartao,descricao:desc.toUpperCase(),
         valor:(-1)*Math.abs(numBR(valor)),parcelas:parseInt(parc)||1,
-        categoria:cat,dcp:cat==="DCP"?"S":"N",data_compra:item.date,envelopeId});
+        categoria:cat,dcp:cat==="DCP"?"S":"N",data_compra:item.date,envelopeId,apelido});
       onUpdate(r);
       onResolvido();
     }catch(e){alert(e.message);}
@@ -6699,6 +6843,12 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido, data, onSync}){
         if(!envelopeId){const sug=envelopeRegraSugerido(v,data);if(sug)setEnvelopeId(sug);}
       }}
       style={{width:"100%",padding:"7px 9px",borderRadius:7,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",marginBottom:6}}/>
+    {/* [NOVO 27/07] Apelido de exibicao direto na conciliacao -- o motor ja
+        aceitava isso (lancarCartao grava obs.apelido desde 20/07), so
+        faltava o campo aqui. Nome acima continua sendo o "nome real" (usado
+        pra reconhecer no proximo CSV); este e so pra exibicao. */}
+    <input value={apelido} onChange={e=>setApelido(e.target.value)} placeholder="Nome de exibição (opcional)"
+      style={{width:"100%",padding:"7px 9px",borderRadius:7,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",marginBottom:6,color:C.textSub}}/>
     <div style={{display:"flex",gap:6,marginBottom:6}}>
       <input type="text" inputMode="numeric" value={valor} onChange={e=>setValor(formatarMoedaInput(e.target.value))}
         style={{flex:1,padding:"7px 9px",borderRadius:7,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit"}}/>
@@ -7087,7 +7237,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         const r=await api({action:"lancarCartao",cartao,descricao:cfg.desc.toUpperCase(),
           valor:(-1)*Math.abs(numBR(cfg.valor)),parcelas:parseInt(cfg.parc)||1,
           categoria:cfg.cat,dcp:cfg.cat==="DCP"?"S":"N",data_compra:novosDoCSV.find((item,i)=>item.date+"|"+item.title+"|"+item.amount+"|"+i===chave)?.date,
-          envelopeId:cfg.envelopeId});
+          envelopeId:cfg.envelopeId,apelido:cfg.apelido});
         onUpdate(r);
         chavesLancadas.push(chave);
       }
@@ -7770,7 +7920,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260725.1900 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260727.1940 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -7852,7 +8002,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260725.1900
+      // HTML v3.20260727.1940
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
