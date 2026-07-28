@@ -7223,8 +7223,42 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     try{
       onUpdate(await api({action:"deletar",aba:abaCartao,row:editRow}));
       setEditRow(null);
+      // [NOVO 28/07] Apagar linha desloca todas as linhas abaixo -- os
+      // numeros de linha guardados em "conciliacao" (aguardando/divergencias/
+      // confirmados) ficam desatualizados a partir daqui. Mais seguro
+      // invalidar e deixar o Marcus rodar a conciliacao de novo se precisar
+      // continuar vendo os selos, do que arriscar selo errado em linha errada.
+      setConciliacao(null);
     }catch(e){alert(e.message);}
     setELoad(false);
+  }
+
+  // [NOVO 28/07] Mescla o item aberto no painel com outro ja lancado nesta
+  // mesma fatura (duplicata: recorrencia PENDENTE + real confirmado via
+  // CSV, cada um com descricao diferente). Quem sobrevive com os dados
+  // finais e sempre o lado CONFIRMADO pelo CSV desta sessao (se so um dos
+  // dois estiver); se nenhum estiver confirmado, so remove a duplicata sem
+  // mudar descricao/valor/data de ninguem.
+  async function mesclarComItem(itemAberto,rowAberto,confirmadoAberto,candidato){
+    const euSouOFinal=confirmadoAberto||!candidato.confirmado;
+    const rowManter=euSouOFinal?rowAberto:candidato.row;
+    const rowApagar=euSouOFinal?candidato.row:rowAberto;
+    const survivorAtual=euSouOFinal?{desc:itemAberto[1],valor:itemAberto[2],data:itemAberto[0]}:{desc:candidato.desc,valor:candidato.valor,data:candidato.data};
+    const descartadoDesc=euSouOFinal?candidato.desc:itemAberto[1];
+    const msg="Mesclar \""+itemAberto[1]+"\" com \""+candidato.desc+"\"?\n\n"+
+      "Fica: \""+survivorAtual.desc+"\" · "+fmt(survivorAtual.valor)+" · "+fmtD(survivorAtual.data)+
+      (confirmadoAberto||candidato.confirmado?" (dados do CSV/OFX confirmado)":" (nenhum dos 2 estava confirmado nessa conciliação — só remove a duplicata)")+
+      "\n\""+descartadoDesc+"\" vira apelido, e essa linha é apagada. Parcela não muda.";
+    if(!confirm(msg)) return false;
+    setELoad(true);
+    try{
+      const r=await api({action:"mesclarLancamentosCartao",cartao,rowManter,rowApagar,apelidoFinal:descartadoDesc});
+      onUpdate(r);
+      setEditRow(null);
+      setConciliacao(null);
+      return true;
+    }catch(e){alert(e.message);return false;}
+    finally{setELoad(false);}
   }
 
   async function apagarTodosItemComEssaDescricao(desc){
@@ -7234,6 +7268,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
       const r=await api({action:"deletarPorDescricao",aba:abaCartao,descricao:desc,apenasFuturas:false,apenasProgramadas:true});
       onUpdate(r);
       setEditRow(null);
+      setConciliacao(null);
       alert((r.apagados||0)+" item(ns) apagado(s).");
     }catch(e){alert(e.message);}
     setELoad(false);
@@ -7739,6 +7774,9 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           eAlias={eAlias} setEAlias={setEAlias} eApelido={eApelido} setEApelido={setEApelido} eLoad={eLoad} motivo={motivo}
           onSalvar={()=>salvarEdicaoItem({desc:r[1],valor:r[2],categoria:r[5],data:r[0],alias:_obsAliasCartao(_obsCartaoRaw(r)),apelido:_obsApelidoCartao(_obsCartaoRaw(r))})} onApagar={apagarItem} onApagarTodos={()=>apagarTodosItemComEssaDescricao(r[1])} onCancelar={()=>setEditRow(null)}
           onUsarCSV={divergencia?()=>usarDadosDoCSV(divergencia):null} previewCSV={divergencia?descComNotaPreservada(divergencia):null}
+          outrosItens={faturaAtual.itens.filter(x=>_linhaCartao(x)!==linhaR).map(x=>({row:_linhaCartao(x),desc:x[1],valor:x[2],data:x[0],parcela:x[3],confirmado:confirmadosRows.has(_linhaCartao(x))}))}
+          souConfirmado={confirmado}
+          onMesclar={(candidato)=>mesclarComItem(r,linhaR,confirmado,candidato)}
           data={data} abaCartao={abaCartao} onUpdate={onUpdate} onIrPara={onIrPara}/>}
       </div>;})}
     </div>}
@@ -7748,7 +7786,17 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
 // Painel inline de edição/exclusão de um item de CARTAO_PF/PJ (usado em
 // Confirmados e Previstos). Mesmo estilo do painel ⋮ do Fluxo, mas mais
 // simples: só descrição, valor (com toggle de sinal) e apagar.
-function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEData,eNeg,setENeg,eCategoria,setECategoria,eAlias,setEAlias,eApelido,setEApelido,eLoad,motivo,onSalvar,onApagar,onApagarTodos,onCancelar,onUsarCSV,previewCSV,data,abaCartao,onUpdate,onIrPara}){
+function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEData,eNeg,setENeg,eCategoria,setECategoria,eAlias,setEAlias,eApelido,setEApelido,eLoad,motivo,onSalvar,onApagar,onApagarTodos,onCancelar,onUsarCSV,previewCSV,outrosItens,souConfirmado,onMesclar,data,abaCartao,onUpdate,onIrPara}){
+  const [mesclando,setMesclando]=useState(false);
+  const [candidatoMescla,setCandidatoMescla]=useState(null);
+  const candidatosMescla=useMemo(()=>
+    (outrosItens||[]).slice().sort((a,b)=>Math.abs(Math.abs(a.valor)-Math.abs(r[2]))-Math.abs(Math.abs(b.valor)-Math.abs(r[2]))).slice(0,15),
+  [outrosItens,r]);
+  async function confirmarMesclar(){
+    if(!candidatoMescla) return;
+    const ok=await onMesclar(candidatoMescla);
+    if(ok){setMesclando(false);setCandidatoMescla(null);}
+  }
   const cartaoSigla=abaCartao==="CARTAO_PJ"?"PJ":"PF";
   const vencItem=String(r[4]||"").slice(0,10);
   const travada=data&&faturaTravada(cartaoSigla,vencItem,data);
@@ -7861,6 +7909,41 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
       <span style={{fontSize:9,color:"#92400E"}}>Separe vários com ";". Ajuda a conciliação a reconhecer o mesmo gasto com nome diferente no CSV.</span>
     </div>
     {data&&onUpdate&&<SeletorEnvelopeItem aba={abaCartao} row={_linhaCartao(r)} obsAtual={_obsCartaoRaw(r)} data={data} onUpdate={onUpdate}/>}
+    {/* [NOVO 28/07] Mesclar com outro lançamento já existente nesta fatura --
+        pro caso em que a recorrência gerou um PENDENTE e o CSV real acabou
+        lançado como linha separada (descrições diferentes o bastante pra o
+        cruzamento automático não pegar sozinho). Quem sobrevive com os
+        dados finais é o lado confirmado pelo CSV desta sessão, se houver. */}
+    {!travada&&candidatosMescla.length>0&&<div style={{marginBottom:8}}>
+      {!mesclando?
+        <button onClick={()=>setMesclando(true)} disabled={eLoad}
+          style={{width:"100%",padding:"7px",borderRadius:6,background:"transparent",color:C.blue,fontSize:11,fontWeight:700,border:"1px dashed "+C.blue,cursor:"pointer",fontFamily:"inherit"}}>
+          🔗 Mesclar com outro lançamento (duplicata)
+        </button>
+      :
+        <div style={{border:"1px solid "+C.accent,borderRadius:8,padding:"8px 10px",background:C.surface}}>
+          <div style={{fontSize:11,color:C.textMuted,marginBottom:6}}>Qual desses é a mesma compra que esta?{souConfirmado?" (este já está confirmado pelo CSV/OFX — os dados dele prevalecem)":""}</div>
+          <div style={{maxHeight:180,overflowY:"auto"}}>
+            {candidatosMescla.map(c=>
+              <label key={c.row} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",cursor:"pointer"}}>
+                <input type="radio" name={"mescla-"+_linhaCartao(r)} checked={candidatoMescla&&candidatoMescla.row===c.row} onChange={()=>setCandidatoMescla(c)}/>
+                <span style={{fontSize:12,color:C.text}}>{c.desc} · {fmt(c.valor)} · {fmtD(c.data)}{c.confirmado?" · ✅":""}</span>
+              </label>
+            )}
+          </div>
+          <div style={{display:"flex",gap:6,marginTop:6}}>
+            <button onClick={confirmarMesclar} disabled={eLoad||!candidatoMescla}
+              style={{flex:1,padding:"7px",borderRadius:6,background:candidatoMescla?C.blue:C.borderLight,color:candidatoMescla?"#fff":C.textMuted,fontSize:12,fontWeight:700,border:"none",cursor:candidatoMescla?"pointer":"default",fontFamily:"inherit"}}>
+              {eLoad?"…":"Confirmar mesclagem"}
+            </button>
+            <button onClick={()=>{setMesclando(false);setCandidatoMescla(null);}} disabled={eLoad}
+              style={{padding:"7px 12px",borderRadius:6,background:C.borderLight,color:C.textSub,fontSize:12,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      }
+    </div>}
     <div style={{display:"flex",gap:8}}>
       <button onClick={onSalvar} disabled={eLoad||!eDesc.trim()||!eValor||!eCategoria}
         style={{flex:1,background:C.accent,color:"#fff",borderRadius:6,padding:"7px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer"}}>
@@ -7983,7 +8066,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260728.0410 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260728.0500 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -8065,7 +8148,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260728.0410
+      // HTML v3.20260728.0500
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
