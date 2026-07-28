@@ -6801,7 +6801,7 @@ function BotaoLancar({data,onUpdate,onIrPara}){
 // (🔴 fora da planilha). Pré-preenche descrição/valor/data do CSV; Marcus só
 // escolhe categoria (e ajusta parcelas se for o caso) e confirma -- sem
 // Gemini em nenhum ponto deste caminho.
-function NovoDoCSV({item, cartao, onUpdate, onResolvido, data, onSync}){
+function NovoDoCSV({item, cartao, onUpdate, onResolvido, onVinculado, candidatos, data, onSync}){
   const [desc,setDesc]=useState(item.title.toUpperCase());
   const [valor,setValor]=useState(formatarValorInicial(-Math.abs(item.amount)));
   const [cat,setCat]=useState("");
@@ -6810,7 +6810,33 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido, data, onSync}){
   const [apelido,setApelido]=useState("");
   const [incluir,setIncluir]=useState(true);
   const [load,setLoad]=useState(false);
+  const [vinculando,setVinculando]=useState(false);
+  const [candidatoSel,setCandidatoSel]=useState(null);
   const envelopes=useMemo(()=>parseEnvelopesCustom(data),[data&&data.config]);
+
+  // [NOVO 28/07] Candidatos ordenados por proximidade de valor com o item do
+  // CSV -- mesmos itens que "conciliarFatura" ja classificou como aguardando
+  // fatura (PENDENTE, ainda sem match), so que aqui a escolha e manual (o
+  // cruzamento automatico so pega quando ha palavra em comum na descricao).
+  const candidatosOrdenados=useMemo(()=>
+    (candidatos||[]).slice().sort((a,b)=>Math.abs(Math.abs(a.valor)-Math.abs(item.amount))-Math.abs(Math.abs(b.valor)-Math.abs(item.amount))),
+  [candidatos,item.amount]);
+
+  async function confirmarVinculo(){
+    if(!candidatoSel) return;
+    const msg="Vincular \""+item.title+"\" (R$ "+Math.abs(item.amount).toFixed(2)+", "+fmtD(item.date)+") a \""+candidatoSel.desc+"\"?\n\n"+
+      "A descrição atual (\""+candidatoSel.desc+"\") vira apelido. A descrição passa a ser o texto do banco (\""+item.title+"\"), e valor/data passam a ser os do CSV. Parcela não muda.";
+    if(!confirm(msg)) return;
+    setLoad(true);
+    try{
+      const r=await api({action:"vincularCompraCartao",cartao,row:candidatoSel.row,
+        descricaoCsv:item.title,valorCsv:item.amount,dataCsv:item.date,parcelaCsv:item.parcela});
+      onUpdate(r);
+      onVinculado&&onVinculado(candidatoSel.row);
+      onResolvido();
+    }catch(e){alert(e.message);}
+    setLoad(false);
+  }
 
   // [NOVO 20/07] Espelha o estado atual pro componente pai a cada mudanca --
   // permite "Lançar todos os marcados" sem perder a digitacao responsiva
@@ -6862,6 +6888,39 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido, data, onSync}){
       <option value="">Envelope: nenhum</option>
       {envelopes.map(env=><option key={env.id} value={env.id}>Envelope: {env.nome}</option>)}
     </select>}
+    {/* [NOVO 28/07] Vincular a uma compra ja lancada (PENDENTE, aguardando
+        fatura) em vez de lancar duplicado -- pro caso em que a descricao
+        cadastrada nao tem palavra em comum com o texto do banco (ex:
+        "PASSAGEM FILHOS" vs "MOBIFACIL"), entao o cruzamento automatico do
+        conciliarFatura nao pegou sozinho. */}
+    {candidatosOrdenados.length>0&&<div style={{marginBottom:8}}>
+      {!vinculando?
+        <button onClick={()=>setVinculando(true)} disabled={load}
+          style={{width:"100%",padding:"7px",borderRadius:7,background:"transparent",color:C.blue,fontSize:12,fontWeight:700,border:"1px dashed "+C.blue,cursor:"pointer",fontFamily:"inherit"}}>
+          🔗 Vincular a uma compra já lançada
+        </button>
+      :
+        <div style={{border:"1px solid "+C.border,borderRadius:8,padding:"8px 10px"}}>
+          <div style={{fontSize:11,color:C.textMuted,marginBottom:6}}>Qual dessas já lançadas é a mesma compra?</div>
+          {candidatosOrdenados.map(c=>
+            <label key={c.row} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",cursor:"pointer"}}>
+              <input type="radio" name={"vinc-"+item.date+item.title+item.amount} checked={candidatoSel&&candidatoSel.row===c.row} onChange={()=>setCandidatoSel(c)}/>
+              <span style={{fontSize:12,color:C.text}}>{c.desc} · {fmt(c.valor)} · {fmtD(c.dataCompra)}</span>
+            </label>
+          )}
+          <div style={{display:"flex",gap:6,marginTop:6}}>
+            <button onClick={confirmarVinculo} disabled={load||!candidatoSel}
+              style={{flex:1,padding:"7px",borderRadius:7,background:candidatoSel?C.blue:C.borderLight,color:candidatoSel?"#fff":C.textMuted,fontSize:12,fontWeight:700,border:"none",cursor:candidatoSel?"pointer":"default",fontFamily:"inherit"}}>
+              {load?"…":"Confirmar vínculo"}
+            </button>
+            <button onClick={()=>{setVinculando(false);setCandidatoSel(null);}} disabled={load}
+              style={{padding:"7px 12px",borderRadius:7,background:C.borderLight,color:C.textSub,fontSize:12,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      }
+    </div>}
     <div style={{display:"flex",gap:6}}>
       <button onClick={lancar} disabled={load||!desc.trim()||!valor||!cat}
         style={{flex:1,background:C.accent,color:"#fff",borderRadius:7,padding:"7px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer"}}>
@@ -7215,8 +7274,9 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   // então "resolver" aqui é lançar de vez (lancarCartao) ou dispensar (o
   // Marcus decidiu que não precisa lançar, ex: pagamento de fatura mal
   // categorizado pelo CSV).
-  function removerNovoDoCSV(item){
+  function removerNovoDoCSV(item,chave){
     setConciliacao(c=>c?{...c,foraDaPlanilha:(c.foraDaPlanilha||[]).filter(n=>n!==item)}:c);
+    if(chave) setSyncNovosCartao(s=>{ if(!(chave in s)) return s; const n={...s}; delete n[chave]; return n; });
   }
 
   // [NOVO 20/07] "Lançar todos os marcados" pro cartão -- mesma ideia que
@@ -7247,6 +7307,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     // qual travou.
     setConciliacao(c=>c?{...c,foraDaPlanilha:(c.foraDaPlanilha||[]).filter((item,i)=>
       !chavesLancadas.includes(item.date+"|"+item.title+"|"+item.amount+"|"+i))}:c);
+    if(chavesLancadas.length) setSyncNovosCartao(s=>{ const n={...s}; chavesLancadas.forEach(c=>delete n[c]); return n; });
     setLoad(false);
   }
 
@@ -7422,7 +7483,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   return <div style={{paddingBottom:80}}>
     {/* Seletor PF/PJ */}
     <div style={{display:"flex",gap:6,marginBottom:6}}>
-      {["PJ","PF"].map(t=><button key={t} onClick={()=>{setCartao(t);setFatIdx(0);setConciliacao(null);}}
+      {["PJ","PF"].map(t=><button key={t} onClick={()=>{setCartao(t);setFatIdx(0);setConciliacao(null);setSyncNovosCartao({});}}
         style={{flex:1,padding:"9px",borderRadius:9,border:"1px solid "+(cartao===t?C.accent:C.border),
           background:cartao===t?C.accentLight:"transparent",color:cartao===t?C.accent:C.textSub,
           fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
@@ -7492,7 +7553,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           </div>}
 
         <div style={{fontSize:10,fontWeight:700,color:C.textSub,marginBottom:4}}>AÇÕES DE FATURA</div>
-        <ConciliarCartao cartao={cartao} data={data} onResultado={setConciliacao}/>
+        <ConciliarCartao cartao={cartao} data={data} onResultado={r=>{setConciliacao(r);setSyncNovosCartao({});}}/>
         <ResetCartao cartao={cartao} data={data} onUpdate={onUpdate}/>
         <ImportarAssinaturas onUpdate={onUpdate}/>
       </div>}
@@ -7601,7 +7662,9 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
       {novosDoCSV.map((item,i)=>{const chave=item.date+"|"+item.title+"|"+item.amount+"|"+i;
         return <NovoDoCSV key={chave}
         item={item} cartao={cartao} onUpdate={onUpdate} data={data}
-        onResolvido={()=>removerNovoDoCSV(item)}
+        onResolvido={()=>removerNovoDoCSV(item,chave)}
+        onVinculado={(rowVinculada)=>setConciliacao(c=>c?{...c,aguardandoFatura:(c.aguardandoFatura||[]).filter(a=>a.row!==rowVinculada)}:c)}
+        candidatos={concValida?(conciliacao.aguardandoFatura||[]):[]}
         onSync={cfg=>setSyncNovosCartao(s=>({...s,[chave]:cfg}))}/>;})}
     </div>}
 
@@ -7920,7 +7983,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260727.1940 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260728.0410 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -8002,7 +8065,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260727.1940
+      // HTML v3.20260728.0410
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
