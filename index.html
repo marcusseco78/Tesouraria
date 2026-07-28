@@ -4925,18 +4925,25 @@ function _gerarLinhasTimeline(data,hj){
   return datasOrdenadas.map(iso=>{
     const brutos=porDia[iso];
     const itensFluxo=brutos.filter(x=>x.origem==="fluxo").map(x=>x.r).sort((a,b)=>(a.row||0)-(b.row||0));
-    let saldo;
+    let saldoFim;
     if(itensFluxo.length){
       const ultimoDoDia=itensFluxo[itensFluxo.length-1];
-      saldo=ultimoDoDia.status==="EXECUTADO"?ultimoDoDia.saldoReal:ultimoDoDia.saldoProjetado;
-      ultimoSaldo=saldo;
+      saldoFim=ultimoDoDia.status==="EXECUTADO"?ultimoDoDia.saldoReal:ultimoDoDia.saldoProjetado;
+      ultimoSaldo=saldoFim;
     } else {
       // Dia sem lancamento de Fluxo (incluindo hoje, se for o caso) herda o
       // saldo do ultimo dia conhecido -- mesmo principio que Previsao ja
       // usa. Um dia com SO gasto de cartao tambem cai aqui de proposito
       // (cartao nunca mexe no saldo).
-      saldo=ultimoSaldo;
+      saldoFim=ultimoSaldo;
     }
+    // [CORRIGIDO 28/07] A Timeline mostrava o saldo de FIM do dia (depois
+    // de aplicar os lancamentos daquele dia) -- Fluxo/Previsao sempre
+    // mostraram o saldo de INICIO (antes dos lancamentos do dia), que e a
+    // convencao oficial do app. Mesma formula que Fluxo ja usa: saldo de
+    // fim menos o total movimentado no dia = saldo de inicio.
+    const totalDia=itensFluxo.reduce((s,r)=>s+(r.valor||0),0);
+    const saldo=(saldoFim!=null&&isFinite(saldoFim))?(saldoFim-totalDia):null;
     const dt=parseDateLocal(iso);
     const itensNormais=itensFluxo.map(r=>({tipo:"item",ehCartao:false,row:r.row,descricao:nomeExibicao(r,data),categoriaTxt:
         (r.categoria==="DCP_PROVISAO"?"":(tipoDisplay(r.tipo,data)+(r.categoria&&r.categoria!==r.tipo?" · "+r.categoria:"")+" · "+r.forma)),
@@ -8136,7 +8143,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260728.1932 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260728.2004 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -8218,7 +8225,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260728.1932
+      // HTML v3.20260728.2004
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
