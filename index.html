@@ -446,6 +446,27 @@ function listarPeriodosEnvelope(env,ateData){
 // logo apos as 8 colunas padrao do cartao) -- ela nao se move, so o que vem
 // depois dela varia.
 function _linhaCartao(r){ return r&&r.length?r[r.length-1]:null; }
+
+// [NOVO 28/07] Apagar uma linha (deletar item / mesclar) desloca TODAS as
+// linhas abaixo dela pra cima em 1 no Apps Script -- os numeros de linha
+// guardados na conciliacao em tela (confirmadosFatura/aguardandoFatura/
+// possiveisDivergencias) ficam desatualizados a partir dali. Em vez de
+// jogar fora a conciliacao inteira (o que tira o selo de TODO o resto da
+// fatura, sem necessidade), remapeia: remove a referencia da linha que
+// sumiu e desloca em -1 qualquer referencia abaixo dela.
+function _remapConciliacaoAposExclusao(c,rowApagada){
+  if(!c||rowApagada==null) return c;
+  function remap(lista){
+    return (lista||[]).filter(x=>x.row!==rowApagada).map(x=>x.row>rowApagada?{...x,row:x.row-1}:x);
+  }
+  return {...c,
+    aguardandoFatura:remap(c.aguardandoFatura),
+    confirmadosFatura:remap(c.confirmadosFatura),
+    possiveisDivergencias:(c.possiveisDivergencias||[])
+      .filter(d=>d.planilha.row!==rowApagada)
+      .map(d=>d.planilha.row>rowApagada?{...d,planilha:{...d.planilha,row:d.planilha.row-1}}:d)
+  };
+}
 function _obsCartaoRaw(r){ return r&&r.length>8?r[8]:null; }
 // [NOVO 17/07] Le os termos alternativos (alias) gravados no OBS de um item
 // de cartao -- usado so pra pre-preencher o campo de edicao, nunca muda a
@@ -7221,14 +7242,14 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     if(!window.confirm("Apagar este item do cartão? Não pode ser desfeito pelo app."))return;
     setELoad(true);
     try{
+      const rowApagada=editRow;
       onUpdate(await api({action:"deletar",aba:abaCartao,row:editRow}));
       setEditRow(null);
-      // [NOVO 28/07] Apagar linha desloca todas as linhas abaixo -- os
-      // numeros de linha guardados em "conciliacao" (aguardando/divergencias/
-      // confirmados) ficam desatualizados a partir daqui. Mais seguro
-      // invalidar e deixar o Marcus rodar a conciliacao de novo se precisar
-      // continuar vendo os selos, do que arriscar selo errado em linha errada.
-      setConciliacao(null);
+      // [CORRIGIDO 28/07] Antes zerava a conciliacao inteira (todo o resto
+      // da fatura perdia o selo verde por causa de 1 exclusao) -- agora so
+      // remapeia os numeros de linha que mudaram, preservando os selos do
+      // que nao foi afetado.
+      setConciliacao(c=>_remapConciliacaoAposExclusao(c,rowApagada));
     }catch(e){alert(e.message);}
     setELoad(false);
   }
@@ -7255,7 +7276,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
       const r=await api({action:"mesclarLancamentosCartao",cartao,rowManter,rowApagar,apelidoFinal:descartadoDesc});
       onUpdate(r);
       setEditRow(null);
-      setConciliacao(null);
+      setConciliacao(c=>_remapConciliacaoAposExclusao(c,rowApagar));
       return true;
     }catch(e){alert(e.message);return false;}
     finally{setELoad(false);}
@@ -8066,7 +8087,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260728.0500 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260728.0526 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -8148,7 +8169,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260728.0500
+      // HTML v3.20260728.0526
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
