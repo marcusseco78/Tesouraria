@@ -6822,7 +6822,7 @@ function BotaoLancar({data,onUpdate,onIrPara}){
 // (🔴 fora da planilha). Pré-preenche descrição/valor/data do CSV; Marcus só
 // escolhe categoria (e ajusta parcelas se for o caso) e confirma -- sem
 // Gemini em nenhum ponto deste caminho.
-function NovoDoCSV({item, cartao, onUpdate, onResolvido, onVinculado, candidatos, data, onSync}){
+function NovoDoCSV({item, cartao, onUpdate, onResolvido, onVinculado, onNovaLinhaConfirmada, candidatos, data, onSync}){
   const [desc,setDesc]=useState(item.title.toUpperCase());
   const [valor,setValor]=useState(formatarValorInicial(-Math.abs(item.amount)));
   const [cat,setCat]=useState("");
@@ -6873,6 +6873,9 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido, onVinculado, candidatos
         valor:(-1)*Math.abs(numBR(valor)),parcelas:parseInt(parc)||1,
         categoria:cat,dcp:cat==="DCP"?"S":"N",data_compra:item.date,envelopeId,apelido});
       onUpdate(r);
+      // [NOVO 28/07] Item veio literalmente do OFX/CSV -- marca como
+      // confirmado na hora, pra ganhar o mesmo selo verde de conciliado.
+      if(r.novaLinha) onNovaLinhaConfirmada&&onNovaLinhaConfirmada(r.novaLinha);
       onResolvido();
     }catch(e){alert(e.message);}
     setLoad(false);
@@ -7364,6 +7367,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     const total=marcadosNovosCartao.length;
     setProgressoLancarTodos({feito:0,total});
     const chavesLancadas=[];
+    const linhasConfirmadas=[];
     let erro=null;
     try{
       let feito=0;
@@ -7373,6 +7377,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           categoria:cfg.cat,dcp:cfg.cat==="DCP"?"S":"N",data_compra:novosDoCSV.find((item,i)=>item.date+"|"+item.title+"|"+item.amount+"|"+i===chave)?.date,
           envelopeId:cfg.envelopeId,apelido:cfg.apelido});
         onUpdate(r);
+        if(r.novaLinha) linhasConfirmadas.push(r.novaLinha);
         chavesLancadas.push(chave);
         feito++;
         setProgressoLancarTodos({feito,total});
@@ -7381,8 +7386,10 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     // Remove da lista os que deram certo, mesmo se algum no meio falhar --
     // evita relancar por engano os que ja foram, so o alerta acima ja avisa
     // qual travou.
-    setConciliacao(c=>c?{...c,foraDaPlanilha:(c.foraDaPlanilha||[]).filter((item,i)=>
-      !chavesLancadas.includes(item.date+"|"+item.title+"|"+item.amount+"|"+i))}:c);
+    setConciliacao(c=>c?{...c,
+      foraDaPlanilha:(c.foraDaPlanilha||[]).filter((item,i)=>
+        !chavesLancadas.includes(item.date+"|"+item.title+"|"+item.amount+"|"+i)),
+      confirmadosFatura:[...(c.confirmadosFatura||[]),...linhasConfirmadas.map(row=>({row}))]}:c);
     if(chavesLancadas.length) setSyncNovosCartao(s=>{ const n={...s}; chavesLancadas.forEach(c=>delete n[c]); return n; });
     setLoad(false);
     setProgressoLancarTodos(null);
@@ -7758,7 +7765,10 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         return <NovoDoCSV key={chave}
         item={item} cartao={cartao} onUpdate={onUpdate} data={data}
         onResolvido={()=>removerNovoDoCSV(item,chave)}
-        onVinculado={(rowVinculada)=>setConciliacao(c=>c?{...c,aguardandoFatura:(c.aguardandoFatura||[]).filter(a=>a.row!==rowVinculada)}:c)}
+        onVinculado={(rowVinculada)=>setConciliacao(c=>c?{...c,
+          aguardandoFatura:(c.aguardandoFatura||[]).filter(a=>a.row!==rowVinculada),
+          confirmadosFatura:[...(c.confirmadosFatura||[]),{row:rowVinculada}]}:c)}
+        onNovaLinhaConfirmada={(row)=>setConciliacao(c=>c?{...c,confirmadosFatura:[...(c.confirmadosFatura||[]),{row}]}:c)}
         candidatos={concValida?(conciliacao.aguardandoFatura||[]):[]}
         onSync={cfg=>setSyncNovosCartao(s=>({...s,[chave]:cfg}))}/>;})}
     </div>}
@@ -8126,7 +8136,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260728.1923 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260728.1932 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -8208,7 +8218,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260728.1923
+      // HTML v3.20260728.1932
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
