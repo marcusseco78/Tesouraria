@@ -159,8 +159,9 @@ function configFatura(data){
 // e sempre do backend (travarFatura/destravarFatura), nunca inferida aqui.
 function faturaTravada(cartao,vencimento,data){
   try{
+    const alvo=String(vencimento||"").slice(0,10);
     const lista=JSON.parse((data&&data.config&&data.config.FATURAS_TRAVADAS_JSON)||"[]");
-    return lista.some(f=>f.cartao===cartao&&f.vencimento===vencimento);
+    return lista.some(f=>f.cartao===cartao&&String(f.vencimento||"").slice(0,10)===alvo);
   }catch(e){ return false; }
 }
 // A que mes civil de FECHAMENTO uma data (string YYYY-MM-DD) pertence.
@@ -7292,6 +7293,20 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     finally{setELoad(false);}
   }
 
+  // [NOVO 29/07] Destravar direto no cabecalho da fatura -- pedido do
+  // Marcus, ja que o botao dentro do painel de item dependia do
+  // vencimento daquele item especifico (e sofria do mesmo problema de
+  // comparacao). Aqui usa faturaAtual.venc, que e a fonte de verdade do
+  // cabecalho e ja normalizada.
+  const [loadDestravaFatura,setLoadDestravaFatura]=useState(false);
+  async function destravarFaturaAtual(){
+    if(!confirm("Destravar a fatura "+cartao+" de vencimento "+fmtD(faturaAtual.venc)+"? Ela foi marcada como conciliada por completo. Só destrave se precisar mesmo corrigir algo nela."))return;
+    setLoadDestravaFatura(true);
+    try{ onUpdate(await api({action:"destravarFatura",cartao,vencimento:faturaAtual.venc})); }
+    catch(e){ alert(e.message); }
+    setLoadDestravaFatura(false);
+  }
+
   async function apagarTodosItemComEssaDescricao(desc){
     if(!window.confirm("Apagar TODOS os itens ainda PENDENTES com a descrição \""+desc+"\" no cartão "+cartao+"? Itens já PAGOS não são tocados."))return;
     setELoad(true);
@@ -7418,7 +7433,15 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   const faturas=useMemo(()=>{
     const mp={};
     rows.forEach(r=>{
-      const v=r[4]||"";
+      // [CORRIGIDO 29/07] r[4] pode chegar como ISO completo com hora
+      // ("2026-08-07T03:00:00.000Z", serializado de um Date do Apps
+      // Script) em vez de so a data -- comparacoes de igualdade exata
+      // (===) contra esse valor cru quebravam silenciosamente em varios
+      // lugares (trava de fatura, deteccao de fatura ABERTA, navegacao
+      // vinda de outra aba). Normaliza pros 10 primeiros chars (YYYY-MM-DD)
+      // uma unica vez aqui, na origem, pra tudo que usa faturaAtual.venc
+      // daqui pra frente ficar consistente.
+      const v=String(r[4]||"").slice(0,10);
       if(!mp[v])mp[v]={venc:v,itens:[]};
       mp[v].itens.push(r);
     });
@@ -7459,7 +7482,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     if(cartao!==destaque.cartao){ setCartao(destaque.cartao); return; }
     const alvo=rows.find(r=>_linhaCartao(r)===destaque.row);
     if(!alvo) return;
-    const idxAlvo=faturas.findIndex(f=>f.venc===alvo[4]);
+    const idxAlvo=faturas.findIndex(f=>f.venc===String(alvo[4]||"").slice(0,10));
     if(idxAlvo>=0) setFatIdx(idxAlvo-idxAberta);
     // [22/07] Vindo do "+" (antecipar Fixa via cartao): abre o item JA
     // EXISTENTE no painel de edicao com a data ja em hoje, igual ao Fluxo.
@@ -7673,6 +7696,12 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         {corFaturaAtual===C.red&&<span style={{fontSize:10,background:"#FEE2E2",color:C.red,padding:"2px 8px",borderRadius:10,fontWeight:700}}>VENCIDA</span>}
         {!corFaturaAtual&&(idxInicial+fatIdx)===idxAberta&&<span style={{fontSize:10,background:C.accentLight,color:C.accent,padding:"2px 8px",borderRadius:10,fontWeight:700}}>ABERTA</span>}
         {faturaTravada(cartao,faturaAtual.venc,data)&&<span style={{fontSize:10,background:"#DBEAFE",color:"#1E40AF",padding:"2px 8px",borderRadius:10,fontWeight:700,marginLeft:4}}>🔒 TRAVADA</span>}
+        {faturaTravada(cartao,faturaAtual.venc,data)&&<div style={{marginTop:6}}>
+          <button onClick={destravarFaturaAtual} disabled={loadDestravaFatura}
+            style={{padding:"5px 10px",borderRadius:6,background:"#1E40AF",color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+            {loadDestravaFatura?"…":"🔓 Destravar esta fatura"}
+          </button>
+        </div>}
       </div>
       {navBtn(1,idxInicial+fatIdx>=faturas.length-1)}
     </div>
@@ -8143,7 +8172,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260728.2004 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260729.0849 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -8225,7 +8254,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260728.2004
+      // HTML v3.20260729.0849
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
