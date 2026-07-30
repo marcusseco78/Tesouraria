@@ -481,6 +481,12 @@ function _obsAliasCartao(obsRaw){
 function _obsApelidoCartao(obsRaw){
   try{ const o=JSON.parse(obsRaw||"{}"); return o.apelido||""; }catch(e){ return ""; }
 }
+// [NOVO 30/07] Selo "confirmado pelo CSV/OFX" PERSISTIDO na propria linha
+// (nao so na conciliacao efemera da sessao) -- resolve o problema de sumir
+// o selo verde toda vez que o Marcus sai da tela e volta.
+function _obsConfirmadoOfx(obsRaw){
+  try{ const o=JSON.parse(obsRaw||"{}"); return !!o.confirmadoOfx; }catch(e){ return false; }
+}
 function parseEnvelopesCustom(data){
   try{ return data?.config?.ENVELOPES_JSON ? JSON.parse(data.config.ENVELOPES_JSON) : []; }
   catch(e){ return []; }
@@ -1457,7 +1463,7 @@ function EditorEnvelope({data,onUpdate}){
         </div>
         {itens.map((it,i)=><div key={i} style={{background:C.surface,border:"1px solid "+C.border,borderRadius:8,padding:8,marginBottom:6}}>
           <div style={{display:"flex",gap:6,marginBottom:6}}>
-            <input type="text" value={it.nome} onChange={e=>atualizarItem(i,"nome",e.target.value)} placeholder="Nome do item"
+            <input type="text" value={it.nome} onChange={e=>atualizarItem(i,"nome",e.target.value.toUpperCase())} placeholder="Nome do item"
               style={{flex:1,padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit"}}/>
             <button onClick={()=>removerItem(i)} style={{background:"none",border:"none",color:C.red,fontSize:14,cursor:"pointer",padding:"0 4px"}}>✕</button>
           </div>
@@ -1629,14 +1635,14 @@ function FormCriarDividaPosFixada({onSalvo,onClose}){
     </div>
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       <div><label style={lbl}>Nome</label>
-        <input value={nome} onChange={e=>setNome(e.target.value)} placeholder="Ex: Empréstimo Tia Márcia" style={inp}/></div>
+        <input value={nome} onChange={e=>setNome(e.target.value.toUpperCase())} placeholder="Ex: Empréstimo Tia Márcia" style={inp}/></div>
       <div><label style={lbl}>Saldo inicial (R$)</label>
         <input type="text" inputMode="numeric" value={saldoInicial} onChange={e=>setSaldoInicial(formatarMoedaInput(e.target.value))} placeholder="0,00" style={inp}/></div>
       <div><label style={lbl}>% do CDI</label>
         <input type="number" step="1" value={percCdi} onChange={e=>setPercCdi(e.target.value)} placeholder="100" style={inp}/>
         <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Só variação de percentual do CDI (ex: 100, 120) — nunca outro índice.</div></div>
       <div><label style={lbl}>Observação (opcional)</label>
-        <input value={observacao} onChange={e=>setObservacao(e.target.value)} placeholder="Contexto livre" style={inp}/></div>
+        <input value={observacao} onChange={e=>setObservacao(e.target.value.toUpperCase())} placeholder="Contexto livre" style={inp}/></div>
       <button onClick={salvar} disabled={load||!nome.trim()||!saldoInicial}
         style={{width:"100%",padding:"10px",borderRadius:8,background:C.accent,color:"#fff",
           fontSize:14,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
@@ -1850,7 +1856,7 @@ function FormCriarEmprestimo({onSalvo,onClose,data}){
     </div>
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       <div><label style={lbl}>Descrição</label>
-        <input value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Ex: EMPRÉSTIMO 5" style={inp}/></div>
+        <input value={desc} onChange={e=>setDesc(e.target.value.toUpperCase())} placeholder="Ex: EMPRÉSTIMO 5" style={inp}/></div>
       <div style={{display:"flex",gap:8}}>
         <div style={{flex:1}}><label style={lbl}>Valor recebido (crédito)</label>
           <input type="text" inputMode="numeric" value={valorTotal} onChange={e=>setValorTotal(formatarMoedaInput(e.target.value))} placeholder="0,00" style={{...inp,textAlign:"right"}}/></div>
@@ -2422,7 +2428,7 @@ function FormModo({modo,onChange,onRemover,podeRemover,onLancarAvulso}){
     </>}
     <div>
       <label style={{fontSize:9,color:C.textMuted}}>OBS (livre)</label>
-      <input type="text" value={modo.obs||""} onChange={e=>upd("obs",e.target.value)} placeholder="Anotação livre sobre esse modo"
+      <input type="text" value={modo.obs||""} onChange={e=>upd("obs",e.target.value.toUpperCase())} placeholder="Anotação livre sobre esse modo"
         style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,boxSizing:"border-box",fontFamily:"inherit"}}/>
     </div>
   </div>;
@@ -2766,7 +2772,7 @@ function EnvelopesCustom({data,onUpdate}){
 
     {form&&<div style={{background:C.purpleLight,border:"1px solid "+C.purple,borderRadius:10,padding:"14px 16px",margin:"0 14px 14px"}}>
       <div style={{fontSize:12,fontWeight:700,color:C.purple,marginBottom:8}}>{form.id?"Editar envelope":"Novo envelope"}</div>
-      <input value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} placeholder="Nome (ex: Festa de aniversário da filha)"
+      <input value={form.nome} onChange={e=>setForm({...form,nome:e.target.value.toUpperCase()})} placeholder="Nome (ex: Festa de aniversário da filha)"
         style={{width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",marginBottom:8}}/>
       <input type="text" inputMode="numeric" value={form.teto} onChange={e=>setForm({...form,teto:formatarMoedaInput(e.target.value)})} placeholder="Teto (R$)"
         disabled={!!form.cofreId}
@@ -3347,7 +3353,7 @@ function Cofres({data,onUpdate}){
     {showForm&&<div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:10,padding:12,marginBottom:12}}>
       <div style={{marginBottom:8}}>
         <label style={{fontSize:10,fontWeight:700,color:C.textSub,textTransform:"uppercase"}}>Nome</label>
-        <input value={nome} onChange={e=>setNome(e.target.value)} placeholder="Ex: Viagem final de ano"
+        <input value={nome} onChange={e=>setNome(e.target.value.toUpperCase())} placeholder="Ex: Viagem final de ano"
           style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
       </div>
       <div style={{marginBottom:8}}>
@@ -3556,9 +3562,9 @@ function ConfiguracoesGerais({data,onUpdate,onIrPara}){
         <div key={c.id} style={{border:"1px solid "+C.border,borderRadius:10,padding:"10px 12px",marginBottom:8,opacity:c.ativa?1:0.5}}>
           {contaEditandoId===c.id?
             <div>
-              <input value={editNomeConta} onChange={e=>setEditNomeConta(e.target.value)} placeholder="Nome"
+              <input value={editNomeConta} onChange={e=>setEditNomeConta(e.target.value.toUpperCase())} placeholder="Nome"
                 style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",marginBottom:6}}/>
-              <input value={editTipoConta} onChange={e=>setEditTipoConta(e.target.value)} placeholder="Tipo (PF/PJ/livre)"
+              <input value={editTipoConta} onChange={e=>setEditTipoConta(e.target.value.toUpperCase())} placeholder="Tipo (PF/PJ/livre)"
                 style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",marginBottom:6}}/>
               <div style={{display:"flex",gap:6}}>
                 <button onClick={()=>salvarEdicaoConta(c.id)} disabled={loadConta}
@@ -3589,7 +3595,7 @@ function ConfiguracoesGerais({data,onUpdate,onIrPara}){
       )}
       {novaContaAberta?
         <div style={{border:"1px solid "+C.border,borderRadius:10,padding:"10px 12px",marginTop:6}}>
-          <input value={novoNomeConta} onChange={e=>setNovoNomeConta(e.target.value)} placeholder="Nome (ex: Poupança Itaú)"
+          <input value={novoNomeConta} onChange={e=>setNovoNomeConta(e.target.value.toUpperCase())} placeholder="Nome (ex: Poupança Itaú)"
             style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",marginBottom:6}}/>
           <div style={{display:"flex",gap:6,marginBottom:6}}>
             <select value={novoTipoConta} onChange={e=>setNovoTipoConta(e.target.value)}
@@ -4666,7 +4672,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
 
   return <div>
     <div style={{padding:"10px 14px"}}>
-      <input type="text" value={busca} onChange={e=>setBusca(e.target.value)} placeholder="🔍 Buscar por descrição ou categoria"
+      <input type="text" value={busca} onChange={e=>setBusca(e.target.value.toUpperCase())} placeholder="🔍 Buscar por descrição ou categoria"
         style={{width:"100%",padding:"9px 14px",borderRadius:24,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
     </div>
     {busca.trim()&&!gruposExibidos.length&&<div style={{padding:"20px 14px",textAlign:"center",color:C.textMuted,fontSize:13}}>Nada encontrado para "{busca}".</div>}
@@ -4838,7 +4844,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
 
   return <div style={{paddingBottom:8}}>
     <div style={{padding:"10px 14px",background:"#F9FAFB",borderBottom:"1px solid "+C.border}}>
-      <input type="text" value={busca} onChange={e=>{setBusca(e.target.value);setLimite(30);}}
+      <input type="text" value={busca} onChange={e=>{setBusca(e.target.value.toUpperCase());setLimite(30);}}
         placeholder="🔎 Buscar por descrição ou categoria..."
         style={{width:"100%",padding:"7px 12px",borderRadius:24,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box",background:C.surface}}/>
     </div>
@@ -5117,7 +5123,7 @@ function Timeline({data,onUpdate,onIrPara}){
   return <div>
     <Card style={{padding:"7px 12px",marginBottom:7}}>
       <div style={{display:"flex",alignItems:"center",gap:8}}>
-        <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar por descrição ou categoria..."
+        <input value={busca} onChange={e=>setBusca(e.target.value.toUpperCase())} placeholder="Buscar por descrição ou categoria..."
           style={{flex:1,padding:"7px 13px",border:"1px solid "+C.border,borderRadius:24,fontSize:13,fontFamily:"inherit"}}/>
       </div>
       <div style={{display:"flex",gap:6,marginTop:7}}>
@@ -5854,7 +5860,7 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
         </div>
         <div style={{marginBottom:10}}>
           <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Termos alternativos (como o banco/extrato pode chamar esse gasto)</div>
-          <input value={alias} onChange={e=>setAlias(e.target.value)}
+          <input value={alias} onChange={e=>setAlias(e.target.value.toUpperCase())}
             placeholder="ex: ZELT; IMOBILIARIA"
             style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
           <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Separe vários termos com ";". Ajuda a Conciliação (de Fatura ou de Extrato) a reconhecer o mesmo gasto mesmo quando o banco usa um nome diferente. Não muda o nome exibido no app.</div>
@@ -6933,6 +6939,15 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido, onVinculado, onNovaLinh
     (candidatos||[]).slice().sort((a,b)=>Math.abs(Math.abs(a.valor)-Math.abs(item.amount))-Math.abs(Math.abs(b.valor)-Math.abs(item.amount))),
   [candidatos,item.amount]);
 
+  // [NOVO 30/07] Pre-seleciona o candidato do topo (o mais proximo por
+  // valor) assim que a lista abre -- na pratica, o primeiro da lista quase
+  // sempre e o certo (observado pelo Marcus). Continua exigindo o toque em
+  // "Confirmar" (ver texto explicando o que vai mudar) antes de gravar,
+  // mas agora e 1 toque em vez de 2.
+  useEffect(()=>{
+    if(vinculando&&!candidatoSel&&candidatosOrdenados.length) setCandidatoSel(candidatosOrdenados[0]);
+  },[vinculando,candidatosOrdenados]);
+
   async function confirmarVinculo(){
     if(!candidatoSel) return;
     const msg="Vincular \""+item.title+"\" (R$ "+Math.abs(item.amount).toFixed(2)+", "+fmtD(item.date)+") a \""+candidatoSel.desc+"\"?\n\n"+
@@ -6961,7 +6976,7 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido, onVinculado, onNovaLinh
     try{
       const r=await api({action:"lancarCartao",cartao,descricao:desc.toUpperCase(),
         valor:(-1)*Math.abs(numBR(valor)),parcelas:parseInt(parc)||1,
-        categoria:cat,dcp:cat==="DCP"?"S":"N",data_compra:item.date,envelopeId,apelido});
+        categoria:cat,dcp:cat==="DCP"?"S":"N",data_compra:item.date,envelopeId,apelido,origemCSV:true});
       onUpdate(r);
       // [NOVO 28/07] Item veio literalmente do OFX/CSV -- marca como
       // confirmado na hora, pra ganhar o mesmo selo verde de conciliado.
@@ -6978,7 +6993,7 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido, onVinculado, onNovaLinh
     </div>
     <div style={{fontSize:10,color:C.textMuted,marginBottom:6}}>{fmtD(item.date)}{item.parcela!=="1/1"?" · parc. no CSV: "+item.parcela:""}</div>
     <input value={desc} onChange={e=>{
-        const v=e.target.value;
+        const v=e.target.value.toUpperCase();
         setDesc(v);
         if(!envelopeId){const sug=envelopeRegraSugerido(v,data);if(sug)setEnvelopeId(sug);}
       }}
@@ -6987,7 +7002,7 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido, onVinculado, onNovaLinh
         aceitava isso (lancarCartao grava obs.apelido desde 20/07), so
         faltava o campo aqui. Nome acima continua sendo o "nome real" (usado
         pra reconhecer no proximo CSV); este e so pra exibicao. */}
-    <input value={apelido} onChange={e=>setApelido(e.target.value)} placeholder="Nome de exibição (opcional)"
+    <input value={apelido} onChange={e=>setApelido(e.target.value.toUpperCase())} placeholder="Nome de exibição (opcional)"
       style={{width:"100%",padding:"7px 9px",borderRadius:7,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",marginBottom:6,color:C.textSub}}/>
     <div style={{display:"flex",gap:6,marginBottom:6}}>
       <input type="text" inputMode="numeric" value={valor} onChange={e=>setValor(formatarMoedaInput(e.target.value))}
@@ -7048,7 +7063,7 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido, onVinculado, onNovaLinh
   </div>;
 }
 
-function ConciliarCartao({cartao, data, onResultado}){
+function ConciliarCartao({cartao, data, onResultado, onUpdate}){
   const [load,setLoad]=useState(false);
   const fileRef=useRef(null);
 
@@ -7081,6 +7096,7 @@ function ConciliarCartao({cartao, data, onResultado}){
 
       const res=await api({action:"conciliarFatura",cartao,csv:lido.csv,nomeArquivo:lido.nome,acctid:lido.acctid||""});
       onResultado({...res,cartao});
+      onUpdate&&onUpdate(res);
       if(res.travouAgora){
         alert("🔒 Fatura "+cartao+" travada automaticamente — conciliada por completo via OFX, sem nenhuma pendência. Valor/data/apagar ficam bloqueados nos itens dela a partir de agora (categoria continua editável). Pra corrigir algo depois, tem um botão de destravar no painel de cada item.");
       }
@@ -7366,7 +7382,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     if(!confirm(msg)) return false;
     setELoad(true);
     try{
-      const r=await api({action:"mesclarLancamentosCartao",cartao,rowManter,rowApagar,apelidoFinal:descartadoDesc});
+      const r=await api({action:"mesclarLancamentosCartao",cartao,rowManter,rowApagar,apelidoFinal:descartadoDesc,confirmadoFinal:confirmadoAberto||candidato.confirmado});
       onUpdate(r);
       setEditRow(null);
       setConciliacao(c=>_remapConciliacaoAposExclusao(c,rowApagar));
@@ -7481,7 +7497,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         const r=await api({action:"lancarCartao",cartao,descricao:cfg.desc.toUpperCase(),
           valor:(-1)*Math.abs(numBR(cfg.valor)),parcelas:parseInt(cfg.parc)||1,
           categoria:cfg.cat,dcp:cfg.cat==="DCP"?"S":"N",data_compra:novosDoCSV.find((item,i)=>item.date+"|"+item.title+"|"+item.amount+"|"+i===chave)?.date,
-          envelopeId:cfg.envelopeId,apelido:cfg.apelido});
+          envelopeId:cfg.envelopeId,apelido:cfg.apelido,origemCSV:true});
         onUpdate(r);
         if(r.novaLinha) linhasConfirmadas.push(r.novaLinha);
         chavesLancadas.push(chave);
@@ -7720,7 +7736,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
             ✏️ Renomear "{nomeCartao(cartao,data)}"
           </button>
           :<div style={{display:"flex",gap:6,alignItems:"center",marginBottom:12}}>
-            <input value={nomeEditado} onChange={e=>setNomeEditado(e.target.value)}
+            <input value={nomeEditado} onChange={e=>setNomeEditado(e.target.value.toUpperCase())}
               placeholder={"Cartão "+cartao+" (padrão)"}
               style={{flex:1,padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit"}}/>
             <button onClick={salvarNomeCartao} disabled={load}
@@ -7766,7 +7782,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           </div>}
 
         <div style={{fontSize:10,fontWeight:700,color:C.textSub,marginBottom:4}}>AÇÕES DE FATURA</div>
-        <ConciliarCartao cartao={cartao} data={data} onResultado={r=>{setConciliacao(r);setSyncNovosCartao({});}}/>
+        <ConciliarCartao cartao={cartao} data={data} onUpdate={onUpdate} onResultado={r=>{setConciliacao(r);setSyncNovosCartao({});}}/>
         <ResetCartao cartao={cartao} data={data} onUpdate={onUpdate}/>
         <ImportarAssinaturas onUpdate={onUpdate}/>
       </div>}
@@ -7934,7 +7950,11 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         const isOpen=editRow!=null&&editRow===linhaR;
         const previsto=r[7]==="PENDENTE"&&r[0]>hj;
         const divergencia=divergenciasByRow.get(linhaR);
-        const confirmado=confirmadosRows.has(linhaR);
+        // [CORRIGIDO 30/07] Selo agora e persistido (obs.confirmadoOfx,
+        // gravado na propria linha) OU o resultado efemero desta sessao --
+        // antes so existia o efemero, entao sair da tela e voltar apagava
+        // todos os selos verdes mesmo sem nada ter mudado de verdade.
+        const confirmado=confirmadosRows.has(linhaR)||_obsConfirmadoOfx(_obsCartaoRaw(r));
         const motivo=divergencia?{tipo:"divergencia",dado:divergencia}:null;
         const destacado=destaque?.tab==="cartoes"&&destaque.row===linhaR;
         return <div key={linhaR!=null?linhaR:i} id={"cart-item-"+linhaR}>
@@ -7944,7 +7964,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           borderLeft:divergencia?"3px solid #FB923C":(confirmado?"3px solid "+C.green:(previsto?"3px dashed "+C.textMuted:"none")),
           borderBottom:"1px solid "+C.borderLight,borderRadius:i===0?10:0}}>
           <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:13,fontWeight:600,color:previsto?C.textSub:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r[1]}</div>
+            <div style={{fontSize:13,fontWeight:600,color:previsto?C.textSub:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{_obsApelidoCartao(_obsCartaoRaw(r))||r[1]}</div>
             <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{fmtD(r[0])} · parc:{r[3]} · {r[5]}{(()=>{const envId=_obsEnvelopeId(_obsCartaoRaw(r));if(!envId)return null;const env=parseEnvelopesCustom(data).find(e=>e.id===envId);return env?<TagEnvelopeCustom nome={env.nome}/>:null;})()}</div>
           </div>
           <span style={{fontSize:12,fontWeight:700,color:previsto?C.textSub:(r[7]==="PAGO"?C.green:C.red),flexShrink:0}}>{fmt(r[2])}</span>
@@ -7967,7 +7987,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           eAlias={eAlias} setEAlias={setEAlias} eApelido={eApelido} setEApelido={setEApelido} eLoad={eLoad} motivo={motivo}
           onSalvar={()=>salvarEdicaoItem({desc:r[1],valor:r[2],categoria:r[5],data:r[0],alias:_obsAliasCartao(_obsCartaoRaw(r)),apelido:_obsApelidoCartao(_obsCartaoRaw(r))})} onApagar={apagarItem} onApagarTodos={()=>apagarTodosItemComEssaDescricao(r[1])} onCancelar={()=>setEditRow(null)}
           onUsarCSV={divergencia?()=>usarDadosDoCSV(divergencia):null} previewCSV={divergencia?descComNotaPreservada(divergencia):null}
-          outrosItens={faturaAtual.itens.filter(x=>_linhaCartao(x)!==linhaR).map(x=>({row:_linhaCartao(x),desc:x[1],valor:x[2],data:x[0],parcela:x[3],confirmado:confirmadosRows.has(_linhaCartao(x))}))}
+          outrosItens={faturaAtual.itens.filter(x=>_linhaCartao(x)!==linhaR).map(x=>({row:_linhaCartao(x),desc:_obsApelidoCartao(_obsCartaoRaw(x))||x[1],valor:x[2],data:x[0],parcela:x[3],confirmado:confirmadosRows.has(_linhaCartao(x))||_obsConfirmadoOfx(_obsCartaoRaw(x))}))}
           souConfirmado={confirmado}
           onMesclar={(candidato)=>mesclarComItem(r,linhaR,confirmado,candidato)}
           data={data} abaCartao={abaCartao} onUpdate={onUpdate} onIrPara={onIrPara}/>}
@@ -7985,6 +8005,12 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
   const candidatosMescla=useMemo(()=>
     (outrosItens||[]).slice().sort((a,b)=>Math.abs(Math.abs(a.valor)-Math.abs(r[2]))-Math.abs(Math.abs(b.valor)-Math.abs(r[2]))).slice(0,15),
   [outrosItens,r]);
+  // [NOVO 30/07] Mesma pre-selecao do Vincular -- o topo da lista quase
+  // sempre e o certo, entao ja vem marcado; ainda precisa tocar em
+  // "Confirmar mesclagem" (com o resumo do que vai mudar) antes de gravar.
+  useEffect(()=>{
+    if(mesclando&&!candidatoMescla&&candidatosMescla.length) setCandidatoMescla(candidatosMescla[0]);
+  },[mesclando,candidatosMescla]);
   async function confirmarMesclar(){
     if(!candidatoMescla) return;
     const ok=await onMesclar(candidatoMescla);
@@ -8056,7 +8082,7 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
     <div style={{display:"flex",gap:8,marginBottom:8}}>
       <div style={{display:"flex",flexDirection:"column",gap:3,flex:2}}>
         <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME NO EXTRATO/CONCILIAÇÃO</span>
-        <input value={eDesc} onChange={e=>setEDesc(e.target.value)} disabled={travada}
+        <input value={eDesc} onChange={e=>setEDesc(e.target.value.toUpperCase())} disabled={travada}
           style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:13,fontFamily:"inherit",width:"100%",background:travada?C.borderLight:C.surface}}/>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:3,flex:1}}>
@@ -8111,7 +8137,7 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
     })()}
     <div style={{display:"flex",flexDirection:"column",gap:3,marginBottom:8}}>
       <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>TERMOS ALTERNATIVOS (como o banco pode chamar esse gasto)</span>
-      <input value={eAlias} onChange={e=>setEAlias(e.target.value)}
+      <input value={eAlias} onChange={e=>setEAlias(e.target.value.toUpperCase())}
         placeholder="ex: CANAIS STREAMING; AMAZON VAREJO"
         style={{padding:"6px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:12,fontFamily:"inherit",background:C.surface}}/>
       <span style={{fontSize:9,color:"#92400E"}}>Separe vários com ";". Ajuda a conciliação a reconhecer o mesmo gasto com nome diferente no CSV.</span>
@@ -8274,7 +8300,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260729.2100 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260730.1834 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -8356,7 +8382,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260729.2100
+      // HTML v3.20260730.1834
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
