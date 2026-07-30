@@ -2305,10 +2305,25 @@ function FormModo({modo,onChange,onRemover,podeRemover,onLancarAvulso}){
       <option value="REGULAR">Regular (gera todo mês)</option>
       <option value="ESPORADICA">Esporádica (só quando eu lançar)</option>
     </select>
-    {!ehEsporadica&&<div style={{display:"flex",alignItems:"center",gap:4,marginBottom:8}}>
-      <label style={{fontSize:10,color:C.textMuted}}>Dia pgto:</label>
-      <input type="number" min="1" max="31" value={modo.diaPagamento} onChange={e=>upd("diaPagamento",Number(e.target.value)||1)}
-        style={{width:40,padding:"5px 6px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"center",fontFamily:"inherit"}}/>
+    {!ehEsporadica&&<div style={{marginBottom:8}}>
+      <div style={{display:"flex",gap:4,marginBottom:6}}>
+        {[["FIXO","Fixo"],["N_UTIL","Nº útil"],["ULTIMO_UTIL","Último útil"]].map(([id,label])=>
+          <button key={id} type="button" onClick={()=>upd("diaTipo",id)}
+            style={{flex:1,padding:"5px 2px",borderRadius:16,fontSize:9,fontWeight:700,border:"none",cursor:"pointer",
+              background:(modo.diaTipo||"FIXO")===id?C.accent:C.borderLight,color:(modo.diaTipo||"FIXO")===id?"#fff":C.textMuted}}>{label}</button>
+        )}
+      </div>
+      {(modo.diaTipo||"FIXO")==="FIXO"&&<div style={{display:"flex",alignItems:"center",gap:4}}>
+        <label style={{fontSize:10,color:C.textMuted}}>Dia pgto:</label>
+        <input type="number" min="1" max="31" value={modo.diaPagamento} onChange={e=>upd("diaPagamento",Number(e.target.value)||1)}
+          style={{width:40,padding:"5px 6px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"center",fontFamily:"inherit"}}/>
+      </div>}
+      {modo.diaTipo==="N_UTIL"&&<div style={{display:"flex",alignItems:"center",gap:4}}>
+        <label style={{fontSize:10,color:C.textMuted}}>Qual dia útil:</label>
+        <input type="number" min="1" max="20" value={modo.diaN||1} onChange={e=>upd("diaN",Number(e.target.value)||1)}
+          style={{width:40,padding:"5px 6px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"center",fontFamily:"inherit"}}/>
+      </div>}
+      {modo.diaTipo==="ULTIMO_UTIL"&&<div style={{fontSize:10,color:C.textMuted}}>Sempre o último dia útil do mês.</div>}
     </div>}
 
     {ehEsporadica&&<div style={{background:C.blueLight,borderRadius:8,padding:"8px 10px",marginBottom:8}}>
@@ -2423,7 +2438,7 @@ function FontesReceita({data,onUpdate}){
 
   function novoModoVazio(){
     return {id:"", tipoValor:"VARIAVEL", calculada:false, tipoRecorrencia:"REGULAR",
-      diaPagamento:1, ativo:true, obs:"", valorHora:0, horasPlantao:12, percDesconto:0, regras:[]};
+      diaPagamento:1, diaTipo:"FIXO", diaN:1, ativo:true, obs:"", valorHora:0, horasPlantao:12, percDesconto:0, regras:[]};
   }
   function atualizarNomeFonte(i,novoNome){ setFontes(fs=>fs.map((f,idx)=>idx===i?{...f,nome:novoNome}:f)); }
   // [NOVO 17/07] Termos alternativos de identificacao (de onde o dinheiro
@@ -4299,9 +4314,31 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
 
   const rotuloBotao=item.status==="EXECUTADO"?"Salvar":execMode?"Executar":"Reagendar";
 
+  // [NOVO 29/07] Indicador de "quando no mês" (Fixo/Nº dia útil/Último dia
+  // útil) -- so aparece pra item que realmente veio de Recorrencia ou
+  // Receita Estruturada (nunca pra lancamento avulso, que nao tem esse
+  // conceito). obs pode ser JSON (Recorrencia) ou texto puro com marcador
+  // FONTE_RECEITA (Receita) -- os dois sao checados.
+  const origemRecorrente=/Adicionado via app|Gerado por virada de ciclo|FONTE_RECEITA:/.test(String(item.obs||""));
+  const diaTipoInfo=(()=>{
+    if(!origemRecorrente) return null;
+    let o={}; try{o=JSON.parse(item.obs||"{}");}catch(e){}
+    if(o.diaTipo) return {tipo:o.diaTipo,n:o.diaN};
+    const m=String(item.obs||"").match(/DIATIPO:([A-Z_]+)(?::(\d+))?/);
+    if(m) return {tipo:m[1],n:m[2]?parseInt(m[2]):null};
+    return {tipo:"FIXO",n:null};
+  })();
+
   return <div style={{background:execMode?C.greenLight:C.accentLight,padding:"10px 14px",
     borderBottom:"1px solid "+(execMode?"#BBF7D0":C.accent),
     borderLeft:"3px solid "+(execMode?C.green:C.accent)}}>
+    {diaTipoInfo&&<div style={{display:"flex",gap:4,marginBottom:8}}>
+      {[["FIXO","Fixo"],["N_UTIL",diaTipoInfo.tipo==="N_UTIL"&&diaTipoInfo.n?diaTipoInfo.n+"º útil":"Nº útil"],["ULTIMO_UTIL","Último útil"]].map(([id,label])=>{
+        const ativo=id===diaTipoInfo.tipo;
+        return <span key={id} style={{padding:"3px 8px",borderRadius:12,fontSize:9,fontWeight:800,
+          background:ativo?C.accent:C.borderLight,color:ativo?"#fff":C.textMuted,opacity:ativo?1:0.55}}>{label}</span>;
+      })}
+    </div>}
     {item.categoria!=="DCP_PROVISAO"&&<div style={{marginBottom:8}}>
       <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME DE EXIBIÇÃO (opcional)</span>
       <div style={{display:"flex",gap:6,marginTop:3}}>
@@ -5709,7 +5746,7 @@ function Conversar({data,onUpdate,initTxt,onInitDone,msgs,setMsgs}){
 
 
 // ── RECORRÊNCIAS ──────────────────────────────────────────────────────────────
-function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCartao,neg,setNeg,val,setVal,dia,setDia,tolerancia,setTolerancia,alias,setAlias,envelopePadrao,setEnvelopePadrao,destinoEdit,setDestinoEdit,regerar,load,salvar,apagar,data}){
+function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCartao,neg,setNeg,val,setVal,dia,setDia,diaTipoEdit,setDiaTipoEdit,diaNEdit,setDiaNEdit,tolerancia,setTolerancia,alias,setAlias,envelopePadrao,setEnvelopePadrao,destinoEdit,setDestinoEdit,regerar,load,salvar,apagar,data}){
   // [CORRIGIDO 17/07] Precisa viver FORA de Recorrencias (nunca definido
   // dentro do corpo de outro componente) -- antes, toda tecla digitada em
   // qualquer campo do painel (alias, tolerancia, valor) disparava um
@@ -5777,15 +5814,31 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
           </div>
           <div style={{flex:1}}>
             <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Vencimento</div>
-            <select value={dia} onChange={e=>setDia(e.target.value)}
-              style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,
-                fontSize:13,fontFamily:"inherit",background:C.surface}}>
-              {!ehCartao(item)&&<><option value="2">Toda terça-feira</option>
-              <option value="6">Todo sábado</option></>}
-              {[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31].map(d=>
-                <option key={d} value={String(d)}>{"Dia "+d+" do mês"}</option>
-              )}
-            </select>
+            {!ehCartao(item)&&(item.diaVenc===2||item.diaVenc===6)?
+              <select value={dia} onChange={e=>setDia(e.target.value)}
+                style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,
+                  fontSize:13,fontFamily:"inherit",background:C.surface}}>
+                <option value="2">Toda terça-feira</option>
+                <option value="6">Todo sábado</option>
+              </select>
+            :<>
+              <div style={{display:"flex",gap:4,marginBottom:6}}>
+                {[["FIXO","Fixo"],["N_UTIL","Nº útil"],["ULTIMO_UTIL","Último útil"]].map(([id,label])=>
+                  <button key={id} type="button" onClick={()=>setDiaTipoEdit(id)}
+                    style={{flex:1,padding:"5px 2px",borderRadius:16,fontSize:9,fontWeight:700,border:"none",cursor:"pointer",
+                      background:diaTipoEdit===id?C.accent:C.borderLight,color:diaTipoEdit===id?"#fff":C.textMuted}}>{label}</button>
+                )}
+              </div>
+              {diaTipoEdit==="FIXO"&&<select value={dia} onChange={e=>setDia(e.target.value)}
+                style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,
+                  fontSize:13,fontFamily:"inherit",background:C.surface}}>
+                {[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31].map(d=>
+                  <option key={d} value={String(d)}>{"Dia "+d+" do mês"}</option>
+                )}
+              </select>}
+              {diaTipoEdit==="N_UTIL"&&<input type="number" min="1" max="20" value={diaNEdit} onChange={e=>setDiaNEdit(e.target.value)}
+                style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",textAlign:"center",boxSizing:"border-box"}}/>}
+            </>}
           </div>
         </div>
         {(()=>{const p=periodicidadeInfo(item.obs);return p&&<div style={{marginBottom:10,background:C.purpleLight,borderRadius:8,padding:"8px 10px"}}>
@@ -5843,6 +5896,8 @@ function Recorrencias({data,onUpdate}){
   const [val,setVal]=useState("");
   const [neg,setNeg]=useState(true);
   const [dia,setDia]=useState("");
+  const [diaTipoEdit,setDiaTipoEdit]=useState("FIXO");
+  const [diaNEdit,setDiaNEdit]=useState("1");
   const [tolerancia,setTolerancia]=useState("");
   const [alias,setAlias]=useState("");
   const [envelopePadrao,setEnvelopePadrao]=useState("");
@@ -5857,7 +5912,9 @@ function Recorrencias({data,onUpdate}){
   const items=(data.recorr||[]).map((r,i)=>({
     idx:i,desc:r[0],valor:Number(r[1]),forma:r[2],
     diaVenc:r[3],parcAtual:r[4],parcTotal:r[5],
-    ativo:r[6],tipo:r[7],obs:r[8],destino:r[9],tolerancia:r[10],alias:r[11],envelopePadrao:r[12]
+    ativo:r[6],tipo:r[7],obs:r[8],destino:r[9],tolerancia:r[10],alias:r[11],envelopePadrao:r[12],
+    diaTipo:["N_UTIL","ULTIMO_UTIL"].indexOf(String(r[13]||"").toUpperCase())!==-1?String(r[13]).toUpperCase():"FIXO",
+    diaN:parseInt(r[14])||1
   })).filter(r=>String(r.ativo).toUpperCase()!=="N"&&r.ativo!==false&&r.ativo!==0);
 
   // Emprestimos/passivos: qualquer recorrencia do FLUXO com numero de
@@ -5931,6 +5988,8 @@ function Recorrencias({data,onUpdate}){
     setEdit(item.desc);
     setVal(formatarValorInicial(item.valor));
     setDia(String(item.diaVenc));
+    setDiaTipoEdit(item.diaTipo);
+    setDiaNEdit(String(item.diaN));
     setNeg(item.valor<0);
     setTolerancia(item.tolerancia!=null&&item.tolerancia!==""?String(item.tolerancia):"");
     setAlias(item.alias||"");
@@ -5966,6 +6025,10 @@ function Recorrencias({data,onUpdate}){
         ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"VALOR",valor:String(novoValor),resumo:""});
       if(novoDia!==parseInt(item.diaVenc))
         ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_VENC",valor:String(novoDia),resumo:""});
+      if(diaTipoEdit!==item.diaTipo)
+        ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_TIPO",valor:diaTipoEdit,resumo:""});
+      if(parseInt(diaNEdit)!==item.diaN)
+        ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_N",valor:diaNEdit,resumo:""});
       if(novaTolerancia!=null&&novaTolerancia!==Number(item.tolerancia))
         ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"TOLERANCIA_DIAS",valor:String(novaTolerancia),resumo:""});
       const novoAlias=alias.trim().toUpperCase();
@@ -6070,52 +6133,52 @@ function Recorrencias({data,onUpdate}){
     </div>}
     <SecaoRecorrencias titulo="Recorrentes semanais" lista={debitosSemanais} cor={C.red} bg={C.redLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
-      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
+      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
       load={load} salvar={salvar} apagar={apagar} data={data}/>
     <SecaoRecorrencias titulo="Recorrentes por conta" lista={debitosMensais} cor={C.red} bg={C.redLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
-      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
+      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
       load={load} salvar={salvar} apagar={apagar} data={data}/>
     <SecaoRecorrencias titulo="Trimestrais (conta)" lista={debitosTrimestrais} cor={C.purple} bg={C.purpleLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
-      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
+      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
       load={load} salvar={salvar} apagar={apagar} data={data}/>
     <SecaoRecorrencias titulo="Semestrais (conta)" lista={debitosSemestrais} cor={C.purple} bg={C.purpleLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
-      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
+      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
       load={load} salvar={salvar} apagar={apagar} data={data}/>
     <SecaoRecorrencias titulo="Anuais (conta)" lista={debitosAnuaisConta} cor={C.purple} bg={C.purpleLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
-      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
+      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
       load={load} salvar={salvar} apagar={apagar} data={data}/>
     <SecaoRecorrencias titulo="Recorrentes no cartão" lista={cartaoMensal} cor={C.red} bg={C.redLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
-      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
+      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
       load={load} salvar={salvar} apagar={apagar} data={data}/>
     <SecaoRecorrencias titulo="Trimestrais (cartão)" lista={cartaoTrimestral} cor={C.purple} bg={C.purpleLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
-      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
+      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
       load={load} salvar={salvar} apagar={apagar} data={data}/>
     <SecaoRecorrencias titulo="Semestrais (cartão)" lista={cartaoSemestral} cor={C.purple} bg={C.purpleLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
-      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
+      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
       load={load} salvar={salvar} apagar={apagar} data={data}/>
     <SecaoRecorrencias titulo="Anuais (cartão)" lista={cartaoAnual} cor={C.purple} bg={C.purpleLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
-      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
+      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
       load={load} salvar={salvar} apagar={apagar} data={data}/>
     <SecaoRecorrencias titulo="Receitas recorrentes" lista={receitas} cor={C.blue} bg={C.blueLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
-      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia}
+      neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
       load={load} salvar={salvar} apagar={apagar} data={data}/>
     {totalRecorr>0&&!items.length&&<div style={{padding:"20px",textAlign:"center",color:C.textMuted,fontSize:13}}>
@@ -6133,6 +6196,8 @@ function FormNovaRecorr({onSalvo,onClose,data}){
   const [destinoUI,setDestinoUI]=useState("FLUXO_PF");
   const [freq,setFreq]=useState("mensal");
   const [dia,setDia]=useState("10");
+  const [diaTipo,setDiaTipo]=useState("FIXO");
+  const [diaN,setDiaN]=useState("1");
   const [parc,setParc]=useState("0");
   const [alias,setAlias]=useState("");
   const [load,setLoad]=useState(false);
@@ -6174,7 +6239,8 @@ function FormNovaRecorr({onSalvo,onClose,data}){
       await api({action:"lancarRecorrencia",
         descricao:desc,valor:Math.abs(numBR(valor))*sinal,
         forma,dia_venc:dv,semanal:isWeekly,destino,parc_total:parseInt(parc)||0,
-        tipo,intervalo_meses:f.m,mes_ancora:parseInt(mesAncora),obs:"",alias_csv:alias.trim().toUpperCase()});
+        tipo,intervalo_meses:f.m,mes_ancora:parseInt(mesAncora),obs:"",alias_csv:alias.trim().toUpperCase(),
+        dia_tipo:isWeekly?"FIXO":diaTipo,dia_n:parseInt(diaN)||1});
       onSalvo();
     }catch(e){alert(e.message);}
     setLoad(false);
@@ -6227,9 +6293,25 @@ function FormNovaRecorr({onSalvo,onClose,data}){
         <select value={freq} onChange={e=>setFreq(e.target.value)} style={sel}>
           {Object.entries(freqMap).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
         </select></div>
-      {!isWeekly&&<div><label style={lbl}>Dia do mes</label>
-        <input type="number" min="1" max="31" value={dia} onChange={e=>setDia(e.target.value)}
-          style={{...inp,textAlign:"center",width:80}}/></div>}
+      {!isWeekly&&<div>
+        <label style={lbl}>Quando no mês</label>
+        <div style={{display:"flex",gap:6,marginBottom:8}}>
+          {[["FIXO","Dia fixo"],["N_UTIL","Nº dia útil"],["ULTIMO_UTIL","Último dia útil"]].map(([id,label])=>
+            <button key={id} type="button" onClick={()=>setDiaTipo(id)}
+              style={{flex:1,padding:"7px 4px",borderRadius:20,fontSize:11,fontWeight:700,border:"none",cursor:"pointer",
+                background:diaTipo===id?C.accent:C.borderLight,color:diaTipo===id?"#fff":C.textMuted}}>{label}</button>
+          )}
+        </div>
+        {diaTipo==="FIXO"&&<div><label style={lbl}>Dia do mes</label>
+          <input type="number" min="1" max="31" value={dia} onChange={e=>setDia(e.target.value)}
+            style={{...inp,textAlign:"center",width:80}}/></div>}
+        {diaTipo==="N_UTIL"&&<div><label style={lbl}>Qual dia útil (1º, 5º...)</label>
+          <input type="number" min="1" max="20" value={diaN} onChange={e=>setDiaN(e.target.value)}
+            style={{...inp,textAlign:"center",width:80}}/>
+          <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Pula fim de semana e feriado nacional fixo (não conta os móveis, tipo Carnaval).</div>
+        </div>}
+        {diaTipo==="ULTIMO_UTIL"&&<div style={{fontSize:10,color:C.textMuted}}>Sempre o último dia útil do mês (pula fim de semana e feriado nacional fixo).</div>}
+      </div>}
       {(freqMap[freq]&&freqMap[freq].m>1)&&<div><label style={lbl}>Mês de referência</label>
         <select value={mesAncora} onChange={e=>setMesAncora(e.target.value)} style={sel}>
           {["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
@@ -7390,10 +7472,12 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     setProgressoLancarTodos({feito:0,total});
     const chavesLancadas=[];
     const linhasConfirmadas=[];
-    let erro=null;
-    try{
-      let feito=0;
-      for(const [chave,cfg] of marcadosNovosCartao){
+    const falhas=[]; // {desc,erro} -- [CORRIGIDO 29/07] antes 1 item travado
+    // abortava o LOTE INTEIRO (o resto nem era tentado). Agora cada item
+    // roda no seu proprio try/catch -- um travar nao impede os outros.
+    let feito=0;
+    for(const [chave,cfg] of marcadosNovosCartao){
+      try{
         const r=await api({action:"lancarCartao",cartao,descricao:cfg.desc.toUpperCase(),
           valor:(-1)*Math.abs(numBR(cfg.valor)),parcelas:parseInt(cfg.parc)||1,
           categoria:cfg.cat,dcp:cfg.cat==="DCP"?"S":"N",data_compra:novosDoCSV.find((item,i)=>item.date+"|"+item.title+"|"+item.amount+"|"+i===chave)?.date,
@@ -7401,13 +7485,14 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         onUpdate(r);
         if(r.novaLinha) linhasConfirmadas.push(r.novaLinha);
         chavesLancadas.push(chave);
-        feito++;
-        setProgressoLancarTodos({feito,total});
+      }catch(e){
+        falhas.push({desc:cfg.desc,erro:e.message});
       }
-    }catch(e){erro=e.message;}
-    // Remove da lista os que deram certo, mesmo se algum no meio falhar --
-    // evita relancar por engano os que ja foram, so o alerta acima ja avisa
-    // qual travou.
+      feito++;
+      setProgressoLancarTodos({feito,total});
+    }
+    // Remove da lista so os que deram certo -- os que falharam continuam
+    // marcados, pra ficar obvio o que ainda falta resolver.
     setConciliacao(c=>c?{...c,
       foraDaPlanilha:(c.foraDaPlanilha||[]).filter((item,i)=>
         !chavesLancadas.includes(item.date+"|"+item.title+"|"+item.amount+"|"+i)),
@@ -7420,9 +7505,11 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     // nada tinha acontecido (e alert() sozinho pode ser engolido pelo
     // WebView numa chamada que demorou). Agora sempre fecha com uma faixa
     // fixa na tela, sucesso ou nao, alem do alert (dobra de garantia).
-    if(erro){
-      setResultadoLancarTodos({ok:false,msg:chavesLancadas.length+" de "+total+" lançados. Um travou: "+erro});
-      alert(chavesLancadas.length+" de "+total+" lançados. Um deles travou: "+erro);
+    if(falhas.length){
+      const detalhe=falhas.map(f=>f.desc+": "+f.erro).join(" | ");
+      const msg=chavesLancadas.length+" de "+total+" lancados. "+falhas.length+" travou(aram) -- "+detalhe;
+      setResultadoLancarTodos({ok:false,msg});
+      alert(msg);
     }else{
       setResultadoLancarTodos({ok:true,msg:chavesLancadas.length+" lançado(s) com sucesso."});
       alert(chavesLancadas.length+" lançado(s) com sucesso.");
@@ -7914,8 +8001,23 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
     catch(e){ alert(e.message); }
     setLoadDestrava(false);
   }
+  // [NOVO 29/07] Mesmo indicador de "quando no mes" do painel de Fluxo --
+  // so aparece se a linha veio de uma Recorrencia de Cartao com o campo
+  // gravado (nunca pra compra avulsa lancada manual/CSV).
+  const diaTipoInfoCartao=(()=>{
+    let o={}; try{o=JSON.parse(_obsCartaoRaw(r)||"{}");}catch(e){}
+    if(!o.diaTipo) return null;
+    return {tipo:o.diaTipo,n:o.diaN};
+  })();
   return <div style={{background:C.accentLight,padding:"10px 14px",
     borderBottom:"1px solid "+C.accent,borderLeft:"3px solid "+C.accent}}>
+    {diaTipoInfoCartao&&<div style={{display:"flex",gap:4,marginBottom:8}}>
+      {[["FIXO","Fixo"],["N_UTIL",diaTipoInfoCartao.tipo==="N_UTIL"&&diaTipoInfoCartao.n?diaTipoInfoCartao.n+"º útil":"Nº útil"],["ULTIMO_UTIL","Último útil"]].map(([id,label])=>{
+        const ativo=id===diaTipoInfoCartao.tipo;
+        return <span key={id} style={{padding:"3px 8px",borderRadius:12,fontSize:9,fontWeight:800,
+          background:ativo?C.accent:C.borderLight,color:ativo?"#fff":C.textMuted,opacity:ativo?1:0.55}}>{label}</span>;
+      })}
+    </div>}
     {travada&&<div style={{background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:8,padding:"8px 10px",marginBottom:10}}>
       <div style={{fontSize:11,fontWeight:700,color:"#1E40AF",marginBottom:4}}>🔒 Fatura travada</div>
       <div style={{fontSize:10,color:"#1E40AF",marginBottom:6}}>Conciliada por completo via OFX — valor, data e apagar ficam bloqueados nesse item. Categoria, alias, apelido e envelope continuam editáveis.</div>
@@ -8172,7 +8274,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260729.0849 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260729.2100 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -8254,7 +8356,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260729.0849
+      // HTML v3.20260729.2100
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
