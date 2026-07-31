@@ -8018,7 +8018,20 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
   }
   const cartaoSigla=abaCartao==="CARTAO_PJ"?"PJ":"PF";
   const vencItem=String(r[4]||"").slice(0,10);
-  const travada=data&&faturaTravada(cartaoSigla,vencItem,data);
+  // [NOVO 30/07] Travada agora tambem considera o selo POR ITEM
+  // (confirmadoOfx) -- protege valor/data/apagar mesmo com a fatura ainda
+  // aberta, se ESSE item especifico ja foi confirmado pelo OFX.
+  const travadaFatura=data&&faturaTravada(cartaoSigla,vencItem,data);
+  const itemJaConfirmado=_obsConfirmadoOfx(_obsCartaoRaw(r));
+  const travada=travadaFatura||itemJaConfirmado;
+  const [loadDesconfirma,setLoadDesconfirma]=useState(false);
+  async function desconfirmarItem(){
+    if(!confirm("Remover a confirmação do OFX deste item? Ele volta a ficar editável (valor/data/apagar). Use só se ele foi confirmado errado por engano."))return;
+    setLoadDesconfirma(true);
+    try{ onUpdate(await api({action:"desconfirmarItemCartao",aba:abaCartao,row:_linhaCartao(r)})); }
+    catch(e){ alert(e.message); }
+    setLoadDesconfirma(false);
+  }
   const [loadDestrava,setLoadDestrava]=useState(false);
   async function destravar(){
     if(!confirm("Destravar a fatura "+cartaoSigla+" de vencimento "+fmtD(vencItem)+"? Ela foi marcada como conciliada por completo. Só destrave se precisar mesmo corrigir algo nela."))return;
@@ -8044,12 +8057,20 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
           background:ativo?C.accent:C.borderLight,color:ativo?"#fff":C.textMuted,opacity:ativo?1:0.55}}>{label}</span>;
       })}
     </div>}
-    {travada&&<div style={{background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:8,padding:"8px 10px",marginBottom:10}}>
+    {travadaFatura&&<div style={{background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:8,padding:"8px 10px",marginBottom:10}}>
       <div style={{fontSize:11,fontWeight:700,color:"#1E40AF",marginBottom:4}}>🔒 Fatura travada</div>
       <div style={{fontSize:10,color:"#1E40AF",marginBottom:6}}>Conciliada por completo via OFX — valor, data e apagar ficam bloqueados nesse item. Categoria, alias, apelido e envelope continuam editáveis.</div>
       <button onClick={destravar} disabled={loadDestrava}
         style={{width:"100%",padding:"6px",borderRadius:6,background:"#1E40AF",color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
         {loadDestrava?"…":"🔓 Destravar esta fatura"}
+      </button>
+    </div>}
+    {!travadaFatura&&itemJaConfirmado&&<div style={{background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:8,padding:"8px 10px",marginBottom:10}}>
+      <div style={{fontSize:11,fontWeight:700,color:"#1E40AF",marginBottom:4}}>🔒 Item confirmado pelo OFX</div>
+      <div style={{fontSize:10,color:"#1E40AF",marginBottom:6}}>Esse item específico já bateu com o CSV/OFX — valor, data e apagar ficam protegidos, mesmo com o resto da fatura ainda aberta. Categoria, alias, apelido e envelope continuam editáveis.</div>
+      <button onClick={desconfirmarItem} disabled={loadDesconfirma}
+        style={{width:"100%",padding:"6px",borderRadius:6,background:"#1E40AF",color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+        {loadDesconfirma?"…":"🔓 Desconfirmar este item"}
       </button>
     </div>}
     {motivo&&motivo.tipo==="divergencia"&&<div style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"8px 10px",marginBottom:10,fontSize:11,color:"#92400E"}}>
@@ -8300,7 +8321,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260730.1834 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260730.1925 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -8382,7 +8403,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260730.1834
+      // HTML v3.20260730.1925
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
