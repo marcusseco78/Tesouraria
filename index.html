@@ -1604,19 +1604,24 @@ function SugestaoReagendamento({onUpdate}){
 // unico, RECEITA) e o cronograma de parcelas (recorrencia EMPRESTIMO, que
 // ja gera as parcelas futuras na hora, sem esperar virada de ciclo). Nenhuma
 // logica nova no script -- so uniao de front-end do que ja funciona.
-function FormCriarDividaPosFixada({onSalvo,onClose}){
+function FormCriarDividaPosFixada({data,onSalvo,onClose}){
   const [nome,setNome]=useState("");
   const [saldoInicial,setSaldoInicial]=useState("");
   const [percCdi,setPercCdi]=useState("100");
   const [observacao,setObservacao]=useState("");
   const [load,setLoad]=useState(false);
+  // [NOVO 01/08] Fase 4 -- de qual conta essa divida "sai" (organizacao,
+  // nao recalcula nada). Default: primeira conta ativa.
+  const contasAtivas=(data&&data.contas||[]).filter(c=>c.ativa!==false);
+  const [conta,setConta]=useState("");
+  useEffect(()=>{ if(!conta&&contasAtivas.length) setConta(contasAtivas[0].id); },[contasAtivas]);
 
   async function salvar(){
     if(!nome.trim()||!saldoInicial){ alert("Preencha nome e saldo inicial."); return; }
     setLoad(true);
     try{
       const r=await api({action:"criarDividaPosFixada",nome,saldo_inicial:numBR(saldoInicial),
-        percentual_cdi:parseFloat(percCdi)||100,observacao});
+        percentual_cdi:parseFloat(percCdi)||100,observacao,conta});
       onSalvo(r);
     }catch(e){alert(e.message);}
     setLoad(false);
@@ -1643,6 +1648,14 @@ function FormCriarDividaPosFixada({onSalvo,onClose}){
         <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Só variação de percentual do CDI (ex: 100, 120) — nunca outro índice.</div></div>
       <div><label style={lbl}>Observação (opcional)</label>
         <input value={observacao} onChange={e=>setObservacao(e.target.value.toUpperCase())} placeholder="Contexto livre" style={inp}/></div>
+      {contasAtivas.length>1&&<div><label style={lbl}>Conta</label>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {contasAtivas.map(c=>
+            <button key={c.id} type="button" onClick={()=>setConta(c.id)}
+              style={{padding:"6px 10px",borderRadius:16,fontSize:12,fontWeight:700,border:"none",cursor:"pointer",
+                background:conta===c.id?C.accent:C.borderLight,color:conta===c.id?"#fff":C.textMuted}}>{c.nome}</button>)}
+        </div>
+      </div>}
       <button onClick={salvar} disabled={load||!nome.trim()||!saldoInicial}
         style={{width:"100%",padding:"10px",borderRadius:8,background:C.accent,color:"#fff",
           fontSize:14,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
@@ -1960,6 +1973,8 @@ function EmprestimosPassivos({data,onUpdate}){
 
   const dividasAtivas=(data.dividasPosFixadas||[]).filter(d=>d.status==="ATIVA");
   const dividasQuitadas=(data.dividasPosFixadas||[]).filter(d=>d.status==="QUITADA");
+  const contasAtivasEmp=(data.contas||[]).filter(c=>c.ativa!==false);
+  const [filtroContaDPF,setFiltroContaDPF]=useState("");
   const [showForm,setShowForm]=useState(false);
   const [showFormDPF,setShowFormDPF]=useState(false);
   const [loadApagarEmp,setLoadApagarEmp]=useState(null);
@@ -2068,9 +2083,15 @@ function EmprestimosPassivos({data,onUpdate}){
           </button>
         </div>
       </div>
-      {showFormDPF&&<FormCriarDividaPosFixada onSalvo={r=>{onUpdate&&onUpdate(r);setShowFormDPF(false);}} onClose={()=>setShowFormDPF(false)}/>}
+      {showFormDPF&&<FormCriarDividaPosFixada data={data} onSalvo={r=>{onUpdate&&onUpdate(r);setShowFormDPF(false);}} onClose={()=>setShowFormDPF(false)}/>}
       {!dividasAtivas.length&&!showFormDPF&&<div style={{padding:"16px",textAlign:"center",fontSize:12,color:C.textMuted,fontStyle:"italic"}}>Nenhuma dívida pós-fixada ativa.</div>}
-      {dividasAtivas.map(d=><CardDividaPosFixada key={d.nome} divida={d} onUpdate={onUpdate} data={data}/>)}
+      {contasAtivasEmp.length>1&&dividasAtivas.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:5,margin:"8px 0"}}>
+        {[{id:"",nome:"Todas"},...contasAtivasEmp].map(c=>
+          <button key={c.id||"todas"} onClick={()=>setFiltroContaDPF(c.id)}
+            style={{padding:"5px 10px",borderRadius:16,fontSize:11,fontWeight:700,border:"none",cursor:"pointer",
+              background:filtroContaDPF===c.id?C.accent:C.borderLight,color:filtroContaDPF===c.id?"#fff":C.textSub}}>{c.nome}</button>)}
+      </div>}
+      {dividasAtivas.filter(d=>!filtroContaDPF||(d.conta||"CONTA")===filtroContaDPF).map(d=><CardDividaPosFixada key={d.nome} divida={d} onUpdate={onUpdate} data={data}/>)}
       {dividasQuitadas.length>0&&<div style={{marginTop:6}}>
         <button onClick={()=>setShowHistoricoDPF(v=>!v)}
           style={{background:"none",border:"none",color:C.textMuted,fontSize:11,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",padding:"4px 0"}}>
@@ -3323,12 +3344,18 @@ function Cofres({data,onUpdate}){
   const [taxaAnual,setTaxaAnual]=useState("10");
   const [spreadAnual,setSpreadAnual]=useState("6");
   const [load,setLoad]=useState(false);
+  // [NOVO 01/08] Fase 4 -- de qual conta sai o aporte / pra qual vai o
+  // resgate. Default: primeira conta ativa.
+  const contasAtivas=(data.contas||[]).filter(c=>c.ativa!==false);
+  const [contaCofre,setContaCofre]=useState("");
+  useEffect(()=>{ if(!contaCofre&&contasAtivas.length) setContaCofre(contasAtivas[0].id); },[contasAtivas]);
+  const [filtroConta,setFiltroConta]=useState("");
 
   async function criar(){
     if(!nome.trim()){ alert("Informe o nome do cofre."); return; }
     setLoad(true);
     try{
-      const params={action:"salvarCofre",nome,tipo_investimento:tipoInv};
+      const params={action:"salvarCofre",nome,tipo_investimento:tipoInv,conta:contaCofre};
       if(tipoInv==="cdi") params.percentual_cdi=parseFloat(percCdi)||100;
       else if(tipoInv==="prefixado") params.taxa_anual=parseFloat(taxaAnual)||0;
       else if(tipoInv==="ipca") params.spread_anual=parseFloat(spreadAnual)||0;
@@ -3385,13 +3412,28 @@ function Cofres({data,onUpdate}){
       {tipoInv==="renda_variavel"&&<div style={{marginBottom:10,fontSize:10,color:C.textMuted,background:C.borderLight,borderRadius:6,padding:8}}>
         Sem taxa fixa aqui — cada aporte/resgate registra o papel (ticker), cotação e quantidade de ações. O saldo é a soma de cada papel × última cotação atualizada.
       </div>}
+      {contasAtivas.length>1&&<div style={{marginBottom:10}}>
+        <label style={{fontSize:10,fontWeight:700,color:C.textSub,textTransform:"uppercase"}}>Conta</label>
+        <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:4}}>
+          {contasAtivas.map(c=>
+            <button key={c.id} onClick={()=>setContaCofre(c.id)} type="button"
+              style={{padding:"6px 9px",borderRadius:7,border:"1px solid "+(contaCofre===c.id?C.teal:C.border),
+                background:contaCofre===c.id?C.tealLight:C.surface,color:contaCofre===c.id?C.teal:C.textSub,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{c.nome}</button>)}
+        </div>
+      </div>}
       <button onClick={criar} disabled={load||!nome.trim()}
         style={{width:"100%",padding:"9px",borderRadius:8,background:C.teal,color:"#fff",fontSize:13,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
         {load?"Criando...":"Criar cofre"}
       </button>
     </div>}
     {!cofres.length&&!showForm&&<div style={{padding:"20px",textAlign:"center",fontSize:12,color:C.textMuted,fontStyle:"italic"}}>Nenhum cofre ainda.</div>}
-    {cofres.map(c=><CardCofre key={c.id} cofre={c} onUpdate={onUpdate} data={data}/>)}
+    {contasAtivas.length>1&&cofres.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10}}>
+      {[{id:"",nome:"Todas"},...contasAtivas].map(c=>
+        <button key={c.id||"todas"} onClick={()=>setFiltroConta(c.id)}
+          style={{padding:"5px 10px",borderRadius:16,fontSize:11,fontWeight:700,border:"none",cursor:"pointer",
+            background:filtroConta===c.id?C.teal:C.borderLight,color:filtroConta===c.id?"#fff":C.textSub}}>{c.nome}</button>)}
+    </div>}
+    {cofres.filter(c=>!filtroConta||(c.conta||"CONTA")===filtroConta).map(c=><CardCofre key={c.id} cofre={c} onUpdate={onUpdate} data={data}/>)}
   </div>;
 }
 
@@ -4966,6 +5008,12 @@ function _gerarLinhasTimeline(data,hj){
   if(!porDia[hj]) porDia[hj]=[];
   const datasOrdenadas=Object.keys(porDia).sort();
   let ultimoSaldo=null;
+  // [NOVO 01/08] Fase 2/3 -- saldo por conta na Timeline, mesmo principio
+  // "saldo de inicio" (fim do dia menos o que mexeu naquele dia) que o
+  // saldo total ja usa, so que aplicado separadamente por conta (campo
+  // FORMA de cada linha do Fluxo). Contas sem transacao herdam o ultimo
+  // saldo conhecido delas, igual o total ja fazia.
+  const ultimoSaldoConta={};
   return datasOrdenadas.map(iso=>{
     const brutos=porDia[iso];
     const itensFluxo=brutos.filter(x=>x.origem==="fluxo").map(x=>x.r).sort((a,b)=>(a.row||0)-(b.row||0));
@@ -4988,13 +5036,37 @@ function _gerarLinhasTimeline(data,hj){
     // fim menos o total movimentado no dia = saldo de inicio.
     const totalDia=itensFluxo.reduce((s,r)=>s+(r.valor||0),0);
     const saldo=(saldoFim!=null&&isFinite(saldoFim))?(saldoFim-totalDia):null;
+
+    // Agrupa os itens do dia POR CONTA (campo forma), pra aplicar a mesma
+    // formula "fim - total do dia" em cada conta separadamente.
+    const porConta={};
+    itensFluxo.forEach(r=>{
+      const c=r.forma||"CONTA";
+      if(!porConta[c]) porConta[c]=[];
+      porConta[c].push(r);
+    });
+    const saldoPorConta={};
+    // Contas que tiveram lancamento hoje: calcula normal.
+    Object.keys(porConta).forEach(c=>{
+      const itensConta=porConta[c];
+      const ultimoDaConta=itensConta[itensConta.length-1];
+      const fimConta=ultimoDaConta.status==="EXECUTADO"?ultimoDaConta.saldoRealConta:ultimoDaConta.saldoProjetadoConta;
+      const totalDiaConta=itensConta.reduce((s,r)=>s+(r.valor||0),0);
+      const inicioConta=(fimConta!=null&&isFinite(fimConta))?(fimConta-totalDiaConta):null;
+      if(inicioConta!=null){ saldoPorConta[c]=inicioConta; ultimoSaldoConta[c]=fimConta; }
+    });
+    // Contas que NAO tiveram lancamento hoje: herdam o ultimo saldo conhecido.
+    Object.keys(ultimoSaldoConta).forEach(c=>{
+      if(!(c in saldoPorConta)) saldoPorConta[c]=ultimoSaldoConta[c];
+    });
+
     const dt=parseDateLocal(iso);
     const itensNormais=itensFluxo.map(r=>({tipo:"item",ehCartao:false,row:r.row,descricao:nomeExibicao(r,data),categoriaTxt:
         (r.categoria==="DCP_PROVISAO"?"":(tipoDisplay(r.tipo,data)+(r.categoria&&r.categoria!==r.tipo?" · "+r.categoria:"")+" · "+r.forma)),
         valor:r.valor,status:r.status,item:r}));
     const itensCartao=brutos.filter(x=>x.origem==="cartao").map(x=>({tipo:"item",ehCartao:true,cartao:x.cartao,
         linhaCartao:x.linhaCartao,descricao:x.descricao,valor:x.valor,status:x.status,dcpEnvelope:x.dcpEnvelope,item:null}));
-    return {tipo:"dia",data:iso,dataObj:dt,saldo,hoje:iso===hj,seg:dt.getDay()===1,
+    return {tipo:"dia",data:iso,dataObj:dt,saldo,saldoPorConta,hoje:iso===hj,seg:dt.getDay()===1,
       itens:[...itensNormais,...itensCartao]};
   });
 }
@@ -5010,6 +5082,13 @@ function Timeline({data,onUpdate,onIrPara}){
   const nodeRefs=useRef([]);
   const [busca,setBusca]=useState("");
   const [filtro,setFiltro]=useState("todos"); // todos|previsao|historico
+  // [NOVO 01/08] Fase 2/3 -- conta selecionada pra "linha gorda" (saldo
+  // dessa conta + soma das outras + total). Default: primeira conta ativa.
+  const contasAtivas=useMemo(()=>(data.contas||[]).filter(c=>c.ativa!==false),[data.contas]);
+  const [contaSelecionada,setContaSelecionada]=useState(null);
+  useEffect(()=>{
+    if(!contaSelecionada&&contasAtivas.length) setContaSelecionada(contasAtivas[0].id);
+  },[contasAtivas,contaSelecionada]);
   // [24/07->25/07] Item selecionado abre o MESMO painel de edicao que Fluxo/
   // Historico usam (PainelEdicaoItem), mas agora INLINE dentro do proprio
   // slot do item (mesmo padrao que Fluxo/Historico ja usam), em vez de
@@ -5132,6 +5211,12 @@ function Timeline({data,onUpdate,onIrPara}){
             fontFamily:"inherit",fontSize:11,fontWeight:700,
             background:filtro===id?C.accentLight:C.borderLight,color:filtro===id?C.accent:C.textSub}}>{l}</button>)}
       </div>
+      {contasAtivas.length>1&&<div style={{display:"flex",gap:6,marginTop:7,flexWrap:"wrap"}}>
+        {contasAtivas.map(c=>
+          <button key={c.id} onClick={()=>setContaSelecionada(c.id)} style={{padding:"5px 10px",borderRadius:16,border:"none",cursor:"pointer",
+            fontFamily:"inherit",fontSize:11,fontWeight:700,
+            background:contaSelecionada===c.id?C.accent:C.borderLight,color:contaSelecionada===c.id?"#fff":C.textSub}}>{c.nome}</button>)}
+      </div>}
     </Card>
 
     <div style={{position:"relative"}}>
@@ -5153,7 +5238,19 @@ function Timeline({data,onUpdate,onIrPara}){
                   <div style={{fontWeight:800,color:C.accent,fontSize:isHoje?13:11}}>{_fmtDataCurta(s.linha.dataObj)}{isHoje&&<span style={{marginLeft:6,fontSize:9,background:C.accentLight,color:C.accent,padding:"1px 5px",borderRadius:5}}>HOJE</span>}</div>
                 </div>
                 <div style={{textAlign:"right"}}>
-                  <div style={{color:C.blue,fontWeight:900,fontSize:isHoje?17:13}}>→ {fmt(s.linha.saldo)}</div>
+                  {contasAtivas.length>1&&contaSelecionada?(()=>{
+                    const saldoConta=s.linha.saldoPorConta&&s.linha.saldoPorConta[contaSelecionada];
+                    const nomeContaSel=(contasAtivas.find(c=>c.id===contaSelecionada)||{}).nome||contaSelecionada;
+                    const saldoOutras=(saldoConta!=null&&s.linha.saldo!=null)?(s.linha.saldo-saldoConta):null;
+                    return <>
+                      <div style={{fontSize:9,color:C.textMuted}}>{nomeContaSel}</div>
+                      <div style={{color:C.blue,fontWeight:900,fontSize:isHoje?15:12}}>→ {saldoConta!=null?fmt(saldoConta):"—"}</div>
+                      <div style={{fontSize:9,color:C.textMuted,marginTop:1}}>outras contas: {saldoOutras!=null?fmt(saldoOutras):"—"}</div>
+                      <div style={{fontSize:10,color:C.textSub,fontWeight:700,marginTop:1}}>total: {fmt(s.linha.saldo)}</div>
+                    </>;
+                  })():
+                    <div style={{color:C.blue,fontWeight:900,fontSize:isHoje?17:13}}>→ {fmt(s.linha.saldo)}</div>
+                  }
                   {(data.cofres||[]).length>0&&<div style={{fontSize:9,color:C.teal,fontWeight:700,marginTop:1}}>
                     🏦 patrimônio: {fmt(s.linha.saldo+valorCofresProjetadoNaData(data.cofres,s.linha.data,data.config||{}))}
                   </div>}
@@ -8321,7 +8418,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260730.1925 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260731.1854 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -8403,7 +8500,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260730.1925
+      // HTML v3.20260731.1854
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
