@@ -5152,6 +5152,14 @@ function Timeline({data,onUpdate,onIrPara}){
   useEffect(()=>{
     if(!contaSelecionada&&contasAtivas.length) setContaSelecionada(contasAtivas[0].id);
   },[contasAtivas,contaSelecionada]);
+  // [NOVO 01/08] "Disponível pra gastos essa semana" -- o envelope
+  // DCP_PROVISAO mais antigo ainda nao fechado (semanas passadas ja tem
+  // status EXECUTADO). So existe 1 aberto por vez na pratica.
+  const envelopeAtual=useMemo(()=>{
+    const abertos=(data.fluxo||[]).filter(r=>r.categoria==="DCP_PROVISAO"&&r.status!=="EXECUTADO");
+    if(!abertos.length) return null;
+    return abertos.sort((a,b)=>a.data<b.data?-1:1)[0];
+  },[data.fluxo]);
   // [24/07->25/07] Item selecionado abre o MESMO painel de edicao que Fluxo/
   // Historico usam (PainelEdicaoItem), mas agora INLINE dentro do proprio
   // slot do item (mesmo padrao que Fluxo/Historico ja usam), em vez de
@@ -5282,13 +5290,31 @@ function Timeline({data,onUpdate,onIrPara}){
             fontFamily:"inherit",fontSize:11,fontWeight:700,
             background:filtro===id?C.accentLight:C.borderLight,color:filtro===id?C.accent:C.textSub}}>{l}</button>)}
       </div>
-      {contasAtivas.length>1&&<div style={{display:"flex",gap:6,marginTop:7,flexWrap:"wrap"}}>
-        {contasAtivas.map(c=>
-          <button key={c.id} onClick={()=>setContaSelecionada(c.id)} style={{padding:"5px 10px",borderRadius:16,border:"none",cursor:"pointer",
-            fontFamily:"inherit",fontSize:11,fontWeight:700,
-            background:contaSelecionada===c.id?C.accent:C.borderLight,color:contaSelecionada===c.id?"#fff":C.textSub}}>{c.nome}</button>)}
+      {contasAtivas.length>1&&<div style={{display:"flex",gap:6,marginTop:7,flexWrap:"wrap",alignItems:"center"}}>
+        {contasAtivas.map(c=>{
+          const ativa=contaSelecionada===c.id;
+          return <button key={c.id} onClick={()=>setContaSelecionada(c.id)} style={{
+            padding:ativa?"8px 15px":"5px 10px",borderRadius:18,border:"none",cursor:"pointer",
+            fontFamily:"inherit",fontSize:ativa?13:11,fontWeight:800,transition:"all .15s",
+            background:ativa?C.accent:C.borderLight,color:ativa?"#fff":C.textSub}}>{c.nome}</button>;
+        })}
+      </div>}
+      {/* [NOVO 01/08] "Disponível pra gastos essa semana" -- mesmo valor que
+          Ferramentas > Despesas Cotidianas ja mostra, so trazido pra ca pra
+          nao precisar trocar de tela. O envelope "aberto" e sempre o mais
+          antigo com status != EXECUTADO (semanas passadas ja fecharam). */}
+      {envelopeAtual&&<div style={{marginTop:9,padding:"8px 12px",borderRadius:10,
+        background:envelopeAtual.valor>0?"#FEF3C7":C.greenLight,
+        display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{fontSize:11,color:C.textSub,fontWeight:600}}>
+          💰 {envelopeAtual.valor>0?"Faltando pra fechar a semana":"Disponível pra gastos essa semana"}
+        </span>
+        <span style={{fontSize:15,fontWeight:900,color:envelopeAtual.valor>0?"#92400E":C.green}}>
+          {fmt(Math.abs(envelopeAtual.valor))}
+        </span>
       </div>}
     </Card>
+
 
     <div style={{position:"relative"}}>
       <div ref={containerRef} style={{height:alturaContainer,overflowY:"auto",scrollSnapType:"y mandatory",
@@ -8536,7 +8562,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260801.0035 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260801.1740 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -8618,7 +8644,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260801.0035
+      // HTML v3.20260801.1740
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
