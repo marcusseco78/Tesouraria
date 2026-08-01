@@ -5973,6 +5973,15 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
           </select>
           <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Muda só as próximas ocorrências geradas — o que já foi lançado num lado fica onde está.</div>
         </div>
+        {destinoEdit==="FLUXO"&&contasAtivasRecEdit.length>1&&<div style={{marginBottom:10}}>
+          <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Conta</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+            {contasAtivasRecEdit.map(c=>
+              <button key={c.id} type="button" onClick={()=>setFormaEdit(c.id)}
+                style={{padding:"6px 10px",borderRadius:16,fontSize:12,fontWeight:700,border:"none",cursor:"pointer",
+                  background:formaEdit===c.id?C.accent:C.borderLight,color:formaEdit===c.id?"#fff":C.textMuted}}>{c.nome}</button>)}
+          </div>
+        </div>}
         <div style={{display:"flex",gap:10,marginBottom:10}}>
           <div style={{flex:1}}>
             <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Valor</div>
@@ -6076,6 +6085,9 @@ function Recorrencias({data,onUpdate}){
   const [alias,setAlias]=useState("");
   const [envelopePadrao,setEnvelopePadrao]=useState("");
   const [destinoEdit,setDestinoEdit]=useState("FLUXO");
+  // [NOVO 01/08] Fase 5 -- qual conta (so faz sentido quando destino=FLUXO).
+  const [formaEdit,setFormaEdit]=useState("CONTA");
+  const contasAtivasRecEdit=(data.contas||[]).filter(c=>c.ativa!==false);
   const [load,setLoad]=useState(false);
   const [showForm,setShowForm]=useState(false);
   const [loadTolerancia,setLoadTolerancia]=useState(false);
@@ -6169,6 +6181,7 @@ function Recorrencias({data,onUpdate}){
     setAlias(item.alias||"");
     setEnvelopePadrao(item.envelopePadrao||"");
     setDestinoEdit(String(item.destino||"FLUXO").toUpperCase().replace(/[^A-Z0-9_]/g,""));
+    setFormaEdit(item.forma||"CONTA");
   }
 
   async function salvar(item){
@@ -6197,6 +6210,8 @@ function Recorrencias({data,onUpdate}){
       }
       if(novoValor!==item.valor)
         ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"VALOR",valor:String(novoValor),resumo:""});
+      if(destinoEdit==="FLUXO"&&formaEdit!==(item.forma||"CONTA"))
+        ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"FORMA",valor:formaEdit,resumo:""});
       if(novoDia!==parseInt(item.diaVenc))
         ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_VENC",valor:String(novoDia),resumo:""});
       if(diaTipoEdit!==item.diaTipo)
@@ -6367,7 +6382,12 @@ function FormNovaRecorr({onSalvo,onClose,data}){
   const [desc,setDesc]=useState("");
   const [valor,setValor]=useState("");
   const [tipo,setTipo]=useState("DESPESA FIXA");
-  const [destinoUI,setDestinoUI]=useState("FLUXO_PF");
+  // [NOVO 01/08] Fase 5 -- destinoUI agora e "FLUXO:"+contaId (N contas) ou
+  // "CARTAO_PF"/"CARTAO_PJ" (cartao ainda fixo em 2, fora do escopo desta
+  // fase). Antes era so 4 valores fixos (FLUXO_PF/FLUXO_PJ/CARTAO_PF/PJ).
+  const contasAtivasRec=useMemo(()=>(data.contas||[]).filter(c=>c.ativa!==false),[data.contas]);
+  const [destinoUI,setDestinoUI]=useState("");
+  useEffect(()=>{ if(!destinoUI&&contasAtivasRec.length) setDestinoUI("FLUXO:"+contasAtivasRec[0].id); },[contasAtivasRec,destinoUI]);
   const [freq,setFreq]=useState("mensal");
   const [dia,setDia]=useState("10");
   const [diaTipo,setDiaTipo]=useState("FIXO");
@@ -6384,7 +6404,12 @@ function FormNovaRecorr({onSalvo,onClose,data}){
 
   const ehCartao=destinoUI==="CARTAO_PF"||destinoUI==="CARTAO_PJ";
   const destino=ehCartao?destinoUI:"FLUXO";
-  const forma=destinoUI==="FLUXO_PJ"?"CONTA PJ":"CONTA";
+  const forma=ehCartao?"":destinoUI.replace(/^FLUXO:/,"")||"CONTA";
+  // Mantem a deteccao "e PJ" pro texto de ajuda do alias abaixo, agora
+  // olhando o TIPO da conta selecionada (data.contas) em vez de comparar
+  // string fixa "FLUXO_PJ".
+  const contaSelecionadaObj=contasAtivasRec.find(c=>c.id===forma);
+  const ehContaPJ=(contaSelecionadaObj&&contaSelecionadaObj.tipo==="PJ")||forma==="CONTA PJ";
 
   const freqMapTodos={
     "terca":    {dia_venc:2,  m:1,  label:"Toda terca-feira"},
@@ -6437,10 +6462,10 @@ function FormNovaRecorr({onSalvo,onClose,data}){
         <input value={desc} onChange={e=>setDesc(e.target.value.toUpperCase())} placeholder="Ex: PSICÓLOGO" style={inp}/></div>
       <div><label style={lbl}>Nome no extrato/conciliação (opcional)</label>
         <input value={alias} onChange={e=>setAlias(e.target.value.toUpperCase())}
-          placeholder={destinoUI==="FLUXO_PJ"?"ex: TRANSFERENCIA PIX ENVIADA; TRANSFERENCIA RECEBIDA INTENSIVA":"ex: ZELT; IMOBILIARIA"}
+          placeholder={ehContaPJ?"ex: TRANSFERENCIA PIX ENVIADA; TRANSFERENCIA RECEBIDA INTENSIVA":"ex: ZELT; IMOBILIARIA"}
           style={inp}/>
         <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Separe vários com ";". Ajuda a Conciliação a reconhecer esse gasto quando o banco usa um nome diferente — nunca muda o nome de exibição.
-          {destinoUI==="FLUXO_PJ"&&" Como você paga isso via Pix entre suas próprias contas, o extrato da PJ mostra a transferência, não o nome do imposto — vale cadastrar os dois termos."}
+          {ehContaPJ&&" Como você paga isso via Pix entre suas próprias contas, o extrato da PJ mostra a transferência, não o nome do imposto — vale cadastrar os dois termos."}
         </div>
       </div>
       <div style={{display:"flex",gap:8}}>
@@ -6453,9 +6478,8 @@ function FormNovaRecorr({onSalvo,onClose,data}){
           </select></div>
       </div>
       <div><label style={lbl}>Destino</label>
-        <select value={destinoUI} onChange={e=>{setDestinoUI(e.target.value);if(e.target.value!=="FLUXO_PF"&&e.target.value!=="FLUXO_PJ"&&isWeekly)setFreq("mensal");}} style={sel}>
-          <option value="FLUXO_PF">Conta PF (pessoal)</option>
-          <option value="FLUXO_PJ">Conta PJ (empresa)</option>
+        <select value={destinoUI} onChange={e=>{const v=e.target.value;setDestinoUI(v);if(!v.startsWith("FLUXO:")&&isWeekly)setFreq("mensal");}} style={sel}>
+          {contasAtivasRec.map(c=><option key={c.id} value={"FLUXO:"+c.id}>{c.nome}</option>)}
           <option value="CARTAO_PF">{nomeCartao("PF",data)}</option>
           <option value="CARTAO_PJ">{nomeCartao("PJ",data)}</option>
         </select></div>
@@ -8489,7 +8513,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260731.2015 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260801.0009 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -8571,7 +8595,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260731.2015
+      // HTML v3.20260801.0009
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
