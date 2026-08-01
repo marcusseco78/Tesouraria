@@ -1825,7 +1825,9 @@ function FormCriarEmprestimo({onSalvo,onClose,data}){
   const [parcelas,setParcelas]=useState("");
   const [dataCredito,setDataCredito]=useState(hoje());
   const [diaVenc,setDiaVenc]=useState("10");
-  const [contaUI,setContaUI]=useState("PF");
+  const contasAtivasForm=(data&&data.contas||[]).filter(c=>c.ativa!==false);
+  const [contaUI,setContaUI]=useState("");
+  useEffect(()=>{ if(!contaUI&&contasAtivasForm.length) setContaUI(contasAtivasForm[0].id); },[contasAtivasForm]);
   const [envelopeId,setEnvelopeId]=useState("");
   const [load,setLoad]=useState(false);
   const envelopes=useMemo(()=>parseEnvelopesCustom(data||{}),[data]);
@@ -1836,7 +1838,7 @@ function FormCriarEmprestimo({onSalvo,onClose,data}){
       return;
     }
     setLoad(true);
-    const forma=contaUI==="PJ"?"CONTA PJ":"CONTA";
+    const forma=contaUI||"CONTA";
     try{
       // 1. Credito recebido -- lancamento unico, categoria RECEITA
       await api({action:"lancar",data:dataCredito,
@@ -1885,12 +1887,15 @@ function FormCriarEmprestimo({onSalvo,onClose,data}){
       <div style={{display:"flex",gap:8}}>
         <div style={{flex:1}}><label style={lbl}>Dia de vencimento</label>
           <input type="number" min="1" max="31" value={diaVenc} onChange={e=>setDiaVenc(e.target.value)} style={{...inp,textAlign:"center"}}/></div>
-        <div style={{flex:1}}><label style={lbl}>Conta</label>
-          <select value={contaUI} onChange={e=>setContaUI(e.target.value)} style={{...inp,background:C.surface}}>
-            <option value="PF">Conta PF (pessoal)</option>
-            <option value="PJ">Conta PJ (empresa)</option>
-          </select></div>
       </div>
+      {contasAtivasForm.length>1&&<div><label style={lbl}>Conta</label>
+        <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+          {contasAtivasForm.map(c=>
+            <button key={c.id} type="button" onClick={()=>setContaUI(c.id)}
+              style={{padding:"6px 10px",borderRadius:16,fontSize:12,fontWeight:700,border:"none",cursor:"pointer",
+                background:contaUI===c.id?C.accent:C.borderLight,color:contaUI===c.id?"#fff":C.textMuted}}>{c.nome}</button>)}
+        </div>
+      </div>}
       {envelopes.length>0&&<div><label style={lbl}>Envelope (opcional)</label>
         <select value={envelopeId} onChange={e=>setEnvelopeId(e.target.value)} style={{...inp,background:C.surface}}>
           <option value="">Nenhum</option>
@@ -4607,6 +4612,11 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
   const [busca,setBusca]=useState("");
   const [mostrarCofres,setMostrarCofres]=useState(false);
   const hj=hoje();
+  // [NOVO 01/08] Fase 5 -- seletor de conta, mesmo padrao que a Timeline ja
+  // usa. So aparece com mais de 1 conta ativa.
+  const contasAtivas=useMemo(()=>(data.contas||[]).filter(c=>c.ativa!==false),[data.contas]);
+  const [contaSelecionada,setContaSelecionada]=useState(null);
+  useEffect(()=>{ if(!contaSelecionada&&contasAtivas.length) setContaSelecionada(contasAtivas[0].id); },[contasAtivas,contaSelecionada]);
 
   // Envelopes customizados: nome pra cada lancamento classificado + o
   // lancamento MAIS RECENTE de cada envelope carrega o saldo corrente
@@ -4671,6 +4681,16 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
     const ex=(data.fluxo||[]).filter(r=>r.status==="EXECUTADO"&&r.data<=hj).sort((a,b)=>a.data>b.data?1:-1);
     return ex.length?ex[ex.length-1].saldoReal:null;
   },[data.fluxo,hj]);
+  // [NOVO 01/08] Fase 5 -- mesma logica, mas separada por conta.
+  const saldoHojePorConta=useMemo(()=>{
+    const ex=(data.fluxo||[]).filter(r=>r.status==="EXECUTADO"&&r.data<=hj);
+    const m={};
+    contasAtivas.forEach(c=>{
+      const exC=ex.filter(r=>(r.forma||"CONTA")===c.id).sort((a,b)=>a.data>b.data?1:-1);
+      m[c.id]=exC.length?exC[exC.length-1].saldoRealConta:null;
+    });
+    return m;
+  },[data.fluxo,hj,contasAtivas]);
 
   // Um dia sem lancamento de Fluxo (so cartao, ou nada) nao muda o saldo --
   // ele "herda" o saldo de fim do ultimo dia conhecido. Sem isso, um dia
@@ -4678,13 +4698,27 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
   // pro proximo dia que tivesse lancamento, dando a impressao de bug.
   const gruposComSaldo=useMemo(()=>{
     let ultimo=saldoHoje;
+    const ultimoConta={...saldoHojePorConta};
     return grupos.map(([gdt,itens])=>{
       if(itens.length) ultimo=itens[itens.length-1].saldoProjetado;
       const totalDia=itens.reduce((s,r)=>s+(r.valor||0),0);
       const spIni=(ultimo!=null&&isFinite(ultimo))?(ultimo-totalDia):null;
-      return {gdt,itens,spIni};
+      // [NOVO 01/08] Fase 5 -- mesma conta "arrasta pra frente", agora
+      // separada por conta (campo forma de cada item).
+      const porContaDia={};
+      itens.forEach(r=>{ const c=r.forma||"CONTA"; (porContaDia[c]=porContaDia[c]||[]).push(r); });
+      const spPorConta={};
+      Object.keys(porContaDia).forEach(c=>{
+        const itensC=porContaDia[c];
+        const fimC=itensC[itensC.length-1].saldoProjetadoConta;
+        const totalC=itensC.reduce((s,r)=>s+(r.valor||0),0);
+        const iniC=(fimC!=null&&isFinite(fimC))?(fimC-totalC):null;
+        if(iniC!=null){ spPorConta[c]=iniC; ultimoConta[c]=fimC; }
+      });
+      Object.keys(ultimoConta).forEach(c=>{ if(!(c in spPorConta)) spPorConta[c]=ultimoConta[c]; });
+      return {gdt,itens,spIni,spPorConta};
     });
-  },[grupos,saldoHoje]);
+  },[grupos,saldoHoje,saldoHojePorConta]);
   const primeiroIdxComSaldo=useMemo(()=>gruposComSaldo.findIndex(g=>g.spIni!=null),[gruposComSaldo]);
 
   // [13/07] Busca em Previsão, pedida junto com o conserto da busca do
@@ -4695,15 +4729,19 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
   // as compras de cartão (mesmo bug do Histórico corrigido aqui de uma vez).
   const gruposExibidos=useMemo(()=>{
     const b=busca.trim().toUpperCase();
-    if(!b) return gruposComSaldo.map(g=>({...g,itensExibir:g.itens,cartaoExibir:cartaoPorData[g.gdt]||[]}));
+    const filtrarPorConta=contasAtivas.length>1&&contaSelecionada;
     return gruposComSaldo
-      .map(g=>({
-        ...g,
-        itensExibir:g.itens.filter(item=>String(item.descricao||"").toUpperCase().includes(b)||String(item.categoria||"").toUpperCase().includes(b)),
-        cartaoExibir:(cartaoPorData[g.gdt]||[]).filter(c=>String(c.descricao||"").toUpperCase().includes(b))
-      }))
+      .map(g=>{
+        let itensExibir=g.itens, cartaoExibir=cartaoPorData[g.gdt]||[];
+        if(filtrarPorConta) itensExibir=itensExibir.filter(item=>(item.forma||"CONTA")===contaSelecionada);
+        if(b){
+          itensExibir=itensExibir.filter(item=>String(item.descricao||"").toUpperCase().includes(b)||String(item.categoria||"").toUpperCase().includes(b));
+          cartaoExibir=cartaoExibir.filter(c=>String(c.descricao||"").toUpperCase().includes(b));
+        }
+        return {...g,itensExibir,cartaoExibir};
+      })
       .filter(g=>g.itensExibir.length||g.cartaoExibir.length);
-  },[gruposComSaldo,cartaoPorData,busca]);
+  },[gruposComSaldo,cartaoPorData,busca,contaSelecionada,contasAtivas]);
 
   if(!prog.length) return <div>
     <div style={{padding:"40px 20px",textAlign:"center",color:C.textMuted,fontSize:14}}>
@@ -4716,9 +4754,19 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
     <div style={{padding:"10px 14px"}}>
       <input type="text" value={busca} onChange={e=>setBusca(e.target.value.toUpperCase())} placeholder="🔍 Buscar por descrição ou categoria"
         style={{width:"100%",padding:"9px 14px",borderRadius:24,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
+      {contasAtivas.length>1&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>
+        {contasAtivas.map(c=>
+          <button key={c.id} onClick={()=>setContaSelecionada(c.id)}
+            style={{padding:"5px 10px",borderRadius:16,fontSize:11,fontWeight:700,border:"none",cursor:"pointer",
+              background:contaSelecionada===c.id?C.accent:C.borderLight,color:contaSelecionada===c.id?"#fff":C.textSub}}>{c.nome}</button>)}
+      </div>}
     </div>
     {busca.trim()&&!gruposExibidos.length&&<div style={{padding:"20px 14px",textAlign:"center",color:C.textMuted,fontSize:13}}>Nada encontrado para "{busca}".</div>}
-    {gruposExibidos.map(({gdt,itensExibir,cartaoExibir,spIni},gi)=>{const at=gdt<hj,sp=spIni,ehPrimeiro=!busca.trim()&&gi===primeiroIdxComSaldo;return <div key={gdt}>
+    {gruposExibidos.map(({gdt,itensExibir,cartaoExibir,spIni,spPorConta},gi)=>{
+      const filtrarPorConta=contasAtivas.length>1&&contaSelecionada;
+      const at=gdt<hj,sp=filtrarPorConta?(spPorConta&&spPorConta[contaSelecionada]):spIni;
+      const ehPrimeiro=!busca.trim()&&!filtrarPorConta&&gi===primeiroIdxComSaldo;
+      return <div key={gdt}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 14px 4px",background:"#F9FAFB",borderBottom:"1px solid "+C.border,borderLeft:at?"3px solid "+C.red:"none"}}>
         <span style={{fontSize:12,fontWeight:700,color:at?C.red:C.accent}}>{at?"⚠ ATRASADO · ":""}{fmtD(gdt)} · {diaSemana(gdt)}</span>
         <div style={{display:"flex",alignItems:"center",gap:6}}>
@@ -4809,6 +4857,10 @@ function Historico({data,onUpdate,destaque,onIrPara}){
   const [conf,setConf]=useState(null);
   const [busca,setBusca]=useState("");
   const [limite,setLimite]=useState(30);
+  // [NOVO 01/08] Fase 5 -- seletor de conta, mesmo padrao da Timeline/Previsao.
+  const contasAtivas=useMemo(()=>(data.contas||[]).filter(c=>c.ativa!==false),[data.contas]);
+  const [contaSelecionada,setContaSelecionada]=useState(null);
+  useEffect(()=>{ if(!contaSelecionada&&contasAtivas.length) setContaSelecionada(contasAtivas[0].id); },[contasAtivas,contaSelecionada]);
 
   const envelopesCustom=useMemo(()=>calcularEnvelopesCustom(data),[data.fluxo,data.cartaoPF,data.cartaoPJ,data.config]);
   const envelopesPorId=useMemo(()=>{const m={};envelopesCustom.forEach(e=>m[e.id]=e);return m;},[envelopesCustom]);
@@ -4826,10 +4878,14 @@ function Historico({data,onUpdate,destaque,onIrPara}){
 
   const todos=useMemo(()=>(data.fluxo||[]).filter(r=>r.status==="EXECUTADO").sort((a,b)=>a.data<b.data?1:-1),[data.fluxo]);
   const filtrados=useMemo(()=>{
-    if(!busca.trim())return todos;
-    const b=busca.toUpperCase();
-    return todos.filter(r=>String(r.descricao||"").toUpperCase().includes(b)||String(r.categoria||"").toUpperCase().includes(b));
-  },[todos,busca]);
+    let r=todos;
+    if(contasAtivas.length>1&&contaSelecionada) r=r.filter(x=>(x.forma||"CONTA")===contaSelecionada);
+    if(busca.trim()){
+      const b=busca.toUpperCase();
+      r=r.filter(x=>String(x.descricao||"").toUpperCase().includes(b)||String(x.categoria||"").toUpperCase().includes(b));
+    }
+    return r;
+  },[todos,busca,contaSelecionada,contasAtivas]);
   // [CORRIGIDO 13/07] antes cortava por CONTAGEM BRUTA de itens (slice
   // simples) -- se um dia tivesse muitos lancamentos (ex: virada de ciclo
   // com varios emprestimos/pensoes de uma vez), o corte caia NO MEIO
@@ -4889,11 +4945,18 @@ function Historico({data,onUpdate,destaque,onIrPara}){
       <input type="text" value={busca} onChange={e=>{setBusca(e.target.value.toUpperCase());setLimite(30);}}
         placeholder="🔎 Buscar por descrição ou categoria..."
         style={{width:"100%",padding:"7px 12px",borderRadius:24,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box",background:C.surface}}/>
+      {contasAtivas.length>1&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>
+        {contasAtivas.map(c=>
+          <button key={c.id} onClick={()=>{setContaSelecionada(c.id);setLimite(30);}}
+            style={{padding:"5px 10px",borderRadius:16,fontSize:11,fontWeight:700,border:"none",cursor:"pointer",
+              background:contaSelecionada===c.id?C.accent:C.borderLight,color:contaSelecionada===c.id?"#fff":C.textSub}}>{c.nome}</button>)}
+      </div>}
     </div>
     {!ex.length&&<div style={{padding:"40px 20px",textAlign:"center",color:C.textMuted,fontSize:14}}>{busca?"Nenhum resultado pra essa busca.":"Nenhum lançamento executado."}</div>}
     {grupos.map(([gdt,itens])=>{
+      const filtrarPorConta=contasAtivas.length>1&&contaSelecionada;
       const totalDia=itens.reduce((s,r)=>s+(r.valor||0),0);
-      const spFim=itens.length?itens[0].saldoReal:null;
+      const spFim=itens.length?(filtrarPorConta?itens[0].saldoRealConta:itens[0].saldoReal):null;
       const spIni=(spFim!=null&&isFinite(spFim))?(spFim-totalDia):null;
       return <div key={gdt}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 14px 4px",background:"#F9FAFB",borderBottom:"1px solid "+C.border}}>
@@ -5105,14 +5168,22 @@ function Timeline({data,onUpdate,onIrPara}){
   // senao o numero mostrado mentiria sobre o filtro aplicado).
   const linhas=useMemo(()=>{
     const b=busca.trim().toUpperCase();
+    // [CORRIGIDO 01/08] A pilula de conta so mudava o saldo mostrado (linha
+    // "gorda"), nunca filtrava OS ITENS listados -- por isso trocar de PF
+    // pra PJ parecia nao fazer nada na lista abaixo. Agora, com mais de 1
+    // conta ativa, so mostra os itens do Fluxo daquela conta (item de
+    // cartao continua sempre visivel, ja que cartao ainda nao esta ligado
+    // a uma conta especifica -- isso e Fase 5).
+    const filtrarPorConta=contasAtivas.length>1&&contaSelecionada;
     return linhasBrutas.map(l=>{
       let itens=l.itens;
+      if(filtrarPorConta) itens=itens.filter(it=>it.ehCartao||(it.item&&(it.item.forma||"CONTA")===contaSelecionada));
       if(filtro==="previsao") itens=itens.filter(it=>it.ehCartao?it.status==="PENDENTE":it.status==="PROGRAMADO");
       else if(filtro==="historico") itens=itens.filter(it=>it.ehCartao?it.status==="PAGO":it.status==="EXECUTADO");
       if(b) itens=itens.filter(it=>String(it.descricao||"").toUpperCase().indexOf(b)>=0||String(it.categoriaTxt||"").toUpperCase().indexOf(b)>=0);
       return {...l,itens};
     }).filter(l=>l.itens.length||l.hoje);
-  },[linhasBrutas,filtro,busca]);
+  },[linhasBrutas,filtro,busca,contaSelecionada,contasAtivas]);
   const hojeIdx=useMemo(()=>linhas.findIndex(l=>l.hoje),[linhas]);
 
   // Achata em "slots" (1 slot = 1 linha de saldo OU 1 item), pra cada um
@@ -8418,7 +8489,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260731.1854 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260731.2015 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -8500,7 +8571,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260731.1854
+      // HTML v3.20260731.2015
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
