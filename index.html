@@ -6565,6 +6565,11 @@ function BotaoLancar({data,onUpdate,onIrPara}){
   // direto no "+" -- antes so redirecionava pra aba propria.
   const [cofreEscolhido,setCofreEscolhido]=useState("");
   const [dividaEscolhida,setDividaEscolhida]=useState("");
+  // [NOVO 01/08] Fase 5 -- qual conta recebe o lancamento (Gastos Semanais/
+  // Extraordinario/Avulso/Receita via "+"). Default: primeira conta ativa.
+  const contasAtivasLanc=useMemo(()=>(data.contas||[]).filter(c=>c.ativa!==false),[data.contas]);
+  const [contaLancamento,setContaLancamento]=useState("");
+  useEffect(()=>{ if(!contaLancamento&&contasAtivasLanc.length) setContaLancamento(contasAtivasLanc[0].id); },[contasAtivasLanc,contaLancamento]);
   const CATS=["DCP","DESPESA FIXA","RECEITA","DEPOSITO_AVULSO","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA","EXTRAORDINARIA","INVESTIMENTO"];
   const envelopesAbertos=useMemo(()=>calcularEnvelopesCustom(data).filter(e=>!e.encerrado),[data.fluxo,data.cartaoPF,data.cartaoPJ,data.config]);
 
@@ -6801,7 +6806,7 @@ function BotaoLancar({data,onUpdate,onIrPara}){
         const nomeNorm=String(fonteEspSelecionada.fonteNome).toUpperCase().replace(/[^A-Z0-9_ ]/g,"").replace(/ /g,"");
         const obsMarcador="FONTE_RECEITA:"+nomeNorm+":"+fonteEspSelecionada.modo.id+":"+data_;
         const r=await api({action:"lancar",data:data_,descricao:(fonteEspSelecionada.fonteNome+" (ESPORÁDICA)").toUpperCase(),
-          valor:liquidoPreview,tipo:"RECEITA",categoria:"RECEITA",forma:"CONTA",
+          valor:liquidoPreview,tipo:"RECEITA",categoria:"RECEITA",forma:contaLancamento||"CONTA",
           status:data_<=hoje()?"EXECUTADO":"PROGRAMADO",obs:obsMarcador});
         onUpdate(r);fecharTudo();
       }catch(e){alert(e.message);}
@@ -6815,7 +6820,7 @@ function BotaoLancar({data,onUpdate,onIrPara}){
       const descFinal=desc.trim()||cat;
       if(dest==="conta"){
         const v=(vNeg?-1:1)*Math.abs(numBR(valor));
-        r=await api({action:"lancar",data:data_,descricao:descFinal.toUpperCase(),valor:v,tipo:tipoDaCategoria(cat),categoria:cat,forma:"CONTA",status:data_<=hoje()?"EXECUTADO":"PROGRAMADO",obs:"",envelopeId,apelido});
+        r=await api({action:"lancar",data:data_,descricao:descFinal.toUpperCase(),valor:v,tipo:tipoDaCategoria(cat),categoria:cat,forma:contaLancamento||"CONTA",status:data_<=hoje()?"EXECUTADO":"PROGRAMADO",obs:"",envelopeId,apelido});
       } else {
         const cartao=dest==="pj"?"PJ":"PF";
         const v=(vNeg?-1:1)*Math.abs(numBR(valor));
@@ -6977,6 +6982,15 @@ function BotaoLancar({data,onUpdate,onIrPara}){
               Líquido: {fmt(liquidoPreview)}
             </div>
           </>}
+      {modoEspId&&contasAtivasLanc.length>1&&<div style={{marginBottom:10}}>
+        <div style={{fontSize:11,color:C.textMuted,marginBottom:5}}>Conta:</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          {contasAtivasLanc.map(c=>
+            <button key={c.id} type="button" onClick={()=>setContaLancamento(c.id)}
+              style={{padding:"6px 10px",borderRadius:16,fontSize:12,fontWeight:700,border:"none",cursor:"pointer",
+                background:contaLancamento===c.id?C.accent:C.borderLight,color:contaLancamento===c.id?"#fff":C.textMuted}}>{c.nome}</button>)}
+        </div>
+      </div>}
       <button onClick={salvar} disabled={load||!modoEspId||!receitaEspValida}
         style={{width:"100%",padding:"12px",borderRadius:10,background:receitaEspValida?C.accent:C.borderLight,color:receitaEspValida?"#fff":C.textMuted,fontSize:14,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
         {load?"Salvando…":"Salvar lançamento"}
@@ -7078,6 +7092,15 @@ function BotaoLancar({data,onUpdate,onIrPara}){
     {/* Categoria -- ja vem decidida pela arvore de pilulas, so confirma */}
     {!ehPagamento&&<div style={{fontSize:11,color:C.textMuted,marginBottom:10}}>
       Categoria: <b style={{color:C.text}}>{TITULO_CAT_UNIFICADO[cat]||cat}</b>
+    </div>}
+    {dest==="conta"&&contasAtivasLanc.length>1&&<div style={{marginBottom:10}}>
+      <div style={{fontSize:11,color:C.textMuted,marginBottom:5}}>Conta:</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+        {contasAtivasLanc.map(c=>
+          <button key={c.id} type="button" onClick={()=>setContaLancamento(c.id)}
+            style={{padding:"6px 10px",borderRadius:16,fontSize:12,fontWeight:700,border:"none",cursor:"pointer",
+              background:contaLancamento===c.id?C.accent:C.borderLight,color:contaLancamento===c.id?"#fff":C.textMuted}}>{c.nome}</button>)}
+      </div>
     </div>}
     {!ehPagamento&&envelopesAbertos.length>0&&<select value={envelopeId} onChange={e=>setEnvelopeId(e.target.value)}
       style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",marginBottom:10,background:C.surface,color:envelopeId?C.text:C.textMuted}}>
@@ -8513,7 +8536,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260801.0009 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260801.0035 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -8595,7 +8618,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260801.0009
+      // HTML v3.20260801.0035
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
