@@ -3785,6 +3785,12 @@ function ConciliarExtratoTab({data,onUpdate}){
   const [load,setLoad]=useState(false);
   const [cfgNovos,setCfgNovos]=useState({}); // chave estavel (chaveNovo) -> {incluir,categoria,descricao}
   const fileRef=useRef(null);
+  // [NOVO 02/08] Conciliacao de extrato agora e por conta -- antes so
+  // existia pra "CONTA" (PF), sem opcao nenhuma de trocar. Default:
+  // primeira conta ativa.
+  const contasAtivasExt=useMemo(()=>(data.contas||[]).filter(c=>c.ativa!==false),[data.contas]);
+  const [contaExtrato,setContaExtrato]=useState("");
+  useEffect(()=>{ if(!contaExtrato&&contasAtivasExt.length) setContaExtrato(contasAtivasExt[0].id); },[contasAtivasExt,contaExtrato]);
 
   // Chave ESTAVEL de um "novo" -- nunca a posicao no array. Usar indice como
   // chave e uma armadilha: toda vez que um item e lancado/dispensado, a
@@ -3825,7 +3831,7 @@ function ConciliarExtratoTab({data,onUpdate}){
       const lido=await lerArquivoExtrato(file);
       if(!lido.transacoes.length){ alert("Não encontrei transações nesse arquivo."); setLoad(false); return; }
       const r=await api({action:"conciliarExtrato",transacoes:lido.transacoes,acctid:lido.acctid||"",
-        saldoBanco:lido.saldoFinal,dataSaldoBanco:lido.dataSaldoFinal});
+        saldoBanco:lido.saldoFinal,dataSaldoBanco:lido.dataSaldoFinal,conta:contaExtrato});
       setResultado(r);
       const pre={};
       r.novos.forEach(n=>{
@@ -3843,7 +3849,7 @@ function ConciliarExtratoTab({data,onUpdate}){
     setLoad(true);
     try{
       const r=await api({action:"lancar",data,descricao:"AJUSTE",valor:diferenca,tipo:"EXTRAORDINARIA",
-        categoria:"EXTRAORDINARIA",forma:"CONTA",status:"EXECUTADO",obs:""});
+        categoria:"EXTRAORDINARIA",forma:contaExtrato||"CONTA",status:"EXECUTADO",obs:""});
       onUpdate(r);
       setResultado(res=>({...res,comparacaoSaldo:{...res.comparacaoSaldo,bate:true,ajustado:true}}));
     }catch(e){ alert(e.message); }
@@ -3876,7 +3882,7 @@ function ConciliarExtratoTab({data,onUpdate}){
         if(n.identificador) obsNovo.extratoId=n.identificador;
         if(cfg.envelopeId) obsNovo.envelope=cfg.envelopeId;
         r=await api({action:"lancar",data:n.data,descricao:cfg.descricao.toUpperCase(),
-          valor:Number(n.valor),tipo:cfg.categoria,categoria:cfg.categoria,forma:"CONTA",
+          valor:Number(n.valor),tipo:cfg.categoria,categoria:cfg.categoria,forma:contaExtrato||"CONTA",
           status:"EXECUTADO",obs:JSON.stringify(obsNovo),apelido:cfg.apelido||""});
       }
       onUpdate(r);
@@ -3907,7 +3913,7 @@ function ConciliarExtratoTab({data,onUpdate}){
           if(cfg.envelopeId) obsNovo.envelope=cfg.envelopeId;
           if(cfg.apelido) obsNovo.apelido=cfg.apelido.toUpperCase().trim();
           return {data:n.data, descricao:cfg.descricao.toUpperCase(), valor:Number(n.valor), tipo:cfg.categoria,
-            categoria:cfg.categoria, forma:"CONTA", status:"EXECUTADO",
+            categoria:cfg.categoria, forma:contaExtrato||"CONTA", status:"EXECUTADO",
             obs:Object.keys(obsNovo).length?JSON.stringify(obsNovo):""};
         });
         onUpdate(await api({action:"lancarLote",itens}));
@@ -3960,6 +3966,15 @@ function ConciliarExtratoTab({data,onUpdate}){
       Sobe o extrato da conta corrente (.csv ou .ofx do Nubank) — o app compara com o que já está no Fluxo e separa em três grupos: contas programadas que já debitaram de verdade (pra dar baixa), gastos novos que ainda não foram lançados, e lançamentos que ainda não apareceram no extrato.
     </div>
 
+    {contasAtivasExt.length>1&&<div style={{marginBottom:14}}>
+      <div style={{fontSize:11,color:C.textMuted,marginBottom:5,fontWeight:700,textTransform:"uppercase"}}>Conta</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+        {contasAtivasExt.map(c=>
+          <button key={c.id} onClick={()=>{setContaExtrato(c.id);setResultado(null);setCfgNovos({});}}
+            style={{padding:"7px 12px",borderRadius:16,fontSize:12,fontWeight:700,border:"none",cursor:"pointer",
+              background:contaExtrato===c.id?C.orange:C.borderLight,color:contaExtrato===c.id?"#fff":C.textSub}}>{c.nome}</button>)}
+      </div>
+    </div>}
     <input ref={fileRef} type="file" accept=".csv,.ofx" style={{display:"none"}}
       onChange={e=>{const f=e.target.files[0];if(f)processar(f);e.target.value="";}}/>
     <button onClick={()=>fileRef.current.click()} disabled={load}
@@ -4199,12 +4214,29 @@ function DCPTab({data,onUpdate,onIrPara}){
 
   // Transacoes que pertencem a um envelope especifico (pela DATA-CHAVE exata,
   // nunca pelo texto "DCP N" sozinho -- o numero reinicia todo ciclo).
+  // [CORRIGIDO 01/08] Compra parcelada de cartao manda TODAS as parcelas
+  // (1/3, 2/3, 3/3 -- cada uma numa fatura/mes diferente) pra este MESMO
+  // envelope, porque o valor total e descontado uma vez so, na semana da
+  // parcela mais antiga (regra ja fechada com o Marcus). Antes isso
+  // aparecia como 3 linhas identicas na lista, parecendo duplicata --
+  // agora agrupa por origem+descricao (mesma chave que ja gera o
+  // agrupamento no calculo do total) numa linha so, com "(Nx)" e o total.
   function transacoesDoEnvelope(envData){
     const doFluxo=fluxo.filter(r=>r.categoria==="DCP"&&r.dcpEnvelopeData===envData)
       .map(r=>({row:r.row,descricao:r.descricao,valor:r.valor,data:r.data,status:r.status,origem:"fluxo"}));
     const doPF=cartaoPF.filter(r=>r[10]===envData).map(r=>({row:_linhaCartao(r),descricao:r[1],valor:r[2],data:r[0],status:r[7],origem:"cartaoPF"}));
     const doPJ=cartaoPJ.filter(r=>r[10]===envData).map(r=>({row:_linhaCartao(r),descricao:r[1],valor:r[2],data:r[0],status:r[7],origem:"cartaoPJ"}));
-    return [...doFluxo,...doPF,...doPJ].sort((a,b)=>a.data<b.data?-1:1);
+    const grupos={};
+    const semGrupo=[];
+    [...doPF,...doPJ].forEach(t=>{
+      const chave=t.origem+"|"+t.descricao;
+      if(!grupos[chave]) grupos[chave]={...t,total:0,parcelas:0};
+      grupos[chave].total+=t.valor;
+      grupos[chave].parcelas++;
+      if(t.data<grupos[chave].data){ grupos[chave].data=t.data; grupos[chave].row=t.row; grupos[chave].status=t.status; }
+    });
+    const agrupadas=Object.values(grupos).map(g=>({row:g.row,descricao:g.descricao,valor:g.total,data:g.data,status:g.status,origem:g.origem,parcelas:g.parcelas}));
+    return [...doFluxo,...agrupadas].sort((a,b)=>a.data<b.data?-1:1);
   }
 
   function irParaLancamento(t){
@@ -4238,8 +4270,13 @@ function DCPTab({data,onUpdate,onIrPara}){
             {transacoes.map(t=><div key={t.origem+"-"+t.row} onClick={()=>irParaLancamento(t)}
               style={{display:"flex",alignItems:"center",gap:8,padding:"8px 14px 8px 26px",borderBottom:"1px solid "+C.borderLight,background:"#FAFAFA",cursor:"pointer"}}>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:12,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.descricao}</div>
-                <div style={{fontSize:9,color:C.textMuted,marginTop:1}}>{fmtD(t.data)} · {t.origem==="fluxo"?"Fluxo":t.origem==="cartaoPF"?nomeCartao("PF",data):nomeCartao("PJ",data)} · {t.status}</div>
+                <div style={{fontSize:12,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                  {t.descricao}{t.parcelas>1&&<span style={{color:C.accent,fontWeight:800}}> ({t.parcelas}x)</span>}
+                </div>
+                <div style={{fontSize:9,color:C.textMuted,marginTop:1}}>
+                  {fmtD(t.data)} · {t.origem==="fluxo"?"Fluxo":t.origem==="cartaoPF"?nomeCartao("PF",data):nomeCartao("PJ",data)} · {t.status}
+                  {t.parcelas>1&&" · total das "+t.parcelas+" parcelas"}
+                </div>
               </div>
               <span style={{fontSize:12,fontWeight:700,color:t.valor<0?C.red:C.blue}}>{fmt(t.valor)}</span>
               <span style={{fontSize:13,color:C.accent,flexShrink:0}}>→</span>
@@ -7522,6 +7559,18 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     catch(e){ alert(e.message); }
     setLoad(false);
   }
+  // [NOVO 02/08] Etapa 1 "cartao vinculado a conta" -- qual conta paga a
+  // fatura desse cartao (usado quando a linha "FATURA CARTAO PF/PJ" nasce
+  // no Fluxo). Default "CONTA" pros dois, igual sempre foi -- so muda se
+  // editado explicitamente.
+  const contasAtivasCartaoCfg=(data.contas||[]).filter(c=>c.ativa!==false);
+  const [loadContaCartao,setLoadContaCartao]=useState(false);
+  async function salvarContaCartao(novaConta){
+    setLoadContaCartao(true);
+    try{ onUpdate(await api({action:"editarContaCartao",cartao,conta:novaConta})); }
+    catch(e){ alert(e.message); }
+    setLoadContaCartao(false);
+  }
   // form novo lançamento
   const [nDesc,setNDesc]=useState("");
   const [nValor,setNValor]=useState("");
@@ -7989,6 +8038,19 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
               X
             </button>
           </div>}
+
+        {contasAtivasCartaoCfg.length>1&&<>
+          <div style={{fontSize:10,fontWeight:700,color:C.textSub,marginBottom:4}}>CONTA QUE PAGA ESSA FATURA</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
+            {contasAtivasCartaoCfg.map(c=>{
+              const contaAtual=(data.config&&data.config["CONTA_CARTAO_"+cartao])||"CONTA";
+              return <button key={c.id} onClick={()=>salvarContaCartao(c.id)} disabled={loadContaCartao}
+                style={{padding:"6px 10px",borderRadius:16,fontSize:12,fontWeight:700,border:"none",cursor:"pointer",
+                  background:contaAtual===c.id?C.accent:C.surface,color:contaAtual===c.id?"#fff":C.textMuted,
+                  border:contaAtual===c.id?"none":"1px solid "+C.border}}>{c.nome}</button>;
+            })}
+          </div>
+        </>}
 
         <div style={{fontSize:10,fontWeight:700,color:C.textSub,marginBottom:4}}>FECHAMENTO E VENCIMENTO (vale pros dois cartões)</div>
         {!editandoFatura
@@ -8562,7 +8624,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260801.1740 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260802.2002 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -8644,7 +8706,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260801.1740
+      // HTML v3.20260802.2002
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
