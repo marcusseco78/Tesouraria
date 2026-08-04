@@ -138,9 +138,18 @@ function projetarLinhaFutura(saldoBase,tipoInvestimento,params,cicloInicio,event
 const fmtD=s=>{const m=String(s||"").match(/^(\d{4})-(\d{2})-(\d{2})/);return m?m[3]+"/"+m[2]+"/"+m[1].slice(2):""};
 // [NOVO 19/07] "Nome fantasia" do cartao -- so exibicao, nunca muda o TIPO
 // interno ("CARTAO PF"/"CARTAO PJ" continuam sendo os mesmos em toda
-// comparacao/calculo). Cai pro nome padrao "Cartão PF/PJ" se nao
-// configurado em CONFIG.NOME_CARTAO_PF / NOME_CARTAO_PJ.
+// comparacao/calculo).
+// [CORRIGIDO 03/08, Fase 2 multi-cartao] Antes lia so CONFIG.NOME_CARTAO_PF/
+// PJ (chave solta) -- desde a Fase 1, editarCartao (cadastro "Configurações
+// Gerais > Cadastro de cartões") passou a gravar o nome direto na aba
+// CARTOES, sem tocar mais nessa chave de CONFIG. Se essa função continuasse
+// só lendo CONFIG, o nome que aparece na tela Cartões ficaria desatualizado
+// pra sempre depois de renomear pelo cadastro novo. Agora lê data.cartoes
+// primeiro (fonte atual); cai pro CONFIG legado só se o cartão não estiver
+// no cadastro por algum motivo; senão o default de sempre.
 function nomeCartao(sigla,data){
+  const cad=(data&&data.cartoes||[]).find(c=>c.id===sigla);
+  if(cad&&cad.nome&&cad.nome.trim())return cad.nome.trim();
   const custom=data&&data.config&&data.config["NOME_CARTAO_"+sigla];
   return custom&&custom.trim()?custom.trim():"Cartão "+sigla;
 }
@@ -148,7 +157,17 @@ function nomeCartao(sigla,data){
 // um do outro -- mesmo raciocinio do backend (_configFatura/_calcVencimentoFatura
 // em Tesouraria_v3.txt). Padrao sem config: fechamento=31 (ultimo dia real do
 // mes, clampado), vencimento=7 -- reproduz o comportamento fixo de antes.
-function configFatura(data){
+// [ATUALIZADO 03/08, Fase 2 multi-cartao] cartaoId opcional -- se informado,
+// usa o fechamento/vencimento PROPRIO daquele cartao (data.cartoes, mesmo
+// cadastro que editarCartao grava); sem isso, ou se o cartao nao tiver
+// config propria, cai no global de sempre. Espelha _configFaturaCartao do
+// backend -- os dois PRECISAM concordar, ou a tela mostra uma fatura como
+// "atual" que o backend calcula diferente.
+function configFatura(data,cartaoId){
+  if(cartaoId){
+    const cad=(data&&data.cartoes||[]).find(c=>c.id===cartaoId);
+    if(cad&&cad.diaFechamento&&cad.diaVencimento)return{fechamento:cad.diaFechamento,vencimento:cad.diaVencimento};
+  }
   const cfg=(data&&data.config)||{};
   const f=parseInt(cfg.CARTAO_DIA_FECHAMENTO);
   const v=parseInt(cfg.CARTAO_DIA_VENCIMENTO);
@@ -3651,7 +3670,7 @@ function ConfiguracoesGerais({data,onUpdate,onIrPara}){
         Nome, conta que paga a fatura e dia de fechamento/vencimento — configurável por cartão, mesmo modelo que já existia pra PF/PJ.
       </div>
       <div style={{fontSize:10,color:C.textMuted,marginBottom:10,background:C.borderLight,borderRadius:6,padding:"6px 8px"}}>
-        Cartão novo (além de PF/PJ) ainda não recebe lançamento de compra — isso é a próxima etapa da migração. Por enquanto, só o cadastro em si já funciona.
+        Cartão novo (além de PF/PJ) já ganha aba própria de compras, mas ainda não dá pra lançar/editar/conciliar por ele — isso é a próxima etapa da migração. Por enquanto, só o cadastro em si já funciona.
       </div>
       {cartoesCadastro.map(c=>
         <div key={c.id} style={{border:"1px solid "+C.border,borderRadius:10,padding:"10px 12px",marginBottom:8,opacity:c.ativo?1:0.5}}>
@@ -7694,15 +7713,19 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   const [fechamentoEditado,setFechamentoEditado]=useState("");
   const [vencimentoEditado,setVencimentoEditado]=useState("");
   const [loadFatura,setLoadFatura]=useState(false);
+  // [ATUALIZADO 03/08, Fase 2 multi-cartao] Antes editava CONFIG.CARTAO_DIA_
+  // FECHAMENTO/VENCIMENTO (global, valia pros dois cartoes ao mesmo tempo).
+  // Agora edita o fechamento/vencimento PROPRIO do cartao selecionado
+  // (mesmo cadastro de editarCartao) -- cada cartao pode ter o seu.
   async function salvarConfigFatura(){
     setLoadFatura(true);
-    try{ onUpdate(await api({action:"editarConfigFatura",fechamento:fechamentoEditado,vencimento:vencimentoEditado})); setEditandoFatura(false); }
+    try{ onUpdate(await api({action:"editarCartao",id:cartao,diaFechamento:fechamentoEditado,diaVencimento:vencimentoEditado})); setEditandoFatura(false); }
     catch(e){ alert(e.message); }
     setLoadFatura(false);
   }
   async function salvarNomeCartao(){
     setLoad(true);
-    try{ onUpdate(await api({action:"editarNomeCartao",cartao,nome:nomeEditado})); setEditandoNome(false); }
+    try{ onUpdate(await api({action:"editarCartao",id:cartao,nome:nomeEditado})); setEditandoNome(false); }
     catch(e){ alert(e.message); }
     setLoad(false);
   }
@@ -7714,7 +7737,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   const [loadContaCartao,setLoadContaCartao]=useState(false);
   async function salvarContaCartao(novaConta){
     setLoadContaCartao(true);
-    try{ onUpdate(await api({action:"editarContaCartao",cartao,conta:novaConta})); }
+    try{ onUpdate(await api({action:"editarCartao",id:cartao,conta:novaConta})); }
     catch(e){ alert(e.message); }
     setLoadContaCartao(false);
   }
@@ -7737,8 +7760,15 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   // resultado da última conciliação de CSV rodada nesta aba (sem Gemini)
   const [conciliacao,setConciliacao]=useState(null); // {cartao, vencimentoAlvo, foraDaPlanilha, aguardandoFatura, possiveisDivergencias}
 
-  const rows=cartao==="PJ"?(data.cartaoPJ||[]):(data.cartaoPF||[]);
+  // [ATUALIZADO 03/08, Fase 2 multi-cartao] rows vem do mapa generico
+  // data.cartaoItens (cobre qualquer cartao ativo, nao so PF/PJ) -- PF/PJ
+  // continuam funcionando identico, so que agora pela mesma via generica.
+  const rows=(data.cartaoItens&&data.cartaoItens[cartao])||[];
   const abaCartao="CARTAO_"+cartao;
+  // Pilulas de cartao -- todo cartao ATIVO cadastrado, nao so PF/PJ. Cria
+  // um novo pela tela "Configurações Gerais > Cadastro de cartões" e ele
+  // aparece aqui sozinho, sem precisar mexer em nada.
+  const cartoesAtivosTela=(data.cartoes||[]).filter(c=>c.ativo);
 
   function abrirEdicaoItem(r){
     setEditRow(_linhaCartao(r));setEDesc(r[1]);setEValor(formatarValorInicial(r[2]));setENeg(r[2]<0);setECategoria(r[5]||"");setEData(String(r[0]||"").slice(0,10));
@@ -7997,10 +8027,10 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   // selo errado: toda fatura futura passava no teste "venc>=hoje" e ficava
   // marcada como se fosse a aberta).
   const vencAberta=useMemo(()=>{
-    const fv=configFatura(data);
+    const fv=configFatura(data,cartao);
     const mf=mesFechamentoDaData(hj,fv.fechamento);
     return calcVencimentoFaturaISO(mf.ano,mf.mes,fv.fechamento,fv.vencimento);
-  },[hj,data.config]);
+  },[hj,data.config,data.cartoes,cartao]);
 
   const idxAberta=useMemo(()=>{
     const iExato=faturas.findIndex(f=>f.venc===vencAberta);
@@ -8147,13 +8177,17 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   </button>;
 
   return <div style={{paddingBottom:80}}>
-    {/* Seletor PF/PJ */}
-    <div style={{display:"flex",gap:6,marginBottom:6}}>
-      {["PJ","PF"].map(t=><button key={t} onClick={()=>{setCartao(t);setFatIdx(0);setConciliacao(null);setSyncNovosCartao({});}}
-        style={{flex:1,padding:"9px",borderRadius:9,border:"1px solid "+(cartao===t?C.accent:C.border),
-          background:cartao===t?C.accentLight:"transparent",color:cartao===t?C.accent:C.textSub,
+    {/* [ATUALIZADO 03/08, Fase 2 multi-cartao] Pilulas dinamicas -- antes
+        era ["PJ","PF"] fixo. Agora vem de cartoesAtivosTela (qualquer
+        cartao ativo cadastrado). flex-wrap garante que, se um dia tiver
+        muitos cartoes, quebra em mais de uma linha sozinho em vez de
+        espremer ou cortar. */}
+    <div style={{display:"flex",gap:6,marginBottom:6,flexWrap:"wrap"}}>
+      {cartoesAtivosTela.map(c=><button key={c.id} onClick={()=>{setCartao(c.id);setFatIdx(0);setConciliacao(null);setSyncNovosCartao({});}}
+        style={{flex:"1 1 auto",minWidth:100,padding:"9px",borderRadius:9,border:"1px solid "+(cartao===c.id?C.accent:C.border),
+          background:cartao===c.id?C.accentLight:"transparent",color:cartao===c.id?C.accent:C.textSub,
           fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-        {nomeCartao(t,data)}
+        {nomeCartao(c.id,data)}
       </button>)}
     </div>
     <div style={{textAlign:"right",marginBottom:12}}>
@@ -8199,9 +8233,9 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           </div>
         </>}
 
-        <div style={{fontSize:10,fontWeight:700,color:C.textSub,marginBottom:4}}>FECHAMENTO E VENCIMENTO (vale pros dois cartões)</div>
+        <div style={{fontSize:10,fontWeight:700,color:C.textSub,marginBottom:4}}>FECHAMENTO E VENCIMENTO (deste cartão)</div>
         {!editandoFatura
-          ?<button onClick={()=>{const fv=configFatura(data);setFechamentoEditado(String(fv.fechamento));setVencimentoEditado(String(fv.vencimento));setEditandoFatura(true);}}
+          ?<button onClick={()=>{const fv=configFatura(data,cartao);setFechamentoEditado(String(fv.fechamento));setVencimentoEditado(String(fv.vencimento));setEditandoFatura(true);}}
             style={{background:"none",border:"1px solid "+C.border,borderRadius:6,color:C.textSub,fontSize:11,padding:"5px 10px",cursor:"pointer",fontFamily:"inherit",marginBottom:12}}>
             📅 Editar dia de fechamento/vencimento
           </button>
@@ -8466,7 +8500,12 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
     const ok=await onMesclar(candidatoMescla);
     if(ok){setMesclando(false);setCandidatoMescla(null);}
   }
-  const cartaoSigla=abaCartao==="CARTAO_PJ"?"PJ":"PF";
+  // [CORRIGIDO 03/08, Fase 2 multi-cartao] Antes so reconhecia exatamente
+  // "CARTAO_PJ" -> "PJ", qualquer outra coisa virava "PF" por default --
+  // errado pra um cartao novo (abaCartao tipo "CARTAO_CONTAPJ_1" caia
+  // silenciosamente como se fosse PF). Agora extrai o id generico, mesma
+  // tecnica do backend (_abaCartaoItens ao contrario).
+  const cartaoSigla=abaCartao&&abaCartao.indexOf("CARTAO_")===0?abaCartao.slice(7):"PF";
   const vencItem=String(r[4]||"").slice(0,10);
   // [NOVO 30/07] Travada agora tambem considera o selo POR ITEM
   // (confirmadoOfx) -- protege valor/data/apagar mesmo com a fatura ainda
@@ -8771,7 +8810,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260803.1400 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260803.2130 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -8853,7 +8892,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260803.1400
+      // HTML v3.20260803.2130
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
