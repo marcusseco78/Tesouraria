@@ -221,7 +221,24 @@ const CAT_LABEL={DCP:"Despesas Cotidianas Semanais",DEPOSITO_AVULSO:"Outras Entr
   // Marcus notou na tela de Conciliacao. Mesmo padrao das pilulas que ja
   // existem em quase toda tela do app (Despesas Fixas/Gastos Semanais/etc).
   "DESPESA FIXA":"Despesa Fixa","RECEITA":"Receita","EXTRAORDINARIA":"Extraordinária",
-  "IMPOSTO":"Imposto","INVESTIMENTO":"Investimento"};
+  "IMPOSTO":"Imposto","INVESTIMENTO":"Investimento",
+  // [NOVO 03/08] "Transferência" -- pra itens como transferencia pra PJ
+  // (aporte, ja tratado como "nao e gasto" por regra propria) que o Marcus
+  // as vezes quer lancar mesmo assim so como registro, sem forcar uma
+  // categoria de gasto/receita de verdade em cima. Neutra por design: nao
+  // entra em nenhum bucket de Despesa Fixa/DCP/Receita (unificarBucketGasto
+  // retorna null pra ela, igual ja fazia pra qualquer TIPO desconhecido).
+  "TRANSFERENCIA":"Transferência"};
+// [NOVO 03/08] Grupos por sinal -- usados na Conciliacao de Extrato pra so
+// mostrar pilulas que fazem sentido pro sinal do lancamento (um debito nunca
+// deveria poder virar "Receita", nem um credito virar "Despesa Fixa"). Antes
+// as 9 pilulas apareciam juntas, misturadas, pro item inteiro.
+const CATEGORIAS_DEBITO=["DCP","DESPESA FIXA","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA","EXTRAORDINARIA","IMPOSTO","INVESTIMENTO","TRANSFERENCIA"];
+const CATEGORIAS_CREDITO=["RECEITA","DEPOSITO_AVULSO","INVESTIMENTO","TRANSFERENCIA"];
+// Helper unico -- categorias validas pro sinal de um valor. INVESTIMENTO e
+// TRANSFERENCIA aparecem nos dois grupos de proposito (aporte vs resgate de
+// Cofre; transferencia pode ser enviada ou recebida).
+function categoriasPorSinal(valor){ return valor<0?CATEGORIAS_DEBITO:CATEGORIAS_CREDITO; }
 // [NOVO 25/07] Pedido do Marcus: trocar os <select> nativos de categoria
 // (que abriam aquele picker feio do Android, mistura de maiuscula/Title
 // Case) por pilulas -- mesmo molde visual que a matriz de categoria
@@ -3946,7 +3963,10 @@ function ConciliacaoHub({data,onUpdate,onIrPara}){
 }
 
 function ConciliarExtratoTab({data,onUpdate}){
-  const CATEGORIAS=["DCP","DESPESA FIXA","RECEITA","DEPOSITO_AVULSO","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA","EXTRAORDINARIA","IMPOSTO","INVESTIMENTO"];
+  // [REMOVIDO 03/08] CATEGORIAS local (lista unica, misturando debito e
+  // credito) -- substituida por categoriasPorSinal(valor), que escolhe entre
+  // CATEGORIAS_DEBITO/CATEGORIAS_CREDITO (globais, no topo do arquivo)
+  // conforme o sinal de cada lancamento.
   const [resultado,setResultado]=useState(null);
   const [load,setLoad]=useState(false);
   const [cfgNovos,setCfgNovos]=useState({}); // chave estavel (chaveNovo) -> {incluir,categoria,descricao}
@@ -4237,7 +4257,7 @@ function ConciliarExtratoTab({data,onUpdate}){
         </button>;})()}
         {resultado.novos.map(n=>{
           const chave=chaveNovo(n);
-          const cfg=cfgNovos[chave]||{incluir:true,categoria:"EXTRAORDINARIA",descricao:"",pagFatura:null,envelopeId:envelopeRegraSugerido(n.descricao,data)};
+          const cfg=cfgNovos[chave]||{incluir:true,categoria:n.valor<0?"EXTRAORDINARIA":"RECEITA",descricao:"",pagFatura:null,envelopeId:envelopeRegraSugerido(n.descricao,data)};
           const s=n.sugestao||{};
           const vencAuto=vencimentoFaturaDoMes(n.data);
           return <div key={chave} style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"10px 12px",marginBottom:6}}>
@@ -4295,7 +4315,7 @@ function ConciliarExtratoTab({data,onUpdate}){
               ? <div style={{fontSize:11,color:C.accent,background:C.accentLight,borderRadius:6,padding:"6px 8px",marginBottom:8}}>
                   💳 Vai abater a fatura {cfg.pagFatura} vencendo em {fmtD(vencAuto)} (calculado pela data do pagamento).
                 </div>
-              : <PilulasCategoria categorias={CATEGORIAS} valor={cfg.categoria} onChange={v=>setCfgNovos({...cfgNovos,[chave]:{...cfg,categoria:v}})}/>}
+              : <PilulasCategoria categorias={categoriasPorSinal(n.valor)} valor={cfg.categoria} onChange={v=>setCfgNovos({...cfgNovos,[chave]:{...cfg,categoria:v}})}/>}
 
             {!cfg.pagFatura&&parseEnvelopesCustom(data).length>0&&
               <select value={cfg.envelopeId||""} onChange={e=>setCfgNovos({...cfgNovos,[chave]:{...cfg,envelopeId:e.target.value}})}
@@ -8810,7 +8830,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260803.2130 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260803.2300 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -8892,7 +8912,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260803.2130
+      // HTML v3.20260803.2300
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
