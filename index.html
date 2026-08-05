@@ -8303,20 +8303,35 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         {/* [NOVO 04/08] Correcao pontual do bug real de fronteira de mes
             (ultimo dia do mes ficava preso na fatura errada) -- so afeta
             compras PENDENTE cujo vencimento a formula nova recalcula
-            diferente do que ja esta gravado. Botao proprio, opt-in, com
-            resumo do que foi corrigido antes de confirmar visualmente. */}
+            diferente do que ja esta gravado. Por padrao roda so na fatura
+            que esta na tela agora (faturaAtual.venc) -- raio de acao minimo,
+            pra testar uma fatura antes de rodar pro cartao inteiro. */}
         <button onClick={async()=>{
+            setLoadCorrigirVenc(true);
+            try{
+              const r=await api({action:"corrigirVencimentoUltimoDiaMes",cartao,vencimentoAlvo:faturaAtual.venc});
+              onUpdate(r);
+              if(r.corrigidos===0) alert("Nada pra corrigir nesta fatura ("+fmtD(faturaAtual.venc)+") -- nenhuma compra pendente com vencimento na fronteira do mês estava errada.");
+              else alert(r.corrigidos+" parcela(s) corrigida(s) na fatura de "+fmtD(faturaAtual.venc)+" — vencimento recalculado pro dia certo.");
+            }catch(e){ alert(e.message); }
+            setLoadCorrigirVenc(false);
+          }} disabled={loadCorrigirVenc}
+          style={{width:"100%",padding:"8px",borderRadius:6,background:"transparent",color:C.textSub,fontSize:11,fontWeight:700,border:"1px dashed "+C.border,cursor:"pointer",fontFamily:"inherit",marginTop:6}}>
+          {loadCorrigirVenc?"Corrigindo…":"🔧 Corrigir vencimento — só esta fatura ("+fmtD(faturaAtual.venc)+")"}
+        </button>
+        <button onClick={async()=>{
+            if(!confirm("Corrigir em TODO o cartão, não só nesta fatura? Só mexe em compras PENDENTE cujo vencimento estava errado — nunca em PAGO."))return;
             setLoadCorrigirVenc(true);
             try{
               const r=await api({action:"corrigirVencimentoUltimoDiaMes",cartao});
               onUpdate(r);
               if(r.corrigidos===0) alert("Nada pra corrigir -- nenhuma compra pendente com vencimento na fronteira do mês estava errada.");
-              else alert(r.corrigidos+" parcela(s) corrigida(s) — vencimento recalculado pro dia certo (compras no último dia do mês que estavam presas na fatura anterior).");
+              else alert(r.corrigidos+" parcela(s) corrigida(s) no cartão inteiro — vencimento recalculado pro dia certo.");
             }catch(e){ alert(e.message); }
             setLoadCorrigirVenc(false);
           }} disabled={loadCorrigirVenc}
-          style={{width:"100%",padding:"8px",borderRadius:6,background:"transparent",color:C.textSub,fontSize:11,fontWeight:700,border:"1px dashed "+C.border,cursor:"pointer",fontFamily:"inherit",marginTop:6}}>
-          {loadCorrigirVenc?"Corrigindo…":"🔧 Corrigir vencimento de compras no último dia do mês"}
+          style={{width:"100%",padding:"6px",borderRadius:6,background:"transparent",color:C.textMuted,fontSize:10,fontWeight:600,border:"none",cursor:"pointer",fontFamily:"inherit",marginTop:2,textDecoration:"underline"}}>
+          ou corrigir o cartão inteiro de uma vez
         </button>
       </div>}
     </div>
@@ -8859,7 +8874,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260804.0100 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260804.0330 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -8941,7 +8956,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260804.0100
+      // HTML v3.20260804.0330
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
