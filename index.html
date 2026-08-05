@@ -7396,7 +7396,16 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido, onVinculado, onNovaLinh
   const [desc,setDesc]=useState(item.title.toUpperCase());
   const [valor,setValor]=useState(formatarValorInicial(-Math.abs(item.amount)));
   const [cat,setCat]=useState("");
+  // [CORRIGIDO 04/08] parc = TOTAL de parcelas (denominador, ex: o "5" de
+  // "4/5") -- so pro rotulo. parcelaAtual = numerador real (ex: "4") -- ANTES
+  // nao existia, e o backend sempre assumia que a compra comecava do zero
+  // (parcela 1), criando uma serie NOVA de N parcelas a partir de HOJE toda
+  // vez que a conciliacao reconhecia uma compra ja no meio da serie (ex:
+  // achada so agora porque as parcelas anteriores sao de meses ja fechados,
+  // fora do CSV). Isso rotulava a parcela real errado E criava parcelas
+  // fantasmas nos meses seguintes que nunca vao ser cobradas de verdade.
   const [parc,setParc]=useState(item.parcela!=="1/1"?(item.parcela.split("/")[1]||"1"):"1");
+  const parcelaAtual=item.parcela!=="1/1"?(item.parcela.split("/")[0]||"1"):"1";
   const [envelopeId,setEnvelopeId]=useState(()=>envelopeRegraSugerido(item.title,data));
   const [apelido,setApelido]=useState("");
   const [incluir,setIncluir]=useState(true);
@@ -7442,14 +7451,14 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido, onVinculado, onNovaLinh
   // permite "Lançar todos os marcados" sem perder a digitacao responsiva
   // (estado continua local aqui, so um resumo sobe pro pai via callback).
   useEffect(()=>{
-    onSync&&onSync({desc,valor,cat,parc,envelopeId,apelido,incluir});
+    onSync&&onSync({desc,valor,cat,parc,parcelaAtual,envelopeId,apelido,incluir});
   },[desc,valor,cat,parc,envelopeId,apelido,incluir]);
 
   async function lancar(){
     setLoad(true);
     try{
       const r=await api({action:"lancarCartao",cartao,descricao:desc.toUpperCase(),
-        valor:(-1)*Math.abs(numBR(valor)),parcelas:parseInt(parc)||1,
+        valor:(-1)*Math.abs(numBR(valor)),parcelas:parseInt(parc)||1,parcelaAtual:parseInt(parcelaAtual)||1,
         categoria:cat,dcp:cat==="DCP"?"S":"N",data_compra:item.date,envelopeId,apelido,origemCSV:true});
       onUpdate(r);
       // [NOVO 28/07] Item veio literalmente do OFX/CSV -- marca como
@@ -7993,7 +8002,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     for(const [chave,cfg] of marcadosNovosCartao){
       try{
         const r=await api({action:"lancarCartao",cartao,descricao:cfg.desc.toUpperCase(),
-          valor:(-1)*Math.abs(numBR(cfg.valor)),parcelas:parseInt(cfg.parc)||1,
+          valor:(-1)*Math.abs(numBR(cfg.valor)),parcelas:parseInt(cfg.parc)||1,parcelaAtual:parseInt(cfg.parcelaAtual)||1,
           categoria:cfg.cat,dcp:cfg.cat==="DCP"?"S":"N",data_compra:novosDoCSV.find((item,i)=>item.date+"|"+item.title+"|"+item.amount+"|"+i===chave)?.date,
           envelopeId:cfg.envelopeId,apelido:cfg.apelido,origemCSV:true});
         onUpdate(r);
@@ -8874,7 +8883,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260804.0330 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260804.0500 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -8956,7 +8965,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260804.0330
+      // HTML v3.20260804.0500
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
