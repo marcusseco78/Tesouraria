@@ -186,10 +186,20 @@ function faturaTravada(cartao,vencimento,data){
 // A que mes civil de FECHAMENTO uma data (string YYYY-MM-DD) pertence.
 // Retorna {ano, mes} com mes 1-indexed (jeito mais facil de bater com o
 // zero-padding de string de data sem confundir com Date.getMonth() 0-indexed).
+// [CORRIGIDO 04/08, espelha _mesFechamentoDaCompra no backend] O ULTIMO dia
+// civil do mes sempre pertence a fatura que esta ABRINDO, nunca a que esta
+// fechando -- confirmado comparando duas faturas reais do Nubank em PDF
+// (venc.07/08 lista compras de 30/06, o ultimo dia de junho, na propria
+// lista dela). Fechamento configurado (ex: 31) precisa ser clampado ao
+// ultimo dia REAL daquele mes antes de comparar, e a comparacao e >=
+// (inclusive), nao > -- "fecha dia 31" significa que o dia 31 em si ja
+// esta fora, no proximo ciclo.
 function mesFechamentoDaData(dataISO,fechamento){
   const [y,m,d]=dataISO.split("-").map(Number);
   let ano=y,mes=m;
-  if(d>fechamento){mes++;if(mes>12){mes=1;ano++;}}
+  const ultimoDia=new Date(ano,mes,0).getDate();
+  const fechamentoEfetivo=Math.min(fechamento,ultimoDia);
+  if(d>=fechamentoEfetivo){mes++;if(mes>12){mes=1;ano++;}}
   return {ano,mes};
 }
 // Data de vencimento (string YYYY-MM-DD) pra um mes civil de FECHAMENTO dado.
@@ -7884,6 +7894,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   // comparacao). Aqui usa faturaAtual.venc, que e a fonte de verdade do
   // cabecalho e ja normalizada.
   const [loadDestravaFatura,setLoadDestravaFatura]=useState(false);
+  const [loadCorrigirVenc,setLoadCorrigirVenc]=useState(false);
   async function destravarFaturaAtual(){
     if(!confirm("Destravar a fatura "+cartao+" de vencimento "+fmtD(faturaAtual.venc)+"? Ela foi marcada como conciliada por completo. Só destrave se precisar mesmo corrigir algo nela."))return;
     setLoadDestravaFatura(true);
@@ -8289,6 +8300,24 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         <ConciliarCartao cartao={cartao} data={data} onUpdate={onUpdate} onResultado={r=>{setConciliacao(r);setSyncNovosCartao({});}}/>
         <ResetCartao cartao={cartao} data={data} onUpdate={onUpdate}/>
         <ImportarAssinaturas onUpdate={onUpdate}/>
+        {/* [NOVO 04/08] Correcao pontual do bug real de fronteira de mes
+            (ultimo dia do mes ficava preso na fatura errada) -- so afeta
+            compras PENDENTE cujo vencimento a formula nova recalcula
+            diferente do que ja esta gravado. Botao proprio, opt-in, com
+            resumo do que foi corrigido antes de confirmar visualmente. */}
+        <button onClick={async()=>{
+            setLoadCorrigirVenc(true);
+            try{
+              const r=await api({action:"corrigirVencimentoUltimoDiaMes",cartao});
+              onUpdate(r);
+              if(r.corrigidos===0) alert("Nada pra corrigir -- nenhuma compra pendente com vencimento na fronteira do mês estava errada.");
+              else alert(r.corrigidos+" parcela(s) corrigida(s) — vencimento recalculado pro dia certo (compras no último dia do mês que estavam presas na fatura anterior).");
+            }catch(e){ alert(e.message); }
+            setLoadCorrigirVenc(false);
+          }} disabled={loadCorrigirVenc}
+          style={{width:"100%",padding:"8px",borderRadius:6,background:"transparent",color:C.textSub,fontSize:11,fontWeight:700,border:"1px dashed "+C.border,cursor:"pointer",fontFamily:"inherit",marginTop:6}}>
+          {loadCorrigirVenc?"Corrigindo…":"🔧 Corrigir vencimento de compras no último dia do mês"}
+        </button>
       </div>}
     </div>
 
@@ -8830,7 +8859,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260803.2300 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260804.0100 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -8912,7 +8941,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260803.2300
+      // HTML v3.20260804.0100
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
