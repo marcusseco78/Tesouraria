@@ -533,6 +533,12 @@ function _obsApelidoCartao(obsRaw){
 function _obsConfirmadoOfx(obsRaw){
   try{ const o=JSON.parse(obsRaw||"{}"); return !!o.confirmadoOfx; }catch(e){ return false; }
 }
+// [NOVO 05/08] Selo mais forte -- confirmado por um OFX que o proprio banco
+// atesta ter fechado de verdade (DTEND com folga segura de DTSERVER), nao
+// so "bateu com algum arquivo". Ver conciliarFatura no backend.
+function _obsConfirmadoOfxFechada(obsRaw){
+  try{ const o=JSON.parse(obsRaw||"{}"); return !!o.confirmadoOfxFechada; }catch(e){ return false; }
+}
 function parseEnvelopesCustom(data){
   try{ return data?.config?.ENVELOPES_JSON ? JSON.parse(data.config.ENVELOPES_JSON) : []; }
   catch(e){ return []; }
@@ -749,6 +755,16 @@ function extrairVencimentoNome(nome){
 function parseOFX(texto){
   const acctidM = String(texto||"").match(/<ACCTID>([^\r\n<]*)/);
   const acctid = acctidM ? acctidM[1].trim() : null;
+  // [NOVO 05/08] DTEND (fim do periodo coberto pela fatura) e DTSERVER
+  // (quando o arquivo foi gerado pelo banco) -- usados pra saber se um OFX
+  // representa uma fatura de verdade FECHADA, sem depender so do nome do
+  // arquivo. Formato OFX: "AAAAMMDDHHmmss[fuso]" -- so os 8 primeiros
+  // digitos interessam aqui (data, sem hora).
+  const dtEndM = String(texto||"").match(/<DTEND>(\d{8})/);
+  const dtServerM = String(texto||"").match(/<DTSERVER>(\d{8})/);
+  const fmtOfxData = s=>s?s.slice(0,4)+"-"+s.slice(4,6)+"-"+s.slice(6,8):null;
+  const dtEnd = fmtOfxData(dtEndM&&dtEndM[1]);
+  const dtServer = fmtOfxData(dtServerM&&dtServerM[1]);
   const txns = [];
   const re = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/g;
   let m;
@@ -763,21 +779,21 @@ function parseOFX(texto){
     const amtOfx = parseFloat(amtM[1]);
     txns.push({data:dataISO, titulo:memoM[1].trim(), valor:-amtOfx});
   }
-  return {acctid, txns};
+  return {acctid, txns, dtEnd, dtServer};
 }
 
 // Converte um .ofx pro mesmo texto "date,title,amount" que o backend já lê
 // (_parsearCSVSimples) -- assim o parser real nunca precisa mudar, só ganha
 // um identificador de conta extra (acctid) que viaja separado.
 function ofxParaTextoCSV(texto){
-  const {acctid, txns} = parseOFX(texto);
+  const {acctid, txns, dtEnd, dtServer} = parseOFX(texto);
   const linhas = ["date,title,amount"];
   txns.forEach(t=>{
     const valorFmt = t.valor.toFixed(2).replace(".", ",");
     const tituloEsc = '"'+t.titulo.replace(/"/g,'""')+'"';
     linhas.push(t.data+","+tituloEsc+",\""+valorFmt+"\"");
   });
-  return {acctid, csv: linhas.join("\n")};
+  return {acctid, csv: linhas.join("\n"), dtEnd, dtServer};
 }
 
 // Lê um arquivo de fatura (.csv OU .ofx) e devolve sempre {csv, acctid, nome}
@@ -790,10 +806,10 @@ function lerArquivoFatura(file){
       const texto=e.target.result;
       const ehOFX=/\.ofx$/i.test(file.name)||/<OFX>/i.test(String(texto).slice(0,200));
       if(ehOFX){
-        const {acctid,csv}=ofxParaTextoCSV(texto);
-        resolve({csv, acctid, nome:file.name});
+        const {acctid,csv,dtEnd,dtServer}=ofxParaTextoCSV(texto);
+        resolve({csv, acctid, nome:file.name, dtEnd, dtServer});
       }else{
-        resolve({csv:texto, acctid:null, nome:file.name});
+        resolve({csv:texto, acctid:null, nome:file.name, dtEnd:null, dtServer:null});
       }
     };
     r.onerror=()=>reject(new Error("Falha lendo "+file.name));
@@ -7577,11 +7593,12 @@ function ConciliarCartao({cartao, data, onResultado, onUpdate}){
         if(!confirm(msg)){ setLoad(false); return; }
       }
 
-      const res=await api({action:"conciliarFatura",cartao,csv:lido.csv,nomeArquivo:lido.nome,acctid:lido.acctid||""});
+      const res=await api({action:"conciliarFatura",cartao,csv:lido.csv,nomeArquivo:lido.nome,acctid:lido.acctid||"",dtEnd:lido.dtEnd||"",dtServer:lido.dtServer||""});
       onResultado({...res,cartao});
       onUpdate&&onUpdate(res);
       if(res.travouAgora){
-        alert("🔒 Fatura "+cartao+" travada automaticamente — conciliada por completo via OFX, sem nenhuma pendência. Valor/data/apagar ficam bloqueados nos itens dela a partir de agora (categoria continua editável). Pra corrigir algo depois, tem um botão de destravar no painel de cada item.");
+        const selo=res.fechadaConfiavel?"🔒 OFX Fechada!":"🔒";
+        alert(selo+" Fatura "+cartao+" travada automaticamente — conciliada por completo via OFX, sem nenhuma pendência"+(res.fechadaConfiavel?" e confirmada como fatura de fato fechada pelo próprio banco (campo DTEND do arquivo)":"")+". Valor/data/apagar ficam bloqueados nos itens dela a partir de agora (categoria continua editável). Pra corrigir algo depois, tem um botão de destravar no painel de cada item.");
       }
     }catch(e){alert("Erro na conciliação: "+e.message);}
     setLoad(false);
@@ -7603,6 +7620,13 @@ function ResetCartao({cartao, data, onUpdate}){
   const [step, setStep]=useState(0); // 0=inicial, 1=aguardando selecao dos 2 arquivos, 3=processando
   const [load, setLoad]=useState(false);
   const filesRef=useRef(null);
+  // [NOVO 05/08, ideia do Marcus] Compras que NAO bateram com nada ja
+  // classificado antes do reset -- em vez de confiar cegamente no chute por
+  // palavra-chave (_inferirCategoria), pede confirmacao/correcao explicita,
+  // igual a Conciliacao ja faz pra "novos no CSV". Evita reintroduzir o
+  // mesmo tipo de problema de classificacao errada silenciosa.
+  const [revisao,setRevisao]=useState(null); // null = nada pra revisar ainda
+  const [loadRevisao,setLoadRevisao]=useState(false);
 
   async function handleFiles(fileList){
     const arquivos=Array.from(fileList);
@@ -7661,18 +7685,65 @@ function ResetCartao({cartao, data, onUpdate}){
       onUpdate(r);
       setStep(0);
       const diag=r._diagnosticoReset&&r._diagnosticoReset[cartao];
-      const diagTxt=diag?("\n\nFatura "+diag.vencimentoPago+": "+diag.itensPago+" itens\nFatura "+diag.vencimentoPend+": "+diag.itensPend+" itens\nTotal escrito: "+diag.linhasEscritas):"";
+      const diagTxt=diag?("\n\nFatura "+diag.vencimentoPago+": "+diag.itensPago+" itens\nFatura "+diag.vencimentoPend+": "+diag.itensPend+" itens\nTotal escrito: "+diag.linhasEscritas+(diag.linhasTravadasPreservadas?"\nFaturas travadas preservadas (não tocadas): "+diag.linhasTravadasPreservadas+" linha(s)":"")):"";
       alert("Cartão "+cartao+" reconstruído!"+diagTxt);
+      const semClass=diag&&diag.semClassificacaoAnterior;
+      if(semClass&&semClass.length){
+        setRevisao(semClass.map(it=>({...it,categoria:it.categoriaChutada,confirmado:false})));
+      }else{
+        setRevisao(null);
+      }
     }catch(e){alert("Erro: "+e.message);setStep(0);}
     setLoad(false);
   }
 
-  if(step===0) return <button onClick={()=>setStep(1)}
+  async function confirmarRevisao(idx){
+    const item=revisao[idx];
+    setLoadRevisao(true);
+    try{
+      const aba="CARTAO_"+cartao;
+      await api({action:"editarCartaoItem",aba,row:item.row,campo:"CATEGORIA",valor:item.categoria});
+      await api({action:"editarCartaoItem",aba,row:item.row,campo:"DCP",valor:item.categoria==="DCP"?"S":"N"});
+      const nova=revisao.slice();
+      nova[idx]={...item,confirmado:true};
+      setRevisao(nova);
+      onUpdate(await api({action:"getData"}));
+    }catch(e){alert(e.message);}
+    setLoadRevisao(false);
+  }
+
+  const revisaoUI = revisao && revisao.length ? <div style={{border:"1px solid "+C.border,borderRadius:10,padding:"12px 14px",marginBottom:12,background:C.bg}}>
+    <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:4}}>
+      🔍 {revisao.filter(r=>!r.confirmado).length} compra(s) sem classificação anterior — confira
+    </div>
+    <div style={{fontSize:10,color:C.textMuted,marginBottom:10}}>
+      Semanas de DCP já fechadas não entram aqui — o gasto delas já está travado, reclassificar não mudaria nada. Só aparece o que ainda está numa semana aberta (ainda entra no cálculo) ou o que não bate com nenhuma semana conhecida (escapou do radar do DCP).
+    </div>
+    {revisao.map((item,idx)=>!item.confirmado&&
+      <div key={item.row} style={{border:"1px solid "+(item.situacaoDcp==="EXTEMPORANEA"?C.orange:C.border),borderRadius:8,padding:"8px 10px",marginBottom:8,background:"#fff"}}>
+        <div style={{fontSize:12,fontWeight:700,color:C.text}}>{item.descricao} <span style={{fontWeight:400,color:C.textMuted}}>· {item.parcela} · R$ {Math.abs(item.valor).toFixed(2).replace(".",",")} · {fmtD(item.data)}</span></div>
+        {item.situacaoDcp==="EXTEMPORANEA"&&<div style={{fontSize:10,color:C.orange,fontWeight:700,margin:"4px 0"}}>
+          ⚠️ Não bate com nenhuma semana de DCP conhecida — escapou do radar. Lance como gasto do ciclo atual, ou reclassifique pra outra categoria se não for DCP.
+        </div>}
+        <div style={{margin:"6px 0"}}>
+          <PilulasCategoria categorias={["DCP","DESPESA FIXA","EXTRAORDINARIA","IMPOSTO","INVESTIMENTO"]} valor={item.categoria}
+            onChange={v=>{const nova=revisao.slice();nova[idx]={...item,categoria:v};setRevisao(nova);}}/>
+        </div>
+        <button onClick={()=>confirmarRevisao(idx)} disabled={loadRevisao}
+          style={{padding:"5px 12px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+          Confirmar
+        </button>
+      </div>
+    )}
+    {revisao.every(r=>r.confirmado)&&<div style={{fontSize:11,color:C.green,fontWeight:700}}>✅ Tudo revisado.</div>}
+  </div> : null;
+
+  if(step===0) return <>{revisaoUI}<button onClick={()=>setStep(1)}
     style={{width:"100%",padding:"8px",borderRadius:10,background:"transparent",
       color:C.textMuted,fontSize:11,fontWeight:600,border:"1px dashed "+C.border,
       cursor:"pointer",fontFamily:"inherit",marginBottom:12}}>
     ↺ Reconstruir do zero (2 arquivos .ofx)
-  </button>;
+  </button></>;
 
   if(step===3) return <div style={{textAlign:"center",padding:"16px",color:C.textMuted,fontSize:13}}>
     <div style={{width:22,height:22,border:"3px solid "+C.border,borderTopColor:C.accent,
@@ -7686,7 +7757,7 @@ function ResetCartao({cartao, data, onUpdate}){
       ↺ Reconstruir Cartão {cartao} do zero
     </div>
     <div style={{fontSize:10,color:C.textMuted,marginBottom:10}}>
-      Selecione os 2 arquivos de uma vez só (a fatura fechada e a em aberto), só .ofx — o app identifica sozinho qual é qual pela data no nome do arquivo. Só .ofx é aceito aqui (não .csv): essa é a operação de maior risco do sistema (reescreve o cartão inteiro), e o .ofx carrega um identificador da conta que trava contra troca acidental entre PF e PJ. Não renomeie os arquivos baixados do banco.
+      Selecione os 2 arquivos de uma vez só (a fatura fechada e a em aberto), só .ofx — o app identifica sozinho qual é qual pela data no nome do arquivo. Só .ofx é aceito aqui (não .csv): essa é a operação de maior risco do sistema (reescreve o cartão inteiro), e o .ofx carrega um identificador da conta que trava contra troca acidental entre PF e PJ. Não renomeie os arquivos baixados do banco. Faturas já travadas (100% conciliadas) não são tocadas — ficam do jeito que estão, com categoria/DCP/envelope preservados.
     </div>
 
     <input ref={filesRef} type="file" accept=".ofx" multiple style={{display:"none"}}
@@ -8512,6 +8583,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         // antes so existia o efemero, entao sair da tela e voltar apagava
         // todos os selos verdes mesmo sem nada ter mudado de verdade.
         const confirmado=confirmadosRows.has(linhaR)||_obsConfirmadoOfx(_obsCartaoRaw(r));
+        const confirmadoFechada=_obsConfirmadoOfxFechada(_obsCartaoRaw(r));
         const motivo=divergencia?{tipo:"divergencia",dado:divergencia}:null;
         const destacado=destaque?.tab==="cartoes"&&destaque.row===linhaR;
         return <div key={linhaR!=null?linhaR:i} id={"cart-item-"+linhaR}>
@@ -8526,6 +8598,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           </div>
           <span style={{fontSize:12,fontWeight:700,color:previsto?C.textSub:(r[7]==="PAGO"?C.green:C.red),flexShrink:0}}>{fmt(r[2])}</span>
           {divergencia?<span style={{fontSize:9,background:"#FFEDD5",color:"#C2410C",padding:"2px 7px",borderRadius:10,flexShrink:0,fontWeight:700}}>🟠 DIVERGE</span>
+          :confirmadoFechada?<span style={{fontSize:9,background:"#EFF6FF",color:C.blue,padding:"2px 7px",borderRadius:10,flexShrink:0,fontWeight:700}}>🔒 OFX Fechada!</span>
           :confirmado?<span style={{fontSize:9,background:C.greenLight,color:C.green,padding:"2px 7px",borderRadius:10,flexShrink:0,fontWeight:700}}>✅ CSV/OFX</span>
           :previsto?<span style={{fontSize:9,color:C.textMuted,padding:"2px 7px",borderRadius:10,
             border:"1px dashed "+C.border,flexShrink:0,fontWeight:600}}>PREVISTO</span>
@@ -8883,7 +8956,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260804.0500 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260805.0900 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -8965,7 +9038,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260804.0500
+      // HTML v3.20260805.0900
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
