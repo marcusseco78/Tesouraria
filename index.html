@@ -7717,7 +7717,7 @@ function ResetCartao({cartao, data, onUpdate}){
       🔍 {revisao.filter(r=>!r.confirmado).length} compra(s) sem classificação anterior — confira
     </div>
     <div style={{fontSize:10,color:C.textMuted,marginBottom:10}}>
-      Semanas de DCP já fechadas não entram aqui — o gasto delas já está travado, reclassificar não mudaria nada. Só aparece o que ainda está numa semana aberta (ainda entra no cálculo) ou o que não bate com nenhuma semana conhecida (escapou do radar do DCP).
+      Semanas de DCP já fechadas não entram aqui — o gasto delas já está travado, reclassificar não mudaria nada. Só aparece o que ainda está numa semana aberta (ainda entra no cálculo) ou o que não bate com nenhuma semana conhecida (escapou do radar do DCP). Nenhuma categoria vem pré-escolhida por chute — só reaproveita quando reconhece de verdade; o resto fica em branco pra você escolher.
     </div>
     {revisao.map((item,idx)=>!item.confirmado&&
       <div key={item.row} style={{border:"1px solid "+(item.situacaoDcp==="EXTEMPORANEA"?C.orange:C.border),borderRadius:8,padding:"8px 10px",marginBottom:8,background:"#fff"}}>
@@ -7783,6 +7783,12 @@ function ResetCartao({cartao, data, onUpdate}){
 
 function ImportarAssinaturas({onUpdate}){
   const [load, setLoad]=useState(false);
+  // [NOVO 06/08, ideia do Marcus] Sugestoes fracas -- valor proximo, mas
+  // nome muito diferente da recorrencia pra confiar num casamento automatico
+  // (ex: "Apple TV" vs "Amazon Prime Canais"). Fica pra confirmar, em vez
+  // de criar duplicata as cegas ou de simplesmente nao avisar nada.
+  const [sugestoes,setSugestoes]=useState(null);
+  const [loadSug,setLoadSug]=useState(false);
 
   async function executar(){
     setLoad(true);
@@ -7798,16 +7804,53 @@ function ImportarAssinaturas({onUpdate}){
         "\nAdicionados PF: "+d.preenchimentoCartao.itensAdicionadosPF+
         "\nAdicionados PJ: "+d.preenchimentoCartao.itensAdicionadosPJ+corrTxt):"";
       alert("Assinaturas importadas!"+txt);
+      const fracas=d&&d.preenchimentoCartao&&d.preenchimentoCartao.sugestoesFracas;
+      setSugestoes(fracas&&fracas.length?fracas:null);
     }catch(e){alert("Erro: "+e.message);}
     setLoad(false);
   }
 
-  return <button onClick={executar} disabled={load}
-    style={{width:"100%",padding:"8px",borderRadius:10,background:"transparent",
-      color:C.textMuted,fontSize:11,fontWeight:600,border:"1px dashed "+C.border,
-      cursor:load?"default":"pointer",fontFamily:"inherit",marginBottom:12}}>
-    {load?"Importando...":"📥 Importar/reparar assinaturas de cartão"}
-  </button>;
+  async function confirmarSugestao(idx){
+    const s=sugestoes[idx];
+    setLoadSug(true);
+    try{
+      const r=await api({action:"confirmarSugestaoAssinatura",recorrencia:s.recorrencia,candidato:s.candidato});
+      onUpdate(r);
+      setSugestoes(sugestoes.filter((_,i)=>i!==idx));
+    }catch(e){alert(e.message);}
+    setLoadSug(false);
+  }
+
+  return <div>
+    <button onClick={executar} disabled={load}
+      style={{width:"100%",padding:"8px",borderRadius:10,background:"transparent",
+        color:C.textMuted,fontSize:11,fontWeight:600,border:"1px dashed "+C.border,
+        cursor:load?"default":"pointer",fontFamily:"inherit",marginBottom:sugestoes?8:12}}>
+      {load?"Importando...":"📥 Importar/reparar assinaturas de cartão"}
+    </button>
+    {sugestoes&&sugestoes.length>0&&<div style={{border:"1px solid "+C.orange,borderRadius:10,padding:"10px 12px",marginBottom:12,background:C.orangeLight}}>
+      <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:6}}>
+        🤔 {sugestoes.length} possível mesma assinatura, nomes diferentes — confirma?
+      </div>
+      {sugestoes.map((s,idx)=>
+        <div key={idx} style={{background:"#fff",borderRadius:8,padding:"8px 10px",marginBottom:6}}>
+          <div style={{fontSize:11,color:C.text}}>
+            <b>{s.recorrencia}</b> (R$ {Math.abs(s.valorRecorrencia).toFixed(2).replace(".",",")}) é o mesmo que <b>{s.candidato}</b> (R$ {Math.abs(s.valorCandidato).toFixed(2).replace(".",",")}) em {s.tipo}, {fmtD(s.vencimento)}?
+          </div>
+          <div style={{display:"flex",gap:6,marginTop:6}}>
+            <button onClick={()=>confirmarSugestao(idx)} disabled={loadSug}
+              style={{padding:"5px 12px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+              Sim, é a mesma
+            </button>
+            <button onClick={()=>setSugestoes(sugestoes.filter((_,i)=>i!==idx))} disabled={loadSug}
+              style={{padding:"5px 12px",borderRadius:6,background:"transparent",color:C.textMuted,fontSize:11,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
+              Não, são diferentes
+            </button>
+          </div>
+        </div>
+      )}
+    </div>}
+  </div>;
 }
 
 // ── ABA CARTÕES ───────────────────────────────────────────────────────────────
@@ -7975,6 +8018,32 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   // cabecalho e ja normalizada.
   const [loadDestravaFatura,setLoadDestravaFatura]=useState(false);
   const [loadCorrigirVenc,setLoadCorrigirVenc]=useState(false);
+  // [NOVO 06/08] Duplicatas provaveis (mesmo lançamento com nome de banco
+  // diferente, ex: GLOBOPLAY vs GLOBO*GLOBOPLAY) -- so aparecem quando o
+  // Marcus pede, nunca mescla sozinho.
+  const [duplicatas,setDuplicatas]=useState(null);
+  const [loadDuplicatas,setLoadDuplicatas]=useState(false);
+  async function buscarDuplicatas(){
+    setLoadDuplicatas(true);
+    try{
+      const r=await api({action:"sugerirDuplicatasCartao",cartao});
+      setDuplicatas(r.sugestoes||[]);
+    }catch(e){alert(e.message);}
+    setLoadDuplicatas(false);
+  }
+  async function mesclarSugestao(sug,idx){
+    setLoadDuplicatas(true);
+    try{
+      // O lado ja confirmado (se houver) sobrevive; senao, sobrevive o A.
+      const manterA=sug.a.confirmado||!sug.b.confirmado;
+      const rowManter=manterA?sug.a.row:sug.b.row;
+      const rowApagar=manterA?sug.b.row:sug.a.row;
+      const r=await api({action:"mesclarLancamentosCartao",cartao,rowManter,rowApagar});
+      onUpdate(r);
+      setDuplicatas(duplicatas.filter((s,i)=>i!==idx));
+    }catch(e){alert(e.message);}
+    setLoadDuplicatas(false);
+  }
   async function destravarFaturaAtual(){
     if(!confirm("Destravar a fatura "+cartao+" de vencimento "+fmtD(faturaAtual.venc)+"? Ela foi marcada como conciliada por completo. Só destrave se precisar mesmo corrigir algo nela."))return;
     setLoadDestravaFatura(true);
@@ -8413,6 +8482,31 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           style={{width:"100%",padding:"6px",borderRadius:6,background:"transparent",color:C.textMuted,fontSize:10,fontWeight:600,border:"none",cursor:"pointer",fontFamily:"inherit",marginTop:2,textDecoration:"underline"}}>
           ou corrigir o cartão inteiro de uma vez
         </button>
+        {/* [NOVO 06/08, achado real com o Marcus] Duplicata provavel --
+            "GLOBOPLAY" vs "GLOBO*GLOBOPLAY" etc: mesmo lançamento com
+            nome de banco diferente, ficando sem mesclar toda vez que
+            reconstroi/importa assinatura. Nunca mescla sozinho -- só
+            sugere, o Marcus confirma cada par. */}
+        <button onClick={buscarDuplicatas} disabled={loadDuplicatas}
+          style={{width:"100%",padding:"8px",borderRadius:6,background:"transparent",color:C.textSub,fontSize:11,fontWeight:700,border:"1px dashed "+C.border,cursor:"pointer",fontFamily:"inherit",marginTop:6}}>
+          {loadDuplicatas?"Procurando…":"🔍 Achar possíveis duplicatas"}
+        </button>
+        {duplicatas&&<div style={{marginTop:8}}>
+          {duplicatas.length===0
+            ?<div style={{fontSize:11,color:C.textMuted}}>Nenhuma duplicata provável encontrada.</div>
+            :duplicatas.map((sug,idx)=>
+              <div key={idx} style={{border:"1px solid "+C.border,borderRadius:8,padding:"8px 10px",marginBottom:6,background:"#fff"}}>
+                <div style={{fontSize:11,color:C.text}}>
+                  <b>{sug.a.desc}</b> ({fmtD(sug.a.data)}, R$ {sug.a.valor.toFixed(2).replace(".",",")}{sug.a.confirmado?" · confirmado":""})
+                  <br/>vs <b>{sug.b.desc}</b> ({fmtD(sug.b.data)}, R$ {sug.b.valor.toFixed(2).replace(".",",")}{sug.b.confirmado?" · confirmado":""})
+                </div>
+                <button onClick={()=>mesclarSugestao(sug,idx)} disabled={loadDuplicatas}
+                  style={{marginTop:6,padding:"5px 12px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+                  Mesclar
+                </button>
+              </div>
+            )}
+        </div>}
       </div>}
     </div>
 
@@ -8956,7 +9050,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260806.0300 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260806.0700 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -9038,7 +9132,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260806.0300
+      // HTML v3.20260806.0700
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
