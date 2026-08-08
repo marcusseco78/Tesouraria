@@ -533,11 +533,14 @@ function _obsApelidoCartao(obsRaw){
 function _obsConfirmadoOfx(obsRaw){
   try{ const o=JSON.parse(obsRaw||"{}"); return !!o.confirmadoOfx; }catch(e){ return false; }
 }
-// [NOVO 05/08] Selo mais forte -- confirmado por um OFX que o proprio banco
-// atesta ter fechado de verdade (DTEND com folga segura de DTSERVER), nao
-// so "bateu com algum arquivo". Ver conciliarFatura no backend.
-function _obsConfirmadoOfxFechada(obsRaw){
-  try{ const o=JSON.parse(obsRaw||"{}"); return !!o.confirmadoOfxFechada; }catch(e){ return false; }
+// [ATUALIZADO 06/08, redesenho combinado com o Marcus] O selo forte deixou
+// de significar "veio da fatura fechada" -- agora significa "ja foi
+// classificado com seguranca" (por reconhecimento automatico confiavel ou
+// manualmente). Ver _obsConfirmadoOfx acima pra "veio do banco de verdade"
+// (as duas coisas juntas = selo maximo; so a primeira = selo de "banco
+// confirmou, mas ainda sem categoria").
+function _obsClassificadoSeguro(obsRaw){
+  try{ const o=JSON.parse(obsRaw||"{}"); return !!o.classificadoSeguro; }catch(e){ return false; }
 }
 function parseEnvelopesCustom(data){
   try{ return data?.config?.ENVELOPES_JSON ? JSON.parse(data.config.ENVELOPES_JSON) : []; }
@@ -8677,7 +8680,14 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         // antes so existia o efemero, entao sair da tela e voltar apagava
         // todos os selos verdes mesmo sem nada ter mudado de verdade.
         const confirmado=confirmadosRows.has(linhaR)||_obsConfirmadoOfx(_obsCartaoRaw(r));
-        const confirmadoFechada=_obsConfirmadoOfxFechada(_obsCartaoRaw(r));
+        // [ATUALIZADO 06/08, redesenho combinado com o Marcus] Selo maximo
+        // agora depende de DUAS coisas: veio do banco (confirmado, acima) E
+        // ja foi classificado com seguranca (classificadoSeguro) -- por
+        // reconhecimento automatico confiavel ou manualmente. So "veio do
+        // banco" sem categoria segura vira um selo diferente, mais fraco,
+        // sinalizando que ainda precisa de atencao -- nao depende mais de
+        // qual arquivo/fatura a linha veio.
+        const classificadoSeguro=_obsClassificadoSeguro(_obsCartaoRaw(r));
         const motivo=divergencia?{tipo:"divergencia",dado:divergencia}:null;
         const destacado=destaque?.tab==="cartoes"&&destaque.row===linhaR;
         return <div key={linhaR!=null?linhaR:i} id={"cart-item-"+linhaR}>
@@ -8692,8 +8702,8 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           </div>
           <span style={{fontSize:12,fontWeight:700,color:previsto?C.textSub:(r[7]==="PAGO"?C.green:C.red),flexShrink:0}}>{fmt(r[2])}</span>
           {divergencia?<span style={{fontSize:9,background:"#FFEDD5",color:"#C2410C",padding:"2px 7px",borderRadius:10,flexShrink:0,fontWeight:700}}>🟠 DIVERGE</span>
-          :confirmadoFechada?<span style={{fontSize:9,background:"#EFF6FF",color:C.blue,padding:"2px 7px",borderRadius:10,flexShrink:0,fontWeight:700}}>🔒 OFX Fechada!</span>
-          :confirmado?<span style={{fontSize:9,background:C.greenLight,color:C.green,padding:"2px 7px",borderRadius:10,flexShrink:0,fontWeight:700}}>✅ CSV/OFX</span>
+          :(confirmado&&classificadoSeguro)?<span style={{fontSize:9,background:"#EFF6FF",color:C.blue,padding:"2px 7px",borderRadius:10,flexShrink:0,fontWeight:700}}>🔒 Confirmado!</span>
+          :confirmado?<span style={{fontSize:9,background:"#FFF7ED",color:"#C2410C",padding:"2px 7px",borderRadius:10,flexShrink:0,fontWeight:700}}>🏦 OFX sem classificação</span>
           :previsto?<span style={{fontSize:9,color:C.textMuted,padding:"2px 7px",borderRadius:10,
             border:"1px dashed "+C.border,flexShrink:0,fontWeight:600}}>PREVISTO</span>
           :<span style={{fontSize:9,background:r[7]==="PAGO"?C.greenLight:C.accentLight,
@@ -9050,7 +9060,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260806.0700 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260806.0900 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -9132,7 +9142,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260806.0700
+      // HTML v3.20260806.0900
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
