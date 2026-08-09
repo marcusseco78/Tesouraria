@@ -4439,12 +4439,26 @@ function DCPTab({data,onUpdate,onIrPara}){
   function transacoesDoEnvelope(envData){
     const doFluxo=fluxo.filter(r=>r.categoria==="DCP"&&r.dcpEnvelopeData===envData)
       .map(r=>({row:r.row,descricao:r.descricao,valor:r.valor,data:r.data,status:r.status,origem:"fluxo"}));
-    const doPF=cartaoPF.filter(r=>r[10]===envData).map(r=>({row:_linhaCartao(r),descricao:r[1],valor:r[2],data:r[0],status:r[7],origem:"cartaoPF"}));
-    const doPJ=cartaoPJ.filter(r=>r[10]===envData).map(r=>({row:_linhaCartao(r),descricao:r[1],valor:r[2],data:r[0],status:r[7],origem:"cartaoPJ"}));
+    const doPF=cartaoPF.filter(r=>r[10]===envData).map(r=>({row:_linhaCartao(r),descricao:r[1],valor:r[2],data:r[0],status:r[7],parcela:r[3],origem:"cartaoPF"}));
+    const doPJ=cartaoPJ.filter(r=>r[10]===envData).map(r=>({row:_linhaCartao(r),descricao:r[1],valor:r[2],data:r[0],status:r[7],parcela:r[3],origem:"cartaoPJ"}));
     const grupos={};
     const semGrupo=[];
+    // [CORRIGIDO 08/08, achado real do Marcus] Chave antes so tinha
+    // origem+descricao -- qualquer compra diferente com o MESMO NOME
+    // (ex: 3 compras separadas na "Mercadolivre*Mercadol", 1x/3x/1x, valores
+    // bem diferentes) virava UMA linha so, deturpando o total mostrado
+    // (somava as 3 juntas como se fosse 1 compra parcelada em 5x). Mesmo
+    // tipo de colisao ja corrigido hoje em outros 2 lugares (extrapolacao
+    // do Reconstruir do zero e o calculo real de consumo do DCP) -- esse
+    // aqui e um TERCEIRO lugar, so de exibicao, que ainda nao tinha sido
+    // tocado. Corrigido incluindo o total de parcelas (extraido de
+    // "N/total") e o valor de CADA linha (arredondado) na chave -- isso
+    // ainda agrupa certo as parcelas de uma MESMA compra (todas com o
+    // mesmo total e valor por parcela parecido), mas separa compras
+    // diferentes que so coincidem no nome.
+    const totalParcelasDe=p=>{ const m=String(p||"").match(/^\d+\/(\d+)$/); return m?m[1]:"1"; };
     [...doPF,...doPJ].forEach(t=>{
-      const chave=t.origem+"|"+t.descricao;
+      const chave=t.origem+"|"+t.descricao+"|"+totalParcelasDe(t.parcela)+"|"+Math.round(Math.abs(t.valor));
       if(!grupos[chave]) grupos[chave]={...t,total:0,parcelas:0};
       grupos[chave].total+=t.valor;
       grupos[chave].parcelas++;
@@ -9060,7 +9074,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260806.0900 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260808.0100 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -9142,7 +9156,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260806.0900
+      // HTML v3.20260808.0100
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
