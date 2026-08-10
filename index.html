@@ -705,6 +705,36 @@ function ValorDCPProvisao({valor, dataEnvelope}){
     <span style={{fontSize:9,fontWeight:600,color:cor,marginTop:1,whiteSpace:"nowrap"}}>{rotulo}</span>
   </span>;
 }
+// [10/08] Resultado real de uma semana DCP ja fechada -- le obs.fx (gravado
+// por _fecharSemanaDCP: {m:meta, g:gasto, d:meta-gasto}), que hoje fica
+// morto na planilha (ninguem exibia). O valor da linha e' SEMPRE 0 apos
+// fechar (dinheiro real intacto, ja foi redistribuido pras proximas
+// semanas) -- por isso o rotulo vira so "Distribuído", nunca "R$0,00", que
+// parecia dizer que nao sobrou/estourou nada. O resultado de verdade
+// reaproveita o MESMO BadgeMetaDCP do saldo do dia (pedido do Marcus
+// 10/08, pra nao ter 2 componentes dizendo a mesma coisa de jeitos
+// diferentes) -- fx.d e' meta-gasto (negativo=estourou), BadgeMetaDCP
+// espera positivo=estourou, por isso o sinal invertido na chamada.
+// Semana fechada ANTES desta funcionalidade existir (sem obs.fx): so
+// "Distribuído", sem badge -- nao inventa numero que nao foi gravado.
+function ValorDCPFechado({item}){
+  let o={};try{o=JSON.parse(item.obs||"{}");}catch(e){}
+  const fx=o.fx;
+  return <span style={{display:"flex",flexDirection:"column",alignItems:"flex-end",flexShrink:0,gap:2}}>
+    <span style={{fontSize:12,fontWeight:700,color:C.textMuted,fontStyle:"italic"}}>Distribuído</span>
+    {fx&&<BadgeMetaDCP valor={-fx.d}/>}
+  </span>;
+}
+// [09/08-2] Badge separado do saldo -- mostra "quanto passou/quanto sobra"
+// da meta DCP da semana aberta, sem nunca entrar na soma do caixa (ver
+// colchao de ar em readFluxo). valor>0 = estourou a meta; valor<=0 = ainda
+// dentro (o quanto sobra, com o sinal escondido igual o Envelope ja faz).
+function BadgeMetaDCP({valor}){
+  const estourou=valor>0;
+  const cor=estourou?C.red:C.green;
+  const texto=fmt(Math.abs(valor))+(estourou?" pior que a meta":" melhor que a meta");
+  return <span style={{fontSize:10,fontWeight:700,color:cor,whiteSpace:"nowrap"}}>{estourou?"⚠️ ":"✅ "}{texto}</span>;
+}
 const corZ=v=>v<1000?C.red:v<5000?C.orange:C.blue;
 const bgZ=v=>v<1000?C.redLight:v<5000?C.orangeLight:C.blueLight;
 
@@ -5174,6 +5204,20 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
   },[grupos,saldoHoje,saldoHojePorConta]);
   const primeiroIdxComSaldo=useMemo(()=>gruposComSaldo.findIndex(g=>g.spIni!=null),[gruposComSaldo]);
 
+  // [09/08-2] Badge "pior/melhor que a meta": mesmo padrao ja usado em
+  // Timeline (envelopeAtual) pra achar a provisao DCP aberta mais antiga
+  // (so existe 1 aberta por vez, na pratica -- _fecharSemanaDCP exige
+  // fechar em ordem cronologica). O valor CRU (sem o colchao de ar do
+  // saldo) e' exatamente "quanto passou da meta" (positivo) ou "quanto
+  // ainda sobra" (negativo) -- mostrado ao lado de todos os saldos, pedido
+  // do Marcus 09/08, pra nunca mais confundir a devolucao contabil da
+  // provisao com dinheiro de verdade entrando.
+  const envelopeAberto=useMemo(()=>{
+    const abertos=(data.fluxo||[]).filter(r=>r.categoria==="DCP_PROVISAO"&&r.status!=="EXECUTADO");
+    if(!abertos.length) return null;
+    return abertos.sort((a,b)=>a.data<b.data?-1:1)[0];
+  },[data.fluxo]);
+
   // [13/07] Busca em Previsão, pedida junto com o conserto da busca do
   // Histórico. IMPORTANTE: filtra só na hora de EXIBIR, depois que
   // gruposComSaldo já calculou o saldo de cada dia -- o saldo depende da
@@ -5227,7 +5271,10 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
             style={{background:"none",border:"none",fontSize:14,cursor:"pointer",padding:2,lineHeight:1}} title="Ver Cofres">
             🏦
           </button>}
-          {sp!=null&&isFinite(sp)&&<span style={sp<0?{fontSize:ehPrimeiro?18:15,fontWeight:800,fontStyle:ehPrimeiro?"italic":"normal",color:C.red,background:C.redLight,padding:"2px 7px",borderRadius:5}:{fontSize:ehPrimeiro?17:14,fontWeight:ehPrimeiro?800:700,fontStyle:ehPrimeiro?"italic":"normal",color:C.blue}}>{"→ "+fmt(sp)}</span>}
+          <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:1}}>
+            {sp!=null&&isFinite(sp)&&<span style={sp<0?{fontSize:ehPrimeiro?18:15,fontWeight:800,fontStyle:ehPrimeiro?"italic":"normal",color:C.red,background:C.redLight,padding:"2px 7px",borderRadius:5}:{fontSize:ehPrimeiro?17:14,fontWeight:ehPrimeiro?800:700,fontStyle:ehPrimeiro?"italic":"normal",color:C.blue}}>{"→ "+fmt(sp)}</span>}
+            {envelopeAberto&&<BadgeMetaDCP valor={envelopeAberto.valor}/>}
+          </div>
         </div>
       </div>
       {ehPrimeiro&&mostrarCofres&&(data.cofres||[]).length>0&&(()=>{
@@ -5430,7 +5477,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
                   {(()=>{const ie=infoEnvelopeItem(item);return ie?<TagEnvelopeCustom nome={ie.nome} saldo={ie.saldo}/>:null;})()}
                 </div>}
             </div>
-            {item.categoria==="DCP_PROVISAO"?<ValorDCPProvisao valor={item.valor} dataEnvelope={item.data}/>:<span style={{fontWeight:700,color:item.valor<0?C.red:C.blue,flexShrink:0,fontSize:12}}>{fmt(item.valor)}</span>}
+            {item.categoria==="DCP_PROVISAO"?<ValorDCPFechado item={item}/>:<span style={{fontWeight:700,color:item.valor<0?C.red:C.blue,flexShrink:0,fontSize:12}}>{fmt(item.valor)}</span>}
             <button onClick={()=>isOpen?setConf(null):setConf(item.row)}
               style={{color:C.textSub,padding:"4px 8px",fontSize:14,background:isOpen?C.borderLight:"none",border:"1px solid "+C.border,borderRadius:5,cursor:"pointer",flexShrink:0}}>⋮</button>
           </div>
@@ -5804,6 +5851,11 @@ function Timeline({data,onUpdate,onIrPara}){
                   {(data.cofres||[]).length>0&&<div style={{fontSize:9,color:C.teal,fontWeight:700,marginTop:1}}>
                     🏦 patrimônio: {fmt(s.linha.saldo+valorCofresProjetadoNaData(data.cofres,s.linha.data,data.config||{}))}
                   </div>}
+                  {/* [10/08] Badge "pior/melhor que a meta" tambem no Timeline,
+                      so em linhas de hoje/futuro -- pedido do Marcus 10/08,
+                      mesmo dado (envelopeAtual) que a tela ja calculava,
+                      so nao exibia em lugar nenhum. */}
+                  {envelopeAtual&&s.linha.data>=hj&&<div style={{marginTop:2}}><BadgeMetaDCP valor={envelopeAtual.valor}/></div>}
                 </div>
               </div>
             ) : s.item.ehCartao ? (
@@ -9261,7 +9313,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260808.0100 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260810.1835 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -9344,7 +9396,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260808.0100
+      // HTML v3.20260810.1835
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
