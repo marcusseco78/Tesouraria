@@ -238,7 +238,7 @@ const CAT_LABEL={DCP:"Despesas Cotidianas Semanais",DEPOSITO_AVULSO:"Outras Entr
   // categoria de gasto/receita de verdade em cima. Neutra por design: nao
   // entra em nenhum bucket de Despesa Fixa/DCP/Receita (unificarBucketGasto
   // retorna null pra ela, igual ja fazia pra qualquer TIPO desconhecido).
-  "TRANSFERENCIA":"Transferência"};
+  "TRANSFERENCIA":"Movimentação Entre Contas"};
 // [NOVO 03/08] Grupos por sinal -- usados na Conciliacao de Extrato pra so
 // mostrar pilulas que fazem sentido pro sinal do lancamento (um debito nunca
 // deveria poder virar "Receita", nem um credito virar "Despesa Fixa"). Antes
@@ -2532,6 +2532,23 @@ function FontesReceita({data,onUpdate}){
   const [loadRefresh,setLoadRefresh]=useState(false);
   const [loadFonte,setLoadFonte]=useState(null); // nome da fonte gerando individualmente agora
   const [msg,setMsg]=useState(null);
+  // [NOVO 09/08] Conta de recebimento por fonte -- resolve o caso real de
+  // HSI (e na pratica HSA/HDWC tambem) serem recebidas pela Intensiva (PJ),
+  // nao pela PF onde o cadastro sempre apontou. Acao propria (nao entra no
+  // "Salvar" geral) porque precisa editar in-place as ocorrencias JA
+  // GERADAS no Fluxo, nao so o cadastro -- mesmo padrao de Recorrencia normal.
+  const contasAtivasRec=(data.contas||[]).filter(c=>c.ativa!==false);
+  const [loadConta,setLoadConta]=useState(null); // nome da fonte trocando conta agora
+  async function trocarContaFonte(nomeFonte,novaConta){
+    setLoadConta(nomeFonte);
+    try{
+      const r=await api({action:"editarContaFonteReceita",nome:nomeFonte,conta:novaConta});
+      onUpdate&&onUpdate(r);
+      const info=r.contaFonteAlterada;
+      setMsg(info?(nomeFonte+" agora recebe em "+(novaConta==="CONTA PJ"?"Conta PJ":"Conta PF")+" — "+info.ocorrenciasEditadas+" ocorrência(s) futura(s) já ajustada(s)."):null);
+    }catch(e){alert(e.message);}
+    setLoadConta(null);
+  }
 
   function novoModoVazio(){
     return {id:"", tipoValor:"VARIAVEL", calculada:false, tipoRecorrencia:"REGULAR",
@@ -2727,6 +2744,22 @@ function FontesReceita({data,onUpdate}){
           style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:11,fontFamily:"inherit",boxSizing:"border-box"}}/>
         <div style={{fontSize:9,color:C.textMuted,marginTop:2}}>Separe vários com ";". Ajuda a Conciliação de Extrato a reconhecer esse depósito mesmo com nome diferente no banco.</div>
       </div>
+
+      {contasAtivasRec.length>1&&f.nome&&<div style={{marginBottom:10}}>
+        <div style={{fontSize:9,fontWeight:700,color:C.textMuted,marginBottom:4}}>RECEBIDA EM</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {contasAtivasRec.map(c=>{
+            const contaAtual=f.conta||"CONTA";
+            const ativo=contaAtual===c.id;
+            return <button key={c.id} disabled={loadConta===f.nome}
+              onClick={()=>{ setFontes(fs=>fs.map((ff,idx)=>idx===i?{...ff,conta:c.id}:ff)); trocarContaFonte(f.nome,c.id); }}
+              style={{padding:"5px 10px",borderRadius:8,border:"1px solid "+(ativo?C.teal:C.border),
+                background:ativo?C.teal:"#fff",color:ativo?"#fff":C.text,fontSize:11,fontWeight:700,
+                cursor:loadConta===f.nome?"default":"pointer",fontFamily:"inherit"}}>{c.nome||c.id}</button>;
+          })}
+        </div>
+        <div style={{fontSize:9,color:C.textMuted,marginTop:2}}>Muda a conta de recebimento sozinho — edita as ocorrências futuras já geradas, nunca toca no que já foi executado.</div>
+      </div>}
 
       {(f.modos||[]).map((m,mi)=><FormModo key={mi} modo={m} podeRemover={(f.modos||[]).length>1}
         onChange={novo=>atualizarModo(i,mi,novo)} onRemover={()=>removerModo(i,mi)}
@@ -4084,6 +4117,7 @@ function ConciliarExtratoTab({data,onUpdate}){
   async function lancarNovo(n){
     const cfg=cfgNovos[chaveNovo(n)];
     if(!cfg) return;
+    if(cfg.criarEspelho&&!cfg.contaEspelho){ alert("Escolha a conta espelhada antes de lançar."); return; }
     setLoad(true);
     try{
       let r;
@@ -4092,6 +4126,14 @@ function ConciliarExtratoTab({data,onUpdate}){
         const row=acharFaturaRow(cfg.pagFatura,venc);
         if(!row){ alert("Não achei a fatura "+cfg.pagFatura+" com vencimento "+fmtD(venc)+" no Fluxo -- confirme se esse ciclo já foi gerado."); setLoad(false); return; }
         r=await api({action:"pagarFaturaAvulso",row,valorPago:Math.abs(Number(n.valor)),data:n.data});
+      }else if(cfg.criarEspelho&&cfg.contaEspelho){
+        // [NOVO 09/08] Cria o PAR de uma vez -- o lado que estamos vendo no
+        // extrato (contaExtrato) mais o lado espelhado escolhido. Sinal do
+        // valor decide quem e origem e quem e destino.
+        const origem=n.valor<0?(contaExtrato||"CONTA"):cfg.contaEspelho;
+        const destino=n.valor<0?cfg.contaEspelho:(contaExtrato||"CONTA");
+        r=await api({action:"lancarTransferenciaEspelhada",data:n.data,valor:Math.abs(Number(n.valor)),
+          contaOrigem:origem,contaDestino:destino,intencao:"MOVIMENTACAO",apelido:cfg.apelido||""});
       }else{
         let obsNovo={};
         if(n.identificador) obsNovo.extratoId=n.identificador;
@@ -4099,6 +4141,12 @@ function ConciliarExtratoTab({data,onUpdate}){
         r=await api({action:"lancar",data:n.data,descricao:cfg.descricao.toUpperCase(),
           valor:Number(n.valor),tipo:cfg.categoria,categoria:cfg.categoria,forma:contaExtrato||"CONTA",
           status:"EXECUTADO",obs:JSON.stringify(obsNovo),apelido:cfg.apelido||""});
+        // [NOVO 09/08] Ensina a regra permanente se marcado -- usa o texto
+        // CRU do banco (n.descricao, nao o apelido) como padrao de
+        // reconhecimento, igual ao mecanismo ja usado em outras telas.
+        if(cfg.vincularRegra){
+          r=await api({action:"vincularCategoriaRegra",descricao:n.descricao,categoria:cfg.categoria,apelido:cfg.apelido||""});
+        }
       }
       onUpdate(r);
       setResultado(res=>({...res,novos:res.novos.filter(x=>chaveNovo(x)!==chaveNovo(n))}));
@@ -4132,6 +4180,15 @@ function ConciliarExtratoTab({data,onUpdate}){
             obs:Object.keys(obsNovo).length?JSON.stringify(obsNovo):""};
         });
         onUpdate(await api({action:"lancarLote",itens}));
+        // [NOVO 09/08] Mesmo aprendizado de regra permanente do lancamento
+        // individual, so que aqui pra cada item do lote que marcou o
+        // checkbox -- um a um, ja que cada regra e um padrao diferente.
+        for(const n of normais){
+          const cfg=cfgNovos[chaveNovo(n)];
+          if(cfg.vincularRegra){
+            onUpdate(await api({action:"vincularCategoriaRegra",descricao:n.descricao,categoria:cfg.categoria,apelido:cfg.apelido||""}));
+          }
+        }
       }
       for(const n of pagamentos){
         const cfg=cfgNovos[chaveNovo(n)];
@@ -4286,7 +4343,7 @@ function ConciliarExtratoTab({data,onUpdate}){
         </button>;})()}
         {resultado.novos.map(n=>{
           const chave=chaveNovo(n);
-          const cfg=cfgNovos[chave]||{incluir:true,categoria:n.valor<0?"EXTRAORDINARIA":"RECEITA",descricao:"",pagFatura:null,envelopeId:envelopeRegraSugerido(n.descricao,data)};
+          const cfg=cfgNovos[chave]||{incluir:true,categoria:n.valor<0?"EXTRAORDINARIA":"RECEITA",descricao:"",pagFatura:null,envelopeId:envelopeRegraSugerido(n.descricao,data),vincularRegra:false};
           const s=n.sugestao||{};
           const vencAuto=vencimentoFaturaDoMes(n.data);
           return <div key={chave} style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"10px 12px",marginBottom:6}}>
@@ -4353,6 +4410,43 @@ function ConciliarExtratoTab({data,onUpdate}){
                 {parseEnvelopesCustom(data).map(env=><option key={env.id} value={env.id}>Envelope: {env.nome}</option>)}
               </select>}
 
+            {/* [NOVO 09/08, achado real com o Marcus] Antes o apelido digitado
+                aqui valia so pra ESSE lancamento -- nao existia jeito de
+                ensinar o app a reconhecer o mesmo texto do banco da proxima
+                vez (o checkbox equivalente so existe na tela de edicao do
+                Historico, nao aqui). Reaproveita vincularCategoriaRegra
+                (mesma acao que a outra tela usa), agora tambem aceitando
+                apelido. Desmarcado por padrao -- nem todo lancamento novo
+                merece virar regra permanente. */}
+            {!cfg.pagFatura&&<label style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,fontSize:10,color:C.textMuted,cursor:"pointer"}}>
+              <input type="checkbox" checked={!!cfg.vincularRegra} onChange={e=>setCfgNovos({...cfgNovos,[chave]:{...cfg,vincularRegra:e.target.checked}})}/>
+              Lembrar esse nome pra sempre (reconhece sozinho da próxima vez)
+            </label>}
+
+            {/* [NOVO 09/08] Se a pessoa classifica um item novo do extrato como
+                Movimentacao Entre Contas, oferece criar o PAR de uma vez (o
+                lado espelhado na outra conta) em vez de um lancamento solto
+                de um lado so -- ver MODELO_TRANSFERENCIA_ESPELHADA. So faz
+                sentido quando nao veio de "vincular a existente" (esse
+                caminho ja teria o outro lado, criado na hora do lancamento
+                original). */}
+            {!cfg.pagFatura&&cfg.categoria==="TRANSFERENCIA"&&(data.contas||[]).filter(c=>c.ativa!==false).length>1&&
+              <div style={{background:C.purpleLight||"#F5F3FF",border:"1px solid "+C.purple,borderRadius:6,padding:"8px 9px",marginBottom:8}}>
+                <label style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,fontSize:10,color:C.text,cursor:"pointer",fontWeight:700}}>
+                  <input type="checkbox" checked={!!cfg.criarEspelho} onChange={e=>setCfgNovos({...cfgNovos,[chave]:{...cfg,criarEspelho:e.target.checked}})}/>
+                  Criar o lado espelhado na outra conta também
+                </label>
+                {cfg.criarEspelho&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {(data.contas||[]).filter(c=>c.ativa!==false&&c.id!==contaExtrato).map(c=>
+                    <button key={c.id} onClick={()=>setCfgNovos({...cfgNovos,[chave]:{...cfg,contaEspelho:c.id}})}
+                      style={{padding:"4px 9px",borderRadius:6,border:"1px solid "+(cfg.contaEspelho===c.id?C.purple:C.border),
+                        background:cfg.contaEspelho===c.id?C.purple:"#fff",color:cfg.contaEspelho===c.id?"#fff":C.text,
+                        fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                      {n.valor<0?"Entra em ":"Sai de "}{c.nome||c.id}
+                    </button>)}
+                </div>}
+              </div>}
+
             <div style={{display:"flex",gap:6}}>
               <button onClick={()=>lancarNovo(n)} disabled={load||!cfg.incluir}
                 style={{flex:1,padding:"7px",borderRadius:6,background:cfg.incluir?"#EA580C":C.borderLight,color:cfg.incluir?"#fff":C.textMuted,fontSize:11,fontWeight:700,border:"none",cursor:cfg.incluir?"pointer":"default",fontFamily:"inherit"}}>
@@ -4385,6 +4479,98 @@ function ConciliarExtratoTab({data,onUpdate}){
   </div>;
 }
 
+// [NOVO 09/08] Transferencia espelhada entre contas proprias -- ver
+// MODELO_TRANSFERENCIA_ESPELHADA_ESPECIFICACAO_COMPLETA.md. Fase 1: criacao
+// do par (a peca mais isolada e testavel primeiro, combinado com o Marcus).
+// Conciliacao de extrato reconhecendo esses pares automaticamente e a lista
+// estilo "Mesclar" pro caso de nao reconhecer ainda NAO fazem parte desta
+// entrega -- ficam pra depois de testar essa parte com dado real.
+function TransferenciaEspelhada({data,onUpdate}){
+  const contasAtivas=(data.contas||[]).filter(c=>c.ativa!==false);
+  const [dataOp,setDataOp]=useState(new Date().toISOString().slice(0,10));
+  const [valor,setValor]=useState("");
+  const [intencao,setIntencao]=useState("MOVIMENTACAO");
+  const [origem,setOrigem]=useState("");
+  const [destino,setDestino]=useState("");
+  const [apelido,setApelido]=useState("");
+  const [load,setLoad]=useState(false);
+
+  useEffect(()=>{
+    if(!contasAtivas.length) return;
+    if(!origem) setOrigem(contasAtivas[0].id);
+    if(!destino && contasAtivas.length>1) setDestino(contasAtivas[1].id);
+  },[contasAtivas]);
+
+  const INTENCOES=[
+    {id:"MOVIMENTACAO",label:"Movimentação Entre Contas"},
+    {id:"DISTRIBUICAO_LUCROS",label:"Transf. Distribuição de Lucros"},
+    {id:"RECEBIMENTO_LUCROS",label:"Transf. Recebimento de Lucros"},
+  ];
+
+  async function lancarPar(){
+    const v=Number(String(valor).replace(",","."));
+    if(!v||v<=0){ alert("Valor inválido."); return; }
+    if(!origem||!destino){ alert("Escolha origem e destino."); return; }
+    if(origem===destino){ alert("Origem e destino não podem ser a mesma conta."); return; }
+    setLoad(true);
+    try{
+      const r=await api({action:"lancarTransferenciaEspelhada",data:dataOp,valor:v,
+        contaOrigem:origem,contaDestino:destino,intencao,apelido:apelido||""});
+      onUpdate(r);
+      setValor(""); setApelido("");
+      alert("Transferência lançada — os dois lados já entraram executados e amarrados.");
+    }catch(e){ alert(e.message); }
+    setLoad(false);
+  }
+
+  const Pilula=({ativo,onClick,children})=><button onClick={onClick}
+    style={{padding:"8px 12px",borderRadius:10,border:"1px solid "+(ativo?C.purple:C.border),
+      background:ativo?C.purple:"#fff",color:ativo?"#fff":C.text,fontSize:12,fontWeight:700,
+      cursor:"pointer",fontFamily:"inherit",marginRight:6,marginBottom:6}}>{children}</button>;
+
+  return <div style={{padding:"4px 4px 16px"}}>
+    <div style={{fontSize:11,fontWeight:800,color:C.textMuted,letterSpacing:".1em",padding:"8px 12px"}}>MOVIMENTAÇÃO ENTRE CONTAS</div>
+    <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:14,padding:16,margin:"0 8px"}}>
+      <div style={{fontSize:11,color:C.textMuted,marginBottom:12}}>
+        Lança os dois lados de uma vez — sai da origem, entra no destino, já executado nos dois. Nunca fica "pendente" esperando confirmação.
+      </div>
+
+      <div style={{fontSize:10,fontWeight:700,color:C.textMuted,marginBottom:4}}>DATA</div>
+      <input type="date" value={dataOp} onChange={e=>setDataOp(e.target.value)}
+        style={{width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",marginBottom:12}}/>
+
+      <div style={{fontSize:10,fontWeight:700,color:C.textMuted,marginBottom:4}}>VALOR</div>
+      <input type="text" inputMode="decimal" value={valor} onChange={e=>setValor(e.target.value)} placeholder="0,00"
+        style={{width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",marginBottom:12}}/>
+
+      <div style={{fontSize:10,fontWeight:700,color:C.textMuted,marginBottom:6}}>INTENÇÃO</div>
+      <div style={{marginBottom:12}}>
+        {INTENCOES.map(i=><Pilula key={i.id} ativo={intencao===i.id} onClick={()=>setIntencao(i.id)}>{i.label}</Pilula>)}
+      </div>
+
+      <div style={{fontSize:10,fontWeight:700,color:C.textMuted,marginBottom:6}}>SAI DE</div>
+      <div style={{marginBottom:12}}>
+        {contasAtivas.map(c=><Pilula key={c.id} ativo={origem===c.id} onClick={()=>setOrigem(c.id)}>{c.nome||c.id}</Pilula>)}
+      </div>
+
+      <div style={{fontSize:10,fontWeight:700,color:C.textMuted,marginBottom:6}}>ENTRA EM</div>
+      <div style={{marginBottom:12}}>
+        {contasAtivas.map(c=><Pilula key={c.id} ativo={destino===c.id} onClick={()=>setDestino(c.id)}>{c.nome||c.id}</Pilula>)}
+      </div>
+
+      <div style={{fontSize:10,fontWeight:700,color:C.textMuted,marginBottom:4}}>NOME DE EXIBIÇÃO (opcional — se vazio, usa o padrão da intenção)</div>
+      <input type="text" value={apelido} onChange={e=>setApelido(e.target.value)} placeholder="ex: Distr. lucros agosto"
+        style={{width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",marginBottom:14}}/>
+
+      <button onClick={lancarPar} disabled={load}
+        style={{width:"100%",padding:"12px",borderRadius:10,background:C.purple,color:"#fff",
+          fontSize:14,fontWeight:800,border:"none",cursor:load?"default":"pointer",fontFamily:"inherit"}}>
+        {load?"Lançando...":"Lançar os dois lados"}
+      </button>
+    </div>
+  </div>;
+}
+
 function Ferramentas({onIrPara}){
   const FERRAMENTAS=[
     {id:"receitas",icone:"🏥",titulo:"Receitas",sub:"HSA, HSI e outras fontes",cor:C.teal,bg:C.tealLight},
@@ -4396,6 +4582,7 @@ function Ferramentas({onIrPara}){
     {id:"cofres",icone:"🏦",titulo:"Cofres",sub:"Poupança pra projetos, tipo caixinha",cor:C.teal,bg:C.tealLight||C.blueLight},
     {id:"envelopes",icone:"💌",titulo:"Envelopes",sub:"Metas por projeto",cor:C.purple,bg:C.purpleLight},
     {id:"conciliacao",icone:"🔄",titulo:"Conciliação",sub:"Cartões e extrato",cor:C.orange,bg:C.orangeLight},
+    {id:"transferencias",icone:"↔️",titulo:"Movimentação Entre Contas",sub:"Transferência espelhada PF/PJ",cor:C.purple,bg:C.purpleLight},
     {id:"perfil",icone:"👤",titulo:"Perfil & Apelidos",sub:"Contexto do Gemini, nomes de descrição",cor:C.blue,bg:C.blueLight},
     {id:"config",icone:"⚙️",titulo:"Configurações",sub:"Servidor, cartões, dados sensíveis",cor:C.textMuted,bg:C.borderLight},
     {id:"conversar",icone:"💬",titulo:"Conversar",sub:"Assistente do app",cor:C.purple,bg:C.purpleLight},
@@ -9115,6 +9302,7 @@ function Tesouraria(){
         tab==="historico"   ? <Historico data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
         tab==="timeline"    ? <Timeline data={data} onUpdate={setData} onIrPara={irPara}/> :
         tab==="ferramentas" ? <Ferramentas onIrPara={t=>{navegar(t);}}/> :
+        tab==="transferencias" ? <TransferenciaEspelhada data={data} onUpdate={setData}/> :
         tab==="recorr"      ? <Recorrencias data={data} onUpdate={setData}/> :
         tab==="cartoes"     ? <Cartoes data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
         tab==="dcp"         ? <DCPTab data={data} onUpdate={setData} onIrPara={irPara}/> :
