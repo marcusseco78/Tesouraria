@@ -5645,6 +5645,9 @@ function Timeline({data,onUpdate,onIrPara}){
   const nodeRefs=useRef([]);
   const [busca,setBusca]=useState("");
   const [filtro,setFiltro]=useState("todos"); // todos|previsao|historico
+  // [10/08] Altura real da faixa de destaque -- ver atualizarDestaque, que
+  // mede o slot central a cada scroll e atualiza isso.
+  const [alturaFaixa,setAlturaFaixa]=useState(40);
   // [NOVO 01/08] Fase 2/3 -- conta selecionada pra "linha gorda" (saldo
   // dessa conta + soma das outras + total). Default: primeira conta ativa.
   const contasAtivas=useMemo(()=>(data.contas||[]).filter(c=>c.ativa!==false),[data.contas]);
@@ -5713,6 +5716,15 @@ function Timeline({data,onUpdate,onIrPara}){
     if(!cont) return;
     const rect=cont.getBoundingClientRect();
     const centerY=rect.top+rect.height/2;
+    // [10/08] A faixa de destaque (ver render mais abaixo) tinha altura
+    // fixa (40px) -- funcionava enquanto o slot central era so 1-2 linhas,
+    // mas o slot "saldo" cresceu (Conta/outras contas/total, e agora o
+    // BadgeMetaDCP), passando da faixa e "vazando" pra fora dela (achado
+    // real do Marcus 10/08). Aqui, no mesmo loop que ja mede cada node pra
+    // escala/rotacao, guardamos a altura real do node MAIS central
+    // (menor norm) pra faixa acompanhar de verdade, em vez de chutar um
+    // numero fixo que quebra de novo assim que outro slot mudar de tamanho.
+    let melhorNorm=Infinity, melhorAltura=40;
     nodeRefs.current.forEach(node=>{
       if(!node) return;
       // [25/07] Slot com o painel de edicao aberto fica sempre "reto" (sem
@@ -5728,6 +5740,7 @@ function Timeline({data,onUpdate,onIrPara}){
       const itemCenter=r.top+r.height/2;
       const signedNorm=Math.max(-1,Math.min(1,(itemCenter-centerY)/(rect.height/2)));
       const norm=Math.abs(signedNorm);
+      if(norm<melhorNorm){melhorNorm=norm;melhorAltura=r.height;}
       const scale=1-norm*0.28;
       const opacity=1-norm*0.75;
       // [21/07] Curvatura tipo seletor do iPhone, mas com raio bem maior
@@ -5742,6 +5755,8 @@ function Timeline({data,onUpdate,onIrPara}){
       const fade=node.querySelector("[data-fade]");
       if(fade) fade.style.opacity=Math.max(opacity,0.35).toFixed(3);
     });
+    const alvo=Math.max(40,Math.round(melhorAltura)+6);
+    setAlturaFaixa(prev=>Math.abs(prev-alvo)>2?alvo:prev);
   }
 
   useEffect(()=>{
@@ -5905,9 +5920,9 @@ function Timeline({data,onUpdate,onIrPara}){
           mais centralizado), entao a faixa passava a cruzar o meio do
           painel aberto sem sentido nenhum (2 listras horizontais soltas).
           Some enquanto algum painel estiver aberto. */}
-      {!itemAbertoRow&&<div style={{position:"absolute",top:"50%",left:0,right:0,height:40,transform:"translateY(-50%)",
+      {!itemAbertoRow&&<div style={{position:"absolute",top:"50%",left:0,right:0,height:alturaFaixa,transform:"translateY(-50%)",
         borderTop:"2px solid "+C.accent,borderBottom:"2px solid "+C.accent,background:C.accentLight,
-        opacity:0.35,pointerEvents:"none"}}/>}
+        opacity:0.35,pointerEvents:"none",transition:"height .15s ease"}}/>}
       <button onClick={voltarHoje} style={{position:"absolute",bottom:10,left:10,background:C.accent,color:"#fff",
         border:"none",borderRadius:20,padding:"8px 14px",fontSize:12,fontWeight:700,cursor:"pointer",boxShadow:"0 2px 6px rgba(0,0,0,.2)"}}>
         📍 Hoje
@@ -9313,7 +9328,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260810.1835 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260810.1907 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -9396,7 +9411,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260810.1835
+      // HTML v3.20260810.1907
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
