@@ -5856,9 +5856,9 @@ function Timeline({data,onUpdate,onIrPara}){
                     const saldoOutras=(saldoConta!=null&&s.linha.saldo!=null)?(s.linha.saldo-saldoConta):null;
                     return <>
                       <div style={{fontSize:9,color:C.textMuted}}>{nomeContaSel}</div>
-                      <div style={{color:C.blue,fontWeight:900,fontSize:isHoje?15:12}}>→ {saldoConta!=null?fmt(saldoConta):"—"}</div>
+                      <div style={{color:C.textSub,fontWeight:700,fontSize:isHoje?12:11}}>{saldoConta!=null?fmt(saldoConta):"—"}</div>
                       <div style={{fontSize:9,color:C.textMuted,marginTop:1}}>outras contas: {saldoOutras!=null?fmt(saldoOutras):"—"}</div>
-                      <div style={{fontSize:10,color:C.textSub,fontWeight:700,marginTop:1}}>total: {fmt(s.linha.saldo)}</div>
+                      <div style={{color:C.blue,fontWeight:900,fontSize:isHoje?17:13,marginTop:1}}>→ {fmt(s.linha.saldo)}</div>
                     </>;
                   })():
                     <div style={{color:C.blue,fontWeight:900,fontSize:isHoje?17:13}}>→ {fmt(s.linha.saldo)}</div>
@@ -9328,7 +9328,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260810.1907 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260811.1144 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -9411,7 +9411,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260810.1907
+      // HTML v3.20260811.1144
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
