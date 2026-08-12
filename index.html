@@ -6486,6 +6486,17 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
   // de verdade (adicionadas na assinatura acima e em toda chamada
   // <SecaoRecorrencias .../> mais abaixo no arquivo).
   const contasAtivasRecEdit=(data.contas||[]).filter(c=>c.ativa!==false);
+  // [11/08, CORRIGIDO] Mesma logica de _ehSemanalRecorrencia (backend) e
+  // ehSemanal (Recorrencias, componente pai) -- feita local aqui tambem
+  // (em vez de mais uma prop nova) pelo mesmo motivo do comentario acima:
+  // ja achei 2 bugs de prop esquecida nesse componente hoje, e essa
+  // checagem e' barata o bastante pra nao doer duplicar.
+  const itemEhSemanal=item=>{
+    let o={};try{o=JSON.parse(item.obs||"{}");}catch(e){}
+    if(o.freq==="SEMANAL") return true;
+    if(o.freq==="MENSAL") return false;
+    return item.diaVenc===2||item.diaVenc===6;
+  };
   // [CORRIGIDO 17/07] Precisa viver FORA de Recorrencias (nunca definido
   // dentro do corpo de outro componente) -- antes, toda tecla digitada em
   // qualquer campo do painel (alias, tolerancia, valor) disparava um
@@ -6562,12 +6573,13 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
           </div>
           <div style={{flex:1}}>
             <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Vencimento</div>
-            {!ehCartao(item)&&(item.diaVenc===2||item.diaVenc===6)?
+            {!ehCartao(item)&&itemEhSemanal(item)?
               <select value={dia} onChange={e=>setDia(e.target.value)}
                 style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,
                   fontSize:13,fontFamily:"inherit",background:C.surface}}>
-                <option value="2">Toda terça-feira</option>
-                <option value="6">Todo sábado</option>
+                {DIAS_SEMANA_LABEL.map((nome,i)=>
+                  <option key={i} value={String(i)}>{(i===0||i===6?"Todo ":"Toda ")+nome.toLowerCase()+(i===0||i===6?"":"-feira")}</option>
+                )}
               </select>
             :<>
               <div style={{display:"flex",gap:4,marginBottom:6}}>
@@ -6704,7 +6716,16 @@ function Recorrencias({data,onUpdate}){
     const d=String(r.destino||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
     return d==="CARTAOPF"||d==="CARTAOPJ";
   };
-  const ehSemanal=r=>parseInt(r.diaVenc)===2||parseInt(r.diaVenc)===6;
+  // [11/08, CORRIGIDO -- bug real do Marcus] Mesmo motor unico do backend
+  // (_ehSemanalRecorrencia) -- obs.freq e' a fonte de verdade agora, o
+  // fallback pelo dia (2 ou 6) so serve pra recorrencia antiga que ainda
+  // nao passou por um self-heal (proxima vez que gerar/regerar).
+  const ehSemanal=r=>{
+    let o={};try{o=JSON.parse(r.obs||"{}");}catch(e){}
+    if(o.freq==="SEMANAL") return true;
+    if(o.freq==="MENSAL") return false;
+    return parseInt(r.diaVenc)===2||parseInt(r.diaVenc)===6;
+  };
 
   const debitosTodos=items.filter(r=>r.valor<0);
   const receitas=items.filter(r=>r.valor>=0).sort(sortDia);
@@ -6749,12 +6770,45 @@ function Recorrencias({data,onUpdate}){
     setFormaEdit(item.forma||"CONTA");
   }
 
+  // [11/08, CORRIGIDO -- bug real do Marcus] Extraido de dentro de salvar()
+  // pra ser compartilhado com regerar() tambem. Antes, "Regerar ocorrências
+  // futuras" chamava a API direto sem NUNCA salvar o que estava pendente no
+  // formulario (ex: trocar o dia de vencimento) -- regerarOcorrenciasRecorrencia
+  // le o valor direto da PLANILHA, que so muda quando "Salvar" e clicado. O
+  // Marcus mudou o dia, clicou direto em "Regerar" (sem salvar antes), e o
+  // resultado foi "apagou 11, gerou 11" com o MESMO dia de sempre -- parecia
+  // ter funcionado (mensagem de sucesso) mas nao mudou nada, porque regerou
+  // com a config antiga que ainda estava na planilha. Motor unico agora: os
+  // dois botoes (Salvar e Regerar) sempre persistem qualquer edicao pendente
+  // primeiro, do mesmo jeito, antes de fazer o que sao pra fazer.
+  async function _persistirCamposRecorrencia(item){
+    let ultimoResultado=null;
+    const novoValor=numBR(val)*(neg?-1:1);
+    const novoDia=parseInt(dia);
+    const novaTolerancia=tolerancia===""?null:parseInt(tolerancia);
+    if(novoValor!==item.valor)
+      ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"VALOR",valor:String(novoValor),resumo:""});
+    if(destinoEdit==="FLUXO"&&formaEdit!==(item.forma||"CONTA"))
+      ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"FORMA",valor:formaEdit,resumo:""});
+    if(novoDia!==parseInt(item.diaVenc))
+      ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_VENC",valor:String(novoDia),resumo:""});
+    if(diaTipoEdit!==item.diaTipo)
+      ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_TIPO",valor:diaTipoEdit,resumo:""});
+    if(parseInt(diaNEdit)!==item.diaN)
+      ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_N",valor:diaNEdit,resumo:""});
+    if(novaTolerancia!=null&&novaTolerancia!==Number(item.tolerancia))
+      ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"TOLERANCIA_DIAS",valor:String(novaTolerancia),resumo:""});
+    const novoAlias=alias.trim().toUpperCase();
+    if(novoAlias!==String(item.alias||"").trim().toUpperCase())
+      ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"ALIAS_CSV",valor:novoAlias,resumo:""});
+    if(envelopePadrao!==String(item.envelopePadrao||""))
+      ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"ENVELOPE_PADRAO",valor:envelopePadrao,resumo:""});
+    return ultimoResultado;
+  }
+
   async function salvar(item){
     setLoad(true);
     try{
-      const novoValor=numBR(val)*(neg?-1:1);
-      const novoDia=parseInt(dia);
-      const novaTolerancia=tolerancia===""?null:parseInt(tolerancia);
       let ultimoResultado=null;
       const destinoAntigo=String(item.destino||"FLUXO").toUpperCase().replace(/[^A-Z0-9_]/g,"");
       if(destinoEdit!==destinoAntigo){
@@ -6766,30 +6820,18 @@ function Recorrencias({data,onUpdate}){
         // em executado/pago/conciliado, em nenhum dos dois casos.
         if(confirm("Destino alterado. Quer também apagar as ocorrências futuras já geradas com o destino antigo (\""+destinoAntigo+"\") e recriar com o novo (\""+destinoEdit+"\")? Executado/pago/conciliado nunca é tocado.")){
           try{
+            await _persistirCamposRecorrencia(item);
             const rReg=await api({action:"regerarOcorrenciasRecorrencia",descricao:item.desc});
             ultimoResultado=rReg;
             const res=rReg._resultadoRegerar;
             if(res) alert("Pronto: apagou "+(res.apagadosFluxo+res.apagadosCartaoPF+res.apagadosCartaoPJ)+" ocorrência(s) antiga(s) e gerou "+(res.geradosFluxo+res.geradosCartaoPF+res.geradosCartaoPJ)+" nova(s) com o destino certo.");
+            onUpdate(ultimoResultado);
+            setLoad(false);setEdit(null);
+            return;
           }catch(eReg){ alert("Destino salvo, mas a regeração falhou: "+eReg.message); }
         }
       }
-      if(novoValor!==item.valor)
-        ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"VALOR",valor:String(novoValor),resumo:""});
-      if(destinoEdit==="FLUXO"&&formaEdit!==(item.forma||"CONTA"))
-        ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"FORMA",valor:formaEdit,resumo:""});
-      if(novoDia!==parseInt(item.diaVenc))
-        ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_VENC",valor:String(novoDia),resumo:""});
-      if(diaTipoEdit!==item.diaTipo)
-        ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_TIPO",valor:diaTipoEdit,resumo:""});
-      if(parseInt(diaNEdit)!==item.diaN)
-        ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_N",valor:diaNEdit,resumo:""});
-      if(novaTolerancia!=null&&novaTolerancia!==Number(item.tolerancia))
-        ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"TOLERANCIA_DIAS",valor:String(novaTolerancia),resumo:""});
-      const novoAlias=alias.trim().toUpperCase();
-      if(novoAlias!==String(item.alias||"").trim().toUpperCase())
-        ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"ALIAS_CSV",valor:novoAlias,resumo:""});
-      if(envelopePadrao!==String(item.envelopePadrao||""))
-        ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"ENVELOPE_PADRAO",valor:envelopePadrao,resumo:""});
+      ultimoResultado=(await _persistirCamposRecorrencia(item))||ultimoResultado;
       onUpdate(ultimoResultado||await api({action:"getData"}));
     }catch(e){alert(e.message);}
     setLoad(false);setEdit(null);
@@ -6799,6 +6841,7 @@ function Recorrencias({data,onUpdate}){
     if(!confirm("Apagar as ocorrências futuras já geradas (ainda programadas/pendentes) de \""+item.desc+"\" e recriar do zero com a configuração atual? Executado/pago/conciliado nunca é tocado."))return;
     setLoad(true);
     try{
+      await _persistirCamposRecorrencia(item); // [11/08] salva qualquer edicao pendente no formulario ANTES de regerar -- ver comentario acima
       const r=await api({action:"regerarOcorrenciasRecorrencia",descricao:item.desc});
       const res=r._resultadoRegerar;
       onUpdate(r);
@@ -9347,7 +9390,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260812.0000 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260812.0049 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -9430,7 +9473,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260812.0000
+      // HTML v3.20260812.0049
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
