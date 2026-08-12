@@ -6466,7 +6466,26 @@ function Conversar({data,onUpdate,initTxt,onInitDone,msgs,setMsgs}){
 
 
 // ── RECORRÊNCIAS ──────────────────────────────────────────────────────────────
-function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCartao,neg,setNeg,val,setVal,dia,setDia,diaTipoEdit,setDiaTipoEdit,diaNEdit,setDiaNEdit,tolerancia,setTolerancia,alias,setAlias,envelopePadrao,setEnvelopePadrao,destinoEdit,setDestinoEdit,regerar,load,salvar,apagar,data}){
+function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCartao,neg,setNeg,val,setVal,dia,setDia,diaTipoEdit,setDiaTipoEdit,diaNEdit,setDiaNEdit,tolerancia,setTolerancia,alias,setAlias,envelopePadrao,setEnvelopePadrao,destinoEdit,setDestinoEdit,regerar,load,salvar,apagar,data,formaEdit,setFormaEdit}){
+  // [CORRIGIDO 11/08] Faltava esta linha -- SecaoRecorrencias usava
+  // contasAtivasRecEdit (pra montar o seletor de conta no painel de edicao)
+  // sem nunca declarar nem receber como prop. So disparava quando havia
+  // mais de 1 conta ativa E o painel de edicao de uma recorrencia com
+  // destino=FLUXO estava aberto -- por isso passou despercebido desde a
+  // leva de multi-conta (01/08) ate o Marcus editar a Rose (Faxina) agora.
+  // Mesma formula que ja existe em Recorrencias (componente pai), so que
+  // calculada aqui tambem porque SecaoRecorrencias e' um componente
+  // separado (ver comentario logo abaixo -- vive fora de proposito) e nao
+  // recebe essa variavel como prop.
+  //
+  // [CORRIGIDO 11/08, 2a ocorrencia do MESMO bug] formaEdit/setFormaEdit
+  // tinham exatamente o mesmo problema (usados umas linhas abaixo, no
+  // mesmo seletor de conta) -- so que esses SAO estado de verdade (o
+  // setter precisa mudar o estado do componente PAI), entao nao da pra so
+  // recalcular local como contasAtivasRecEdit -- precisam vir como prop
+  // de verdade (adicionadas na assinatura acima e em toda chamada
+  // <SecaoRecorrencias .../> mais abaixo no arquivo).
+  const contasAtivasRecEdit=(data.contas||[]).filter(c=>c.ativa!==false);
   // [CORRIGIDO 17/07] Precisa viver FORA de Recorrencias (nunca definido
   // dentro do corpo de outro componente) -- antes, toda tecla digitada em
   // qualquer campo do painel (alias, tolerancia, valor) disparava um
@@ -6870,52 +6889,52 @@ function Recorrencias({data,onUpdate}){
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
-      load={load} salvar={salvar} apagar={apagar} data={data}/>
+      load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
     <SecaoRecorrencias titulo="Recorrentes por conta" lista={debitosMensais} cor={C.red} bg={C.redLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
-      load={load} salvar={salvar} apagar={apagar} data={data}/>
+      load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
     <SecaoRecorrencias titulo="Trimestrais (conta)" lista={debitosTrimestrais} cor={C.purple} bg={C.purpleLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
-      load={load} salvar={salvar} apagar={apagar} data={data}/>
+      load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
     <SecaoRecorrencias titulo="Semestrais (conta)" lista={debitosSemestrais} cor={C.purple} bg={C.purpleLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
-      load={load} salvar={salvar} apagar={apagar} data={data}/>
+      load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
     <SecaoRecorrencias titulo="Anuais (conta)" lista={debitosAnuaisConta} cor={C.purple} bg={C.purpleLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
-      load={load} salvar={salvar} apagar={apagar} data={data}/>
+      load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
     <SecaoRecorrencias titulo="Recorrentes no cartão" lista={cartaoMensal} cor={C.red} bg={C.redLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
-      load={load} salvar={salvar} apagar={apagar} data={data}/>
+      load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
     <SecaoRecorrencias titulo="Trimestrais (cartão)" lista={cartaoTrimestral} cor={C.purple} bg={C.purpleLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
-      load={load} salvar={salvar} apagar={apagar} data={data}/>
+      load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
     <SecaoRecorrencias titulo="Semestrais (cartão)" lista={cartaoSemestral} cor={C.purple} bg={C.purpleLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
-      load={load} salvar={salvar} apagar={apagar} data={data}/>
+      load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
     <SecaoRecorrencias titulo="Anuais (cartão)" lista={cartaoAnual} cor={C.purple} bg={C.purpleLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
-      load={load} salvar={salvar} apagar={apagar} data={data}/>
+      load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
     <SecaoRecorrencias titulo="Receitas recorrentes" lista={receitas} cor={C.blue} bg={C.blueLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
-      load={load} salvar={salvar} apagar={apagar} data={data}/>
+      load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
     {totalRecorr>0&&!items.length&&<div style={{padding:"20px",textAlign:"center",color:C.textMuted,fontSize:13}}>
       {totalRecorr} itens, nenhum ativo.
     </div>}
@@ -9328,7 +9347,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260811.1144 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260812.0000 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -9411,7 +9430,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260811.1144
+      // HTML v3.20260812.0000
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
