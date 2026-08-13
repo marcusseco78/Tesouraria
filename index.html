@@ -633,6 +633,17 @@ function periodoEnvelopeCompacto(dataIni,dataFim){
 }
 const PERIODICIDADE_LABEL={"":"Projeto único",semanal:"Semanal",quinzenal:"Quinzenal",mensal:"Mensal",trimestral:"Trimestral",semestral:"Semestral"};
 const DIAS_SEMANA_LABEL=["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
+// [13/08, NOVO] Movido pra global -- antes só existia dentro de
+// TransferenciaEspelhada (Ferramentas), a tela de conciliação de extrato
+// tinha o mesmo checkbox "criar lado espelhado" mas travado sempre em
+// "MOVIMENTACAO", sem opção de escolher Distribuição/Recebimento de
+// Lucros (achado real do Marcus 13/08). Uma fonte só agora, as duas telas
+// leem daqui -- nunca mais duas listas que podem divergir.
+const INTENCOES=[
+  {id:"MOVIMENTACAO",label:"Movimentação Entre Contas"},
+  {id:"DISTRIBUICAO_LUCROS",label:"Transf. Distribuição de Lucros"},
+  {id:"RECEBIMENTO_LUCROS",label:"Transf. Recebimento de Lucros"},
+];
 // Etiqueta visual de envelope customizado -- mesmo padrao do TagEnvelopeDCP,
 // cor propria (roxo) pra nao confundir com o azul do DCP. Quando `saldo` e
 // passado (so no lancamento MAIS RECENTE classificado no periodo relevante),
@@ -4217,7 +4228,7 @@ function ConciliarExtratoTab({data,onUpdate}){
         const origem=n.valor<0?(contaExtrato||"CONTA"):cfg.contaEspelho;
         const destino=n.valor<0?cfg.contaEspelho:(contaExtrato||"CONTA");
         r=await api({action:"lancarTransferenciaEspelhada",data:n.data,valor:Math.abs(Number(n.valor)),
-          contaOrigem:origem,contaDestino:destino,intencao:"MOVIMENTACAO",apelido:cfg.apelido||""});
+          contaOrigem:origem,contaDestino:destino,intencao:cfg.intencaoEspelho||"MOVIMENTACAO",apelido:cfg.apelido||""});
       }else{
         let obsNovo={};
         if(n.identificador) obsNovo.extratoId=n.identificador;
@@ -4536,7 +4547,17 @@ function ConciliarExtratoTab({data,onUpdate}){
                   <input type="checkbox" checked={!!cfg.criarEspelho} onChange={e=>setCfgNovos({...cfgNovos,[chave]:{...cfg,criarEspelho:e.target.checked}})}/>
                   Criar o lado espelhado na outra conta também
                 </label>
-                {cfg.criarEspelho&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {cfg.criarEspelho&&<>
+                <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:6}}>
+                  {INTENCOES.map(i=>
+                    <button key={i.id} onClick={()=>setCfgNovos({...cfgNovos,[chave]:{...cfg,intencaoEspelho:i.id}})}
+                      style={{padding:"4px 8px",borderRadius:12,border:"1px solid "+((cfg.intencaoEspelho||"MOVIMENTACAO")===i.id?C.purple:C.border),
+                        background:(cfg.intencaoEspelho||"MOVIMENTACAO")===i.id?C.purple:"#fff",color:(cfg.intencaoEspelho||"MOVIMENTACAO")===i.id?"#fff":C.textMuted,
+                        fontSize:9,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                      {i.label}
+                    </button>)}
+                </div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                   {(data.contas||[]).filter(c=>c.ativa!==false&&c.id!==contaExtrato).map(c=>
                     <button key={c.id} onClick={()=>setCfgNovos({...cfgNovos,[chave]:{...cfg,contaEspelho:c.id}})}
                       style={{padding:"4px 9px",borderRadius:6,border:"1px solid "+(cfg.contaEspelho===c.id?C.purple:C.border),
@@ -4544,7 +4565,8 @@ function ConciliarExtratoTab({data,onUpdate}){
                         fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
                       {n.valor<0?"Entra em ":"Sai de "}{c.nome||c.id}
                     </button>)}
-                </div>}
+                </div>
+                </>}
               </div>}
 
             <div style={{display:"flex",gap:6}}>
@@ -4601,11 +4623,7 @@ function TransferenciaEspelhada({data,onUpdate}){
     if(!destino && contasAtivas.length>1) setDestino(contasAtivas[1].id);
   },[contasAtivas]);
 
-  const INTENCOES=[
-    {id:"MOVIMENTACAO",label:"Movimentação Entre Contas"},
-    {id:"DISTRIBUICAO_LUCROS",label:"Transf. Distribuição de Lucros"},
-    {id:"RECEBIMENTO_LUCROS",label:"Transf. Recebimento de Lucros"},
-  ];
+  // INTENCOES agora é constante global (topo do arquivo) -- compartilhada com ConciliarExtratoTab.
 
   async function lancarPar(){
     const v=Number(String(valor).replace(",","."));
@@ -9469,7 +9487,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260813.2028 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260813.2043 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -9552,7 +9570,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260813.2028
+      // HTML v3.20260813.2043
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
