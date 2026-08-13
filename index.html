@@ -7019,9 +7019,18 @@ function FormNovaRecorr({onSalvo,onClose,data}){
   const contaSelecionadaObj=contasAtivasRec.find(c=>c.id===forma);
   const ehContaPJ=(contaSelecionadaObj&&contaSelecionadaObj.tipo==="PJ")||forma==="CONTA PJ";
 
+  // [13/08, CORRIGIDO -- ponta solta que faltava] So tinha terca/sabado
+  // aqui -- a edicao ja tinha sido corrigida pros 7 dias antes, mas a
+  // CRIACAO ainda nao. Mesma fonte (DIAS_SEMANA_LABEL) que a edicao ja usa,
+  // pra nunca mais divergir entre as duas telas. Chave "semanalN" (N=0..6,
+  // igual ao codigo de dia da semana) em vez de nome fixo, pra nao colidir
+  // com nada.
+  const freqSemanalMap=Object.fromEntries(DIAS_SEMANA_LABEL.map((nome,i)=>[
+    "semanal"+i,
+    {dia_venc:i, m:1, label:(i===0||i===6?"Todo ":"Toda ")+nome.toLowerCase()+(i===0||i===6?"":"-feira")}
+  ]));
   const freqMapTodos={
-    "terca":    {dia_venc:2,  m:1,  label:"Toda terca-feira"},
-    "sabado":   {dia_venc:6,  m:1,  label:"Todo sabado"},
+    ...freqSemanalMap,
     "mensal":   {dia_venc:0,  m:1,  label:"Mensal"},
     "bimestral":{dia_venc:0,  m:2,  label:"Bimestral (a cada 2 meses)"},
     "trimestral":{dia_venc:0, m:3,  label:"Trimestral (a cada 3 meses)"},
@@ -7029,12 +7038,12 @@ function FormNovaRecorr({onSalvo,onClose,data}){
     "semestral":{dia_venc:0,  m:6,  label:"Semestral (a cada 6 meses)"},
     "anual":    {dia_venc:0,  m:12, label:"Anual (1x por ano)"},
   };
-  // Cartao nao tem recorrencia semanal -- so remove "terca"/"sabado" das
+  // Cartao nao tem recorrencia semanal -- remove as 7 opcoes semanais das
   // opcoes quando destino e CARTAO_PF/PJ, pra nunca deixar escolher uma
   // combinacao que nao existe de verdade (evita reabrir a ambiguidade
   // DIA_VENC=2/6 que ja causou bug real no Google Premiere).
-  const freqMap=Object.fromEntries(Object.entries(freqMapTodos).filter(([k])=>!ehCartao||(k!=="terca"&&k!=="sabado")));
-  const isWeekly=(freq==="terca"||freq==="sabado")&&!ehCartao;
+  const freqMap=Object.fromEntries(Object.entries(freqMapTodos).filter(([k])=>!ehCartao||k.indexOf("semanal")!==0));
+  const isWeekly=freq.indexOf("semanal")===0&&!ehCartao;
 
   async function salvar(){
     if(!desc.trim()||!valor)return;
@@ -9390,7 +9399,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260813.1032 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260813.1509 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -9473,7 +9482,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260813.1032
+      // HTML v3.20260813.1509
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
