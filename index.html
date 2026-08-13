@@ -4068,29 +4068,53 @@ function ConciliarExtratoTab({data,onUpdate}){
   // recarregam sozinhos ao reabrir essa aba. So essa conciliacao
   // especifica -- nao e um historico de varias, e' o "rascunho em
   // andamento" mais recente.
-  const LS_CONCILIACAO = "tesouraria_conciliacao_em_andamento";
+  // [13/08, CORRIGIDO -- bug real do Marcus] Duas chaves separadas agora,
+  // nao uma so. resultado (80 transacoes, bem maior) so muda 1x por
+  // conciliacao (upload do extrato, ou reset); cfgNovos muda toda hora
+  // (cada tecla digitada, cada checkbox). Antes as duas viviam juntas numa
+  // chave so, entao TODA mudanca de cfgNovos regravava o resultado inteiro
+  // de novo no localStorage -- escrita grande e sincrona, toda tecla.
+  // Suspeita real: isso pode ter travado o app por uma fracao de segundo
+  // bem na hora que o Marcus tocou "Lancar todos", abrindo brecha pro
+  // toque duplo passar antes do disabled do botao "pegar" visualmente
+  // (resultado: item lancado 3x). cfgNovos agora e' debounced (so escreve
+  // 400ms depois do ultimo toque), resultado escreve na hora mas so
+  // quando realmente muda.
+  const LS_RESULTADO = "tesouraria_conciliacao_resultado";
+  const LS_CFGNOVOS = "tesouraria_conciliacao_cfgnovos";
   const [resultado,setResultadoRaw]=useState(()=>{
-    try{ const s=localStorage.getItem(LS_CONCILIACAO); return s?JSON.parse(s).resultado:null; }catch(e){ return null; }
+    try{ const s=localStorage.getItem(LS_RESULTADO); return s?JSON.parse(s):null; }catch(e){ return null; }
   });
   const [load,setLoad]=useState(false);
   const [cfgNovos,setCfgNovosRaw]=useState(()=>{
-    try{ const s=localStorage.getItem(LS_CONCILIACAO); return s?JSON.parse(s).cfgNovos:{}; }catch(e){ return {}; }
+    try{ const s=localStorage.getItem(LS_CFGNOVOS); return s?JSON.parse(s):{}; }catch(e){ return {}; }
   });
-  // Wrappers que gravam no localStorage a cada mudanca -- funcao (nao
-  // direto setResultado/setCfgNovos) porque os dois precisam ser salvos
-  // JUNTOS na mesma chave (senao uma escrita pode sobrescrever a outra
-  // que ainda nao tinha rodado).
-  function persistirConciliacao(novoResultado,novoCfgNovos){
-    try{
-      if(novoResultado==null){ localStorage.removeItem(LS_CONCILIACAO); return; }
-      localStorage.setItem(LS_CONCILIACAO,JSON.stringify({resultado:novoResultado,cfgNovos:novoCfgNovos}));
-    }catch(e){} // storage cheio/bloqueado -- so nao persiste, nao quebra a tela
+  const cfgNovosTimeoutRef=useRef(null);
+  function setResultado(v){
+    setResultadoRaw(prev=>{
+      const nv=typeof v==="function"?v(prev):v;
+      try{
+        if(nv==null){ localStorage.removeItem(LS_RESULTADO); localStorage.removeItem(LS_CFGNOVOS); }
+        else localStorage.setItem(LS_RESULTADO,JSON.stringify(nv));
+      }catch(e){} // storage cheio/bloqueado -- so nao persiste, nao quebra a tela
+      return nv;
+    });
   }
-  function setResultado(v){ setResultadoRaw(prev=>{ const nv=typeof v==="function"?v(prev):v; persistirConciliacao(nv,cfgNovos); return nv; }); }
-  function setCfgNovos(v){ setCfgNovosRaw(prev=>{ const nv=typeof v==="function"?v(prev):v; persistirConciliacao(resultado,nv); return nv; }); }
+  function setCfgNovos(v){
+    setCfgNovosRaw(prev=>{
+      const nv=typeof v==="function"?v(prev):v;
+      if(cfgNovosTimeoutRef.current) clearTimeout(cfgNovosTimeoutRef.current);
+      cfgNovosTimeoutRef.current=setTimeout(()=>{
+        try{ localStorage.setItem(LS_CFGNOVOS,JSON.stringify(nv)); }catch(e){}
+      },400);
+      return nv;
+    });
+  }
   function descartarConciliacaoSalva(){
     if(!confirm("Descartar essa conciliação em andamento? Nada foi lançado ainda pelo que ficou pendente aqui -- só limpa o rascunho salvo."))return;
-    setResultadoRaw(null); setCfgNovosRaw({}); persistirConciliacao(null,{});
+    if(cfgNovosTimeoutRef.current) clearTimeout(cfgNovosTimeoutRef.current);
+    setResultadoRaw(null); setCfgNovosRaw({});
+    try{ localStorage.removeItem(LS_RESULTADO); localStorage.removeItem(LS_CFGNOVOS); }catch(e){}
   }
   const fileRef=useRef(null);
   // [NOVO 02/08] Conciliacao de extrato agora e por conta -- antes so
@@ -4221,6 +4245,13 @@ function ConciliarExtratoTab({data,onUpdate}){
   // nao da pra combinar isso numa escrita em lote generica sem arriscar
   // duas chamadas mirando a MESMA linha de fatura ao mesmo tempo).
   async function lancarTodosMarcados(){
+    // [13/08, CORRIGIDO -- bug real do Marcus] Trava direta aqui dentro,
+    // nao so no atributo disabled do botao -- se o app travar por uma
+    // fracao de segundo (ex: escrita grande no localStorage rodando bem
+    // antes do toque), o disabled pode demorar a "pegar" visualmente, e um
+    // toque duplo passa. Isso aqui bloqueia na hora, sem depender do
+    // React ter tido tempo de re-renderizar o botao.
+    if(load) return;
     const marcados=resultado.novos.filter(n=>cfgNovos[chaveNovo(n)]?.incluir);
     if(!marcados.length) return;
     setLoad(true);
@@ -9438,7 +9469,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260813.1711 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260813.2028 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -9521,7 +9552,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260813.1711
+      // HTML v3.20260813.2028
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
