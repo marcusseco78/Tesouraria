@@ -4090,8 +4090,40 @@ function ConciliarExtratoTab({data,onUpdate}){
   // (resultado: item lancado 3x). cfgNovos agora e' debounced (so escreve
   // 400ms depois do ultimo toque), resultado escreve na hora mas so
   // quando realmente muda.
-  const LS_RESULTADO = "tesouraria_conciliacao_resultado";
-  const LS_CFGNOVOS = "tesouraria_conciliacao_cfgnovos";
+  // [NOVO 02/08] Conciliacao de extrato agora e por conta -- antes so
+  // existia pra "CONTA" (PF), sem opcao nenhuma de trocar. Default:
+  // primeira conta ativa.
+  // [14/08, MOVIDO pra ANTES das chaves de localStorage -- bug real do
+  // Marcus] contaExtrato precisa existir DESDE o primeiro render pras
+  // chaves LS_RESULTADO/LS_CFGNOVOS conseguirem incluir ela -- inicializado
+  // direto do data.contas (sincrono), nao mais so via useEffect (que so
+  // roda DEPOIS do primeiro render, tarde demais pro useState inicial do
+  // resultado ja ler a chave certa).
+  const contasAtivasExt=useMemo(()=>(data.contas||[]).filter(c=>c.ativa!==false),[data.contas]);
+  const [contaExtrato,setContaExtrato]=useState(()=>{
+    const ativas=(data.contas||[]).filter(c=>c.ativa!==false);
+    return ativas.length?ativas[0].id:"";
+  });
+  useEffect(()=>{ if(!contaExtrato&&contasAtivasExt.length) setContaExtrato(contasAtivasExt[0].id); },[contasAtivasExt,contaExtrato]);
+
+  // [13/08, CORRIGIDO -- bug real do Marcus] Duas chaves separadas agora,
+  // nao uma so. resultado (80 transacoes, bem maior) so muda 1x por
+  // conciliacao (upload do extrato, ou reset); cfgNovos muda toda hora
+  // (cada tecla digitada, cada checkbox). Antes as duas viviam juntas numa
+  // chave so, entao TODA mudanca de cfgNovos regravava o resultado inteiro
+  // de novo no localStorage -- escrita grande e sincrona, toda tecla.
+  // Suspeita real: isso pode ter travado o app por uma fracao de segundo
+  // bem na hora que o Marcus tocou "Lancar todos", abrindo brecha pro
+  // toque duplo passar antes do disabled do botao "pegar" visualmente
+  // (resultado: item lancado 3x). cfgNovos agora e' debounced (so escreve
+  // 400ms depois do ultimo toque), resultado escreve na hora mas so
+  // quando realmente muda.
+  // [14/08, CORRIGIDO -- bug real do Marcus] Chave agora leva o ID da
+  // conta junto (LS_RESULTADO_PJ, LS_RESULTADO_CONTA etc.) -- antes era
+  // uma chave global so, entao trocar de PJ pra PF sobrescrevia (e a volta
+  // pra PJ perdia) o rascunho da outra conta. Cada conta guarda o seu.
+  const LS_RESULTADO = "tesouraria_conciliacao_resultado_"+(contaExtrato||"_");
+  const LS_CFGNOVOS = "tesouraria_conciliacao_cfgnovos_"+(contaExtrato||"_");
   const [resultado,setResultadoRaw]=useState(()=>{
     try{ const s=localStorage.getItem(LS_RESULTADO); return s?JSON.parse(s):null; }catch(e){ return null; }
   });
@@ -4127,12 +4159,20 @@ function ConciliarExtratoTab({data,onUpdate}){
     try{ localStorage.removeItem(LS_RESULTADO); localStorage.removeItem(LS_CFGNOVOS); }catch(e){}
   }
   const fileRef=useRef(null);
-  // [NOVO 02/08] Conciliacao de extrato agora e por conta -- antes so
-  // existia pra "CONTA" (PF), sem opcao nenhuma de trocar. Default:
-  // primeira conta ativa.
-  const contasAtivasExt=useMemo(()=>(data.contas||[]).filter(c=>c.ativa!==false),[data.contas]);
-  const [contaExtrato,setContaExtrato]=useState("");
-  useEffect(()=>{ if(!contaExtrato&&contasAtivasExt.length) setContaExtrato(contasAtivasExt[0].id); },[contasAtivasExt,contaExtrato]);
+
+  // [14/08] contaExtrato mudou de conta -- recarrega o rascunho salvo
+  // DESSA conta especifica (ou null, se ela nunca teve conciliacao salva),
+  // sem precisar trocar de aba e voltar pra "destravar" a leitura certa.
+  useEffect(()=>{
+    if(!contaExtrato) return;
+    try{
+      const sR=localStorage.getItem(LS_RESULTADO);
+      setResultadoRaw(sR?JSON.parse(sR):null);
+      const sC=localStorage.getItem(LS_CFGNOVOS);
+      setCfgNovosRaw(sC?JSON.parse(sC):{});
+    }catch(e){ setResultadoRaw(null); setCfgNovosRaw({}); }
+    // eslint-disable-next-line
+  },[contaExtrato]);
 
   // Chave ESTAVEL de um "novo" -- nunca a posicao no array. Usar indice como
   // chave e uma armadilha: toda vez que um item e lancado/dispensado, a
@@ -4325,7 +4365,13 @@ function ConciliarExtratoTab({data,onUpdate}){
     setLoad(true);
     try{
       const apelidoAtual=(cfgNovos[chaveNovo(n)]||{}).apelido||"";
-      const r=await api({action:"vincularAliasConciliacao",row:candidato.row,descricaoExtrato:n.descricao,identificador:n.identificador||null,apelido:apelidoAtual});
+      // [14/08, NOVO -- regra de mescla combinada com o Marcus] Manda a
+      // data e o valor REAIS do extrato -- o backend agora atualiza a
+      // linha existente com esses dois (fonte de verdade sobre o que
+      // aconteceu), sem tocar em categoria/apelido/vinculo de recorrencia
+      // (que continuam do jeito que já estavam no app).
+      const r=await api({action:"vincularAliasConciliacao",row:candidato.row,descricaoExtrato:n.descricao,
+        identificador:n.identificador||null,apelido:apelidoAtual,dataExtrato:n.data,valorExtrato:n.valor});
       onUpdate(r);
       setResultado(res=>({...res,
         novos:res.novos.filter(x=>chaveNovo(x)!==chaveNovo(n)),
@@ -8861,7 +8907,15 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           <div style={{fontSize:10,fontWeight:700,color:C.textSub,marginBottom:4}}>CONTA QUE PAGA ESSA FATURA</div>
           <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
             {contasAtivasCartaoCfg.map(c=>{
-              const contaAtual=(data.config&&data.config["CONTA_CARTAO_"+cartao])||"CONTA";
+              // [13/08, CORRIGIDO -- bug real do Marcus] Antes lia
+              // data.config["CONTA_CARTAO_"+cartao] -- resto da migracao
+              // antiga (config -> aba CARTOES de verdade). O botao SALVAVA
+              // certo no lugar novo (editarCartao escreve na aba CARTOES),
+              // mas a tela continuava lendo do lugar velho, que nunca mais
+              // e atualizado -- por isso "clicava em PJ e nao mudava nada"
+              // na tela, mesmo a planilha tendo gravado certo por baixo.
+              const cartaoAtualObj=(data.cartoes||[]).find(cc=>cc.id===cartao);
+              const contaAtual=(cartaoAtualObj&&cartaoAtualObj.conta)||"CONTA";
               return <button key={c.id} onClick={()=>salvarContaCartao(c.id)} disabled={loadContaCartao}
                 style={{padding:"6px 10px",borderRadius:16,fontSize:12,fontWeight:700,border:"none",cursor:"pointer",
                   background:contaAtual===c.id?C.accent:C.surface,color:contaAtual===c.id?"#fff":C.textMuted,
@@ -9514,7 +9568,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260813.2055 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260814.1857 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -9597,7 +9651,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260813.2055
+      // HTML v3.20260814.1857
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
