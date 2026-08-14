@@ -633,16 +633,15 @@ function periodoEnvelopeCompacto(dataIni,dataFim){
 }
 const PERIODICIDADE_LABEL={"":"Projeto único",semanal:"Semanal",quinzenal:"Quinzenal",mensal:"Mensal",trimestral:"Trimestral",semestral:"Semestral"};
 const DIAS_SEMANA_LABEL=["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
-// [13/08, NOVO] Movido pra global -- antes só existia dentro de
-// TransferenciaEspelhada (Ferramentas), a tela de conciliação de extrato
-// tinha o mesmo checkbox "criar lado espelhado" mas travado sempre em
-// "MOVIMENTACAO", sem opção de escolher Distribuição/Recebimento de
-// Lucros (achado real do Marcus 13/08). Uma fonte só agora, as duas telas
-// leem daqui -- nunca mais duas listas que podem divergir.
+// [13/08, CORRIGIDO -- confusao real do Marcus] Era 3 pilulas
+// (Movimentacao/Distribuicao/Recebimento) escolhidas a mao por perna --
+// Distribuicao e Recebimento sao o MESMO movimento, so nomeado diferente
+// de cada lado (quem manda "distribui", quem recebe "recebe"). Agora e' 1
+// escolha so pro PAR inteiro: o sistema decide sozinho qual texto vai em
+// cada perna (ver lancarTransferenciaEspelhada no backend).
 const INTENCOES=[
   {id:"MOVIMENTACAO",label:"Movimentação Entre Contas"},
-  {id:"DISTRIBUICAO_LUCROS",label:"Transf. Distribuição de Lucros"},
-  {id:"RECEBIMENTO_LUCROS",label:"Transf. Recebimento de Lucros"},
+  {id:"LUCROS",label:"Distribuição/Recebimento de Lucros"},
 ];
 // Etiqueta visual de envelope customizado -- mesmo padrao do TagEnvelopeDCP,
 // cor propria (roxo) pra nao confundir com o azul do DCP. Quando `saldo` e
@@ -4543,11 +4542,14 @@ function ConciliarExtratoTab({data,onUpdate}){
                 original). */}
             {!cfg.pagFatura&&cfg.categoria==="TRANSFERENCIA"&&(data.contas||[]).filter(c=>c.ativa!==false).length>1&&
               <div style={{background:C.purpleLight||"#F5F3FF",border:"1px solid "+C.purple,borderRadius:6,padding:"8px 9px",marginBottom:8}}>
-                <label style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,fontSize:10,color:C.text,cursor:"pointer",fontWeight:700}}>
+                <label style={{display:"flex",alignItems:"center",gap:6,marginBottom:2,fontSize:10,color:C.text,cursor:"pointer",fontWeight:700}}>
                   <input type="checkbox" checked={!!cfg.criarEspelho} onChange={e=>setCfgNovos({...cfgNovos,[chave]:{...cfg,criarEspelho:e.target.checked}})}/>
                   Criar o lado espelhado na outra conta também
                 </label>
                 {cfg.criarEspelho&&<>
+                <div style={{fontSize:9,color:C.textMuted,marginBottom:6}}>
+                  A escolha abaixo é do movimento inteiro (as duas pontas) — o sistema decide sozinho qual texto vai em cada lado.
+                </div>
                 <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:6}}>
                   {INTENCOES.map(i=>
                     <button key={i.id} onClick={()=>setCfgNovos({...cfgNovos,[chave]:{...cfg,intencaoEspelho:i.id}})}
@@ -4557,7 +4559,7 @@ function ConciliarExtratoTab({data,onUpdate}){
                       {i.label}
                     </button>)}
                 </div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:cfg.contaEspelho?6:0}}>
                   {(data.contas||[]).filter(c=>c.ativa!==false&&c.id!==contaExtrato).map(c=>
                     <button key={c.id} onClick={()=>setCfgNovos({...cfgNovos,[chave]:{...cfg,contaEspelho:c.id}})}
                       style={{padding:"4px 9px",borderRadius:6,border:"1px solid "+(cfg.contaEspelho===c.id?C.purple:C.border),
@@ -4566,6 +4568,16 @@ function ConciliarExtratoTab({data,onUpdate}){
                       {n.valor<0?"Entra em ":"Sai de "}{c.nome||c.id}
                     </button>)}
                 </div>
+                {cfg.contaEspelho&&(()=>{
+                  const ehLucros=(cfg.intencaoEspelho||"MOVIMENTACAO")==="LUCROS";
+                  const textoAqui=cfg.apelido?cfg.apelido.toUpperCase():(ehLucros?(n.valor<0?"TRANSF. DISTRIBUIÇÃO DE LUCROS":"TRANSF. RECEBIMENTO DE LUCROS"):"MOVIMENTAÇÃO ENTRE CONTAS");
+                  const textoLa=cfg.apelido?cfg.apelido.toUpperCase():(ehLucros?(n.valor<0?"TRANSF. RECEBIMENTO DE LUCROS":"TRANSF. DISTRIBUIÇÃO DE LUCROS"):"MOVIMENTAÇÃO ENTRE CONTAS");
+                  const nomeLa=(data.contas||[]).find(c=>c.id===cfg.contaEspelho);
+                  return <div style={{fontSize:9,color:C.textMuted,background:"#fff",borderRadius:5,padding:"6px 8px",lineHeight:1.5}}>
+                    <b>Aqui ({contaExtrato}):</b> {textoAqui} ({fmt(n.valor)})<br/>
+                    <b>Lá ({nomeLa?.nome||cfg.contaEspelho}):</b> {textoLa} ({fmt(-n.valor)})
+                  </div>;
+                })()}
                 </>}
               </div>}
 
@@ -4679,6 +4691,21 @@ function TransferenciaEspelhada({data,onUpdate}){
       <div style={{fontSize:10,fontWeight:700,color:C.textMuted,marginBottom:4}}>NOME DE EXIBIÇÃO (opcional — se vazio, usa o padrão da intenção)</div>
       <input type="text" value={apelido} onChange={e=>setApelido(e.target.value)} placeholder="ex: Distr. lucros agosto"
         style={{width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",marginBottom:14}}/>
+
+      {origem&&destino&&origem!==destino&&(()=>{
+        // [13/08] Mesma previa clara adicionada na conciliacao -- mostra o
+        // texto exato de cada lado antes de lancar, pra nunca sobrar
+        // duvida de qual lado fica com qual rotulo.
+        const ehLucros=intencao==="LUCROS";
+        const nomeOrigem=(contasAtivas.find(c=>c.id===origem)||{}).nome||origem;
+        const nomeDestino=(contasAtivas.find(c=>c.id===destino)||{}).nome||destino;
+        const textoOrigem=apelido?apelido.toUpperCase():(ehLucros?"TRANSF. DISTRIBUIÇÃO DE LUCROS":"MOVIMENTAÇÃO ENTRE CONTAS");
+        const textoDestino=apelido?apelido.toUpperCase():(ehLucros?"TRANSF. RECEBIMENTO DE LUCROS":"MOVIMENTAÇÃO ENTRE CONTAS");
+        return <div style={{fontSize:11,color:C.textMuted,background:C.borderLight,borderRadius:8,padding:"8px 10px",lineHeight:1.6,marginBottom:14}}>
+          <b>{nomeOrigem} (sai):</b> {textoOrigem}<br/>
+          <b>{nomeDestino} (entra):</b> {textoDestino}
+        </div>;
+      })()}
 
       <button onClick={lancarPar} disabled={load}
         style={{width:"100%",padding:"12px",borderRadius:10,background:C.purple,color:"#fff",
@@ -9487,7 +9514,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260813.2043 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260813.2055 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -9570,7 +9597,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260813.2043
+      // HTML v3.20260813.2055
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
