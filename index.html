@@ -4975,6 +4975,31 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
   const [novoPlantoes,setNovoPlantoes]=useState("");
   const [loadPlantoes,setLoadPlantoes]=useState(false);
   const [vincularRegraCategoria,setVincularRegraCategoria]=useState(false);
+  const [loadPar,setLoadPar]=useState(false);
+
+  // [14/08, NOVO -- pedido do Marcus] Identifica se esse item é uma
+  // transferência espelhada (tem obs.parId) e, se for, se o par existe de
+  // verdade em data.fluxo (que traz TODAS as contas juntas) ou ficou
+  // órfão -- calculado no cliente, sem chamada nova ao backend, já que
+  // data.fluxo já tem tudo que precisa (row/forma/valor/data/obs de cada
+  // linha).
+  const parInfo=useMemo(()=>{
+    let o={};try{o=JSON.parse(item.obs||"{}");}catch(e){}
+    if(!o.parId) return null;
+    const par=(data.fluxo||[]).find(f=>{
+      if(f.row===item.row) return false;
+      let fo={};try{fo=JSON.parse(f.obs||"{}");}catch(e){}
+      return fo.parId===o.parId;
+    });
+    return {parId:o.parId, par};
+  },[item.obs,item.row,data.fluxo]);
+
+  async function criarLadoFaltante(contaAlvo){
+    setLoadPar(true);
+    try{ onUpdate(await api({action:"criarLadoFaltantePar",row:item.row,contaFaltante:contaAlvo})); }
+    catch(e){ alert(e.message); }
+    setLoadPar(false);
+  }
 
   const hj=hoje();
   const ehFatura=item.tipo==="CARTAO PF"||item.tipo==="CARTAO PJ";
@@ -5070,6 +5095,29 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
   return <div style={{background:execMode?C.greenLight:C.accentLight,padding:"10px 14px",
     borderBottom:"1px solid "+(execMode?"#BBF7D0":C.accent),
     borderLeft:"3px solid "+(execMode?C.green:C.accent)}}>
+    {parInfo&&(()=>{
+      if(parInfo.par){
+        const nomeContaPar=(data.contas||[]).find(c=>c.id===parInfo.par.forma);
+        return <div style={{marginBottom:8,fontSize:10,background:C.greenLight,color:C.green,borderRadius:6,padding:"5px 8px",fontWeight:700}}>
+          🔗 Par encontrado — {nomeContaPar?.nome||parInfo.par.forma} · {fmtD(parInfo.par.data)} · {fmt(parInfo.par.valor)}
+        </div>;
+      }
+      // Órfão -- oferece criar o lado que falta em qualquer conta ativa
+      // que ainda não tem esse parId (normalmente só sobra 1 opção óbvia,
+      // mas mostra todas pra cobrir o caso de mais de 2 contas).
+      const contasSemPar=(data.contas||[]).filter(c=>c.ativa!==false&&c.id!==item.forma);
+      return <div style={{marginBottom:8,background:"#FEF3C7",borderRadius:6,padding:"7px 9px"}}>
+        <div style={{fontSize:10,color:"#92400E",fontWeight:700,marginBottom:5}}>⚠️ Sem par — essa transferência ficou com só 1 lado</div>
+        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+          {contasSemPar.map(c=>
+            <button key={c.id} onClick={()=>criarLadoFaltante(c.id)} disabled={loadPar}
+              style={{fontSize:10,fontWeight:700,padding:"4px 9px",borderRadius:6,border:"none",cursor:"pointer",fontFamily:"inherit",
+                background:"#D97706",color:"#fff"}}>
+              {loadPar?"Criando…":"Criar o lado que falta em "+(c.nome||c.id)}
+            </button>)}
+        </div>
+      </div>;
+    })()}
     {diaTipoInfo&&<div style={{display:"flex",gap:4,marginBottom:8}}>
       {[["FIXO","Fixo"],["N_UTIL",diaTipoInfo.tipo==="N_UTIL"&&diaTipoInfo.n?diaTipoInfo.n+"º útil":"Nº útil"],["ULTIMO_UTIL","Último útil"]].map(([id,label])=>{
         const ativo=id===diaTipoInfo.tipo;
@@ -9609,7 +9657,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260814.1941 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260814.2014 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -9692,7 +9740,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260814.1941
+      // HTML v3.20260814.2014
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
