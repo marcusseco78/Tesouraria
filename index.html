@@ -4252,6 +4252,12 @@ function ConciliarExtratoTab({data,onUpdate}){
     const cfg=cfgNovos[chaveNovo(n)];
     if(!cfg) return;
     if(cfg.criarEspelho&&!cfg.contaEspelho){ alert("Escolha a conta espelhada antes de lançar."); return; }
+    // [14/08, NOVO -- regra combinada com o Marcus] Sem correspondência no
+    // app, ninguém além do usuário sabe a categoria certa -- agora é
+    // obrigatória (antes, esquecer de marcar caía silencioso pra
+    // "DESPESA"/"GERAL" genérico no backend). Não vale pra pagamento de
+    // fatura nem pra espelho, que usam outros campos pra se classificar.
+    if(!cfg.pagFatura&&!cfg.criarEspelho&&!cfg.categoria){ alert("Escolha uma categoria antes de lançar."); return; }
     setLoad(true);
     try{
       let r;
@@ -4304,9 +4310,37 @@ function ConciliarExtratoTab({data,onUpdate}){
     if(load) return;
     const marcados=resultado.novos.filter(n=>cfgNovos[chaveNovo(n)]?.incluir);
     if(!marcados.length) return;
+    // [14/08, CORRIGIDO] "Criar espelho" marcado sem escolher a conta ainda
+    // não é um espelho válido -- avisa antes de lançar em vez de deixar
+    // cair como lançamento comum sem querer.
+    const espelhoIncompleto=marcados.filter(n=>{const c=cfgNovos[chaveNovo(n)]; return c.criarEspelho&&!c.contaEspelho;});
+    if(espelhoIncompleto.length){
+      alert("Falta escolher a conta espelhada em "+espelhoIncompleto.length+" item(ns) marcado(s) com \"Criar o lado espelhado\" ativado.");
+      return;
+    }
+    // [14/08, NOVO -- mesma regra do lançamento individual] Sem
+    // correspondência no app, categoria é obrigatória -- checa TODOS antes
+    // de lançar qualquer um, pra não lançar metade e travar no meio.
+    const semCategoria=marcados.filter(n=>{
+      const c=cfgNovos[chaveNovo(n)];
+      const ehEspelhoValido=c.criarEspelho&&c.contaEspelho;
+      return !c.pagFatura&&!ehEspelhoValido&&!c.categoria;
+    });
+    if(semCategoria.length){
+      alert("Falta escolher categoria em "+semCategoria.length+" item(ns) marcado(s) -- marca a categoria de cada um antes de lançar todos.");
+      return;
+    }
     setLoad(true);
     try{
-      const normais=marcados.filter(n=>!cfgNovos[chaveNovo(n)].pagFatura);
+      // [14/08, CORRIGIDO -- bug real do Marcus] "Lançar todos" jogava
+      // QUALQUER item marcado (mesmo com "Criar o lado espelhado" ativado)
+      // dentro do lote comum (lancarLote), que so cria UM lado -- o espelho
+      // nunca era criado nesse caminho, só no botão individual. Agora
+      // espelho vira um terceiro grupo, processado um a um (igual
+      // pagamento de fatura já era), cada um com sua própria chamada de
+      // lancarTransferenciaEspelhada.
+      const espelhos=marcados.filter(n=>{const c=cfgNovos[chaveNovo(n)]; return !c.pagFatura&&c.criarEspelho&&c.contaEspelho;});
+      const normais=marcados.filter(n=>{const c=cfgNovos[chaveNovo(n)]; return !c.pagFatura&&!(c.criarEspelho&&c.contaEspelho);});
       const pagamentos=marcados.filter(n=>cfgNovos[chaveNovo(n)].pagFatura);
 
       if(normais.length){
@@ -4330,6 +4364,13 @@ function ConciliarExtratoTab({data,onUpdate}){
             onUpdate(await api({action:"vincularCategoriaRegra",descricao:n.descricao,categoria:cfg.categoria,apelido:cfg.apelido||""}));
           }
         }
+      }
+      for(const n of espelhos){
+        const cfg=cfgNovos[chaveNovo(n)];
+        const origem=n.valor<0?(contaExtrato||"CONTA"):cfg.contaEspelho;
+        const destino=n.valor<0?cfg.contaEspelho:(contaExtrato||"CONTA");
+        onUpdate(await api({action:"lancarTransferenciaEspelhada",data:n.data,valor:Math.abs(Number(n.valor)),
+          contaOrigem:origem,contaDestino:destino,intencao:cfg.intencaoEspelho||"MOVIMENTACAO",apelido:cfg.apelido||""}));
       }
       for(const n of pagamentos){
         const cfg=cfgNovos[chaveNovo(n)];
@@ -9568,7 +9609,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260814.1857 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260814.1941 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -9651,7 +9692,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260814.1857
+      // HTML v3.20260814.1941
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
