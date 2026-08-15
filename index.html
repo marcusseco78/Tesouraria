@@ -219,6 +219,37 @@ function tipoDisplay(tipo,data){
   if(t==="CARTAO PJ") return nomeCartao("PJ",data);
   return tipo;
 }
+// [14/08, NOVO -- pedido do Marcus] Selo de transferencia entre contas:
+// sigla da conta (ex: NUPF/NUPJ, campo novo na aba CONTAS) + seta na
+// direcao do dinheiro + sigla da outra conta (achada pelo parId em
+// data.fluxo) ou "?" se essa linha ainda nao tem parId (transferencia
+// antiga, lancada antes desse mecanismo existir). Compartilhado entre o
+// selo da lista (Fluxo/Historico) e o painel de edicao -- mesma logica,
+// nunca calculada 2 vezes de jeitos diferentes.
+function siglaConta(contaId,data){
+  const c=(data.contas||[]).find(x=>x.id===contaId);
+  return (c&&c.sigla)||String(contaId||"?").toUpperCase().slice(0,4);
+}
+function infoTransferencia(item,data){
+  const t=String(item.tipo||item.categoria||"").toUpperCase();
+  if(t.indexOf("TRANSFERENCIA")===-1) return null;
+  let o={};try{o=JSON.parse(item.obs||"{}");}catch(e){}
+  const minhaSigla=siglaConta(item.forma,data);
+  let outraSigla="?",temPar=false;
+  if(o.parId){
+    const par=(data.fluxo||[]).find(f=>{
+      if(f.row===item.row) return false;
+      let fo={};try{fo=JSON.parse(f.obs||"{}");}catch(e){}
+      return fo.parId===o.parId;
+    });
+    if(par){ outraSigla=siglaConta(par.forma,data); temPar=true; }
+  }
+  const saindo=item.valor<0;
+  return {
+    minhaSigla, outraSigla, temPar, parId:o.parId||null,
+    label: saindo?(minhaSigla+" → "+outraSigla):(outraSigla+" → "+minhaSigla)
+  };
+}
 const DOW_PT=["DOM","SEG","TER","QUA","QUI","SEX","SAB"];
 const diaSemana=s=>{const m=String(s||"").match(/^(\d{4})-(\d{2})-(\d{2})/);if(!m)return"";const d=new Date(Number(m[1]),Number(m[2])-1,Number(m[3]),12,0,0);return DOW_PT[d.getDay()];};
 // Nome de exibicao: linha de provisao "DCP N" aparece como "Saldo Despesas
@@ -5001,6 +5032,17 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
     setLoadPar(false);
   }
 
+  // [14/08, NOVO] Pra transferencia SEM parId nenhum (lancada direto, fora
+  // do mecanismo de espelho) -- "adota" o item, gravando um parId novo
+  // nele e criando o outro lado, na mesma tacada.
+  const [intencaoVincular,setIntencaoVincular]=useState("MOVIMENTACAO");
+  async function vincularComoEspelho(contaAlvo){
+    setLoadPar(true);
+    try{ onUpdate(await api({action:"vincularComoEspelho",row:item.row,contaFaltante:contaAlvo,intencao:intencaoVincular})); }
+    catch(e){ alert(e.message); }
+    setLoadPar(false);
+  }
+
   const hj=hoje();
   const ehFatura=item.tipo==="CARTAO PF"||item.tipo==="CARTAO PJ";
   const podeExecutar=item.status==="PROGRAMADO";
@@ -5114,6 +5156,38 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
               style={{fontSize:10,fontWeight:700,padding:"4px 9px",borderRadius:6,border:"none",cursor:"pointer",fontFamily:"inherit",
                 background:"#D97706",color:"#fff"}}>
               {loadPar?"Criando…":"Criar o lado que falta em "+(c.nome||c.id)}
+            </button>)}
+        </div>
+      </div>;
+    })()}
+    {!parInfo&&(()=>{
+      // [14/08, NOVO] Transferencia que NUNCA teve parId (lancada direto,
+      // fora do mecanismo de espelho -- ex: itens antigos da conciliacao).
+      // Mesmas pilulas de intencao (Movimentacao/Lucros) + conta que a
+      // tela de Ferramentas ja usa, com as siglas pedidas pelo Marcus.
+      const it=infoTransferencia(item,data);
+      if(!it) return null;
+      const outrasContas=(data.contas||[]).filter(c=>c.ativa!==false&&c.id!==item.forma);
+      if(!outrasContas.length) return null;
+      return <div style={{marginBottom:8,background:C.purpleLight||"#F5F3FF",border:"1px solid "+C.purple,borderRadius:6,padding:"7px 9px"}}>
+        <div style={{fontSize:10,color:C.purple,fontWeight:700,marginBottom:5}}>
+          {it.label} — vincular como transferência espelhada?
+        </div>
+        <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:6}}>
+          {INTENCOES.map(i=>
+            <button key={i.id} onClick={()=>setIntencaoVincular(i.id)}
+              style={{padding:"3px 8px",borderRadius:12,border:"1px solid "+(intencaoVincular===i.id?C.purple:C.border),
+                background:intencaoVincular===i.id?C.purple:"#fff",color:intencaoVincular===i.id?"#fff":C.textMuted,
+                fontSize:9,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+              {i.label}
+            </button>)}
+        </div>
+        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+          {outrasContas.map(c=>
+            <button key={c.id} onClick={()=>vincularComoEspelho(c.id)} disabled={loadPar}
+              style={{fontSize:10,fontWeight:700,padding:"4px 9px",borderRadius:6,border:"none",cursor:"pointer",fontFamily:"inherit",
+                background:C.purple,color:"#fff"}}>
+              {loadPar?"Vinculando…":"Vincular com "+siglaConta(c.id,data)}
             </button>)}
         </div>
       </div>;
@@ -5560,8 +5634,13 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
                 terceira linha propria, com flex-wrap -- antes disputavam
                 espaco com o nome ou o subtitulo e cortavam quando nao
                 cabiam. Reportado pelo Marcus 24/07. */}
-            {(selo||confirmadoExtrato||(item.categoria!=="DCP_PROVISAO"&&item.dcpEnvelope)||infoEnvelopeItem(item))&&
+            {(selo||confirmadoExtrato||(item.categoria!=="DCP_PROVISAO"&&item.dcpEnvelope)||infoEnvelopeItem(item)||infoTransferencia(item,data))&&
               <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:3,alignItems:"center"}}>
+                {(()=>{const it=infoTransferencia(item,data); return it&&
+                  <span style={{fontSize:9,fontWeight:800,padding:"1px 6px",borderRadius:8,
+                    background:it.temPar?C.purpleLight:"#FEF3C7",color:it.temPar?C.purple:"#92400E"}}>
+                    {it.label}{!it.temPar&&" ⚠"}
+                  </span>;})()}
                 {selo&&<span style={{fontSize:9,fontWeight:700,color:corItem}}>{selo}</span>}
                 {confirmadoExtrato&&<span style={{fontSize:9,background:C.greenLight,color:C.green,padding:"1px 6px",borderRadius:8,fontWeight:700}}>✅ Extrato</span>}
                 <TagEnvelopeDCP envelope={item.categoria!=="DCP_PROVISAO"?item.dcpEnvelope:null} futuro={item.status==="PROGRAMADO"}/>
@@ -5719,8 +5798,13 @@ function Historico({data,onUpdate,destaque,onIrPara}){
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:12,fontWeight:600,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}</div>
               <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{item.categoria==="DCP_PROVISAO"?periodoDCP(item.data):(<>{tipoDisplay(item.tipo,data)}{item.categoria&&item.categoria!==item.tipo?" · "+item.categoria:""}</>)}</div>
-              {(selo||confirmadoExtrato||(item.categoria!=="DCP_PROVISAO"&&item.dcpEnvelope)||infoEnvelopeItem(item))&&
+              {(selo||confirmadoExtrato||(item.categoria!=="DCP_PROVISAO"&&item.dcpEnvelope)||infoEnvelopeItem(item)||infoTransferencia(item,data))&&
                 <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:3,alignItems:"center"}}>
+                  {(()=>{const it=infoTransferencia(item,data); return it&&
+                    <span style={{fontSize:9,fontWeight:800,padding:"1px 6px",borderRadius:8,
+                      background:it.temPar?C.purpleLight:"#FEF3C7",color:it.temPar?C.purple:"#92400E"}}>
+                      {it.label}{!it.temPar&&" ⚠"}
+                    </span>;})()}
                   {selo&&<span style={{fontSize:9,fontWeight:700,color:corItem}}>{selo}</span>}
                   {confirmadoExtrato&&<span style={{fontSize:9,background:C.greenLight,color:C.green,padding:"1px 6px",borderRadius:8,fontWeight:700}}>✅ Extrato</span>}
                   <TagEnvelopeDCP envelope={item.categoria!=="DCP_PROVISAO"?item.dcpEnvelope:null} futuro={false}/>
@@ -9657,7 +9741,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260814.2014 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260814.2127 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -9740,7 +9824,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260814.2014
+      // HTML v3.20260814.2127
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
