@@ -673,7 +673,32 @@ const DIAS_SEMANA_LABEL=["Domingo","Segunda","Terça","Quarta","Quinta","Sexta",
 const INTENCOES=[
   {id:"MOVIMENTACAO",label:"Movimentação Entre Contas"},
   {id:"LUCROS",label:"Distribuição/Recebimento de Lucros"},
+  {id:"EMPRESTIMO_SOCIO",label:"Empréstimo p/ Sócios (PJ empresta)"},
+  {id:"PAGAMENTO_EMPRESTIMO_SOCIO",label:"Pagamento Empréstimo p/ Sócio"},
+  {id:"EMPRESTIMO_PJ",label:"Empréstimo p/ PJ (sócio empresta)"},
+  {id:"PAGAMENTO_EMPRESTIMO_PJ",label:"Pagamento Empréstimo p/ PJ"},
+  {id:"RESSARCIMENTO",label:"Ressarcimento Despesa PJ"},
+  {id:"PROLABORE",label:"Pró-labore"},
 ];
+// [15/08, NOVO] Mesma tabela do backend (TEXTOS_INTENCAO em
+// Tesouraria_v3.txt) -- so pra montar a prévia no front antes de lançar.
+// "mesmo" = texto identico nos 2 lados; "origem"/"destino" = texto
+// diferente, origem e' sempre quem debita (sai), destino quem credita
+// (entra) -- nunca calculado 2 jeitos diferentes entre front e back.
+const TEXTOS_INTENCAO_FRONT={
+  MOVIMENTACAO:{mesmo:"MOVIMENTAÇÃO ENTRE CONTAS"},
+  LUCROS:{origem:"TRANSF. DISTRIBUIÇÃO DE LUCROS",destino:"TRANSF. RECEBIMENTO DE LUCROS"},
+  EMPRESTIMO_SOCIO:{mesmo:"EMPRÉSTIMO P/ SÓCIOS"},
+  PAGAMENTO_EMPRESTIMO_SOCIO:{mesmo:"PAGAMENTO EMPRÉSTIMO P/ SÓCIO"},
+  EMPRESTIMO_PJ:{mesmo:"EMPRÉSTIMO P/ PJ"},
+  PAGAMENTO_EMPRESTIMO_PJ:{mesmo:"PAGAMENTO EMPRÉSTIMO P/ PJ"},
+  RESSARCIMENTO:{origem:"PAGAMENTO RESSARCIMENTO DESPESAS PJ",destino:"RESSARCIMENTO DESPESA PJ"},
+  PROLABORE:{origem:"PAGAMENTO PRÓ-LABORE",destino:"PRÓ-LABORE"},
+};
+function textoLadoIntencao(intencao,ehOrigem){
+  const t=TEXTOS_INTENCAO_FRONT[intencao]||TEXTOS_INTENCAO_FRONT.MOVIMENTACAO;
+  return t.mesmo||(ehOrigem?t.origem:t.destino);
+}
 // Etiqueta visual de envelope customizado -- mesmo padrao do TagEnvelopeDCP,
 // cor propria (roxo) pra nao confundir com o azul do DCP. Quando `saldo` e
 // passado (so no lancamento MAIS RECENTE classificado no periodo relevante),
@@ -4272,7 +4297,13 @@ function ConciliarExtratoTab({data,onUpdate}){
   async function confirmarBaixa(item){
     setLoad(true);
     try{
-      const r=await api({action:"baixa",row:item.row,valorReal:item.valor,dataReal:item.dataReal});
+      // [15/08, CORRIGIDO -- bug real do Marcus] Mandava item.valor (o
+      // PROGRAMADO/antigo), nunca o valor de verdade do extrato -- com
+      // tolerância mais larga agora (2,5%), isso teria virado erro
+      // silencioso permanente toda vez que a estimativa programada
+      // diferisse um pouco do real. item.valorReal é o valor de verdade,
+      // vindo direto do extrato (ver conciliarExtrato no backend).
+      const r=await api({action:"baixa",row:item.row,valorReal:item.valorReal,dataReal:item.dataReal});
       onUpdate(r);
       setResultado(res=>({...res,paraBaixar:res.paraBaixar.filter(x=>x.row!==item.row)}));
     }catch(e){ alert(e.message); }
@@ -4283,6 +4314,10 @@ function ConciliarExtratoTab({data,onUpdate}){
     const cfg=cfgNovos[chaveNovo(n)];
     if(!cfg) return;
     if(cfg.criarEspelho&&!cfg.contaEspelho){ alert("Escolha a conta espelhada antes de lançar."); return; }
+    // [15/08, NOVO -- combinado com o Marcus] Transferência nova nunca cai
+    // num padrão sozinha -- precisa escolher a finalidade (Movimentação,
+    // Lucros, Empréstimo, Ressarcimento, Pró-labore...) antes de lançar.
+    if(cfg.criarEspelho&&!cfg.intencaoEspelho){ alert("Escolha a finalidade da transferência (Movimentação, Lucros, Empréstimo etc.) antes de lançar."); return; }
     // [14/08, NOVO -- regra combinada com o Marcus] Sem correspondência no
     // app, ninguém além do usuário sabe a categoria certa -- agora é
     // obrigatória (antes, esquecer de marcar caía silencioso pra
@@ -4525,17 +4560,22 @@ function ConciliarExtratoTab({data,onUpdate}){
         <div style={{fontSize:11,fontWeight:700,color:C.accent,marginBottom:6,letterSpacing:".05em"}}>
           ✅ JÁ DEBITOU — DAR BAIXA ({resultado.paraBaixar.length})
         </div>
-        {resultado.paraBaixar.map(item=><div key={item.row} style={{background:C.accentLight,borderRadius:8,padding:"10px 12px",marginBottom:6}}>
+        {resultado.paraBaixar.map(item=>{
+          const difValor=Math.abs((item.valorReal??item.valor)-item.valor)>0.01;
+          return <div key={item.row} style={{background:C.accentLight,borderRadius:8,padding:"10px 12px",marginBottom:6}}>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
             <span style={{fontSize:13,fontWeight:600,color:C.text}}>{item.desc}</span>
-            <span style={{fontSize:13,fontWeight:700,color:C.red}}>{fmt(item.valor)}</span>
+            <span style={{fontSize:13,fontWeight:700,color:C.red}}>{fmt(item.valorReal??item.valor)}</span>
           </div>
+          {difValor&&<div style={{fontSize:10,color:"#D97706",fontWeight:700,marginBottom:2}}>
+            ⚠ Programado era {fmt(item.valor)} — vai corrigir pro valor real do extrato ao confirmar
+          </div>}
           <div style={{fontSize:10,color:C.textMuted,marginBottom:8}}>Programado pra {fmtD(item.dataProgramada)} · debitou de fato em {fmtD(item.dataReal)}</div>
           <button onClick={()=>confirmarBaixa(item)} disabled={load}
             style={{width:"100%",padding:"7px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
             Dar baixa
           </button>
-        </div>)}
+        </div>;})}
       </div>}
 
       {(()=>{
@@ -4671,8 +4711,8 @@ function ConciliarExtratoTab({data,onUpdate}){
                 <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:6}}>
                   {INTENCOES.map(i=>
                     <button key={i.id} onClick={()=>setCfgNovos({...cfgNovos,[chave]:{...cfg,intencaoEspelho:i.id}})}
-                      style={{padding:"4px 8px",borderRadius:12,border:"1px solid "+((cfg.intencaoEspelho||"MOVIMENTACAO")===i.id?C.purple:C.border),
-                        background:(cfg.intencaoEspelho||"MOVIMENTACAO")===i.id?C.purple:"#fff",color:(cfg.intencaoEspelho||"MOVIMENTACAO")===i.id?"#fff":C.textMuted,
+                      style={{padding:"4px 8px",borderRadius:12,border:"1px solid "+(cfg.intencaoEspelho===i.id?C.purple:C.border),
+                        background:cfg.intencaoEspelho===i.id?C.purple:"#fff",color:cfg.intencaoEspelho===i.id?"#fff":C.textMuted,
                         fontSize:9,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
                       {i.label}
                     </button>)}
@@ -4686,10 +4726,10 @@ function ConciliarExtratoTab({data,onUpdate}){
                       {n.valor<0?"Entra em ":"Sai de "}{c.nome||c.id}
                     </button>)}
                 </div>
-                {cfg.contaEspelho&&(()=>{
-                  const ehLucros=(cfg.intencaoEspelho||"MOVIMENTACAO")==="LUCROS";
-                  const textoAqui=cfg.apelido?cfg.apelido.toUpperCase():(ehLucros?(n.valor<0?"TRANSF. DISTRIBUIÇÃO DE LUCROS":"TRANSF. RECEBIMENTO DE LUCROS"):"MOVIMENTAÇÃO ENTRE CONTAS");
-                  const textoLa=cfg.apelido?cfg.apelido.toUpperCase():(ehLucros?(n.valor<0?"TRANSF. RECEBIMENTO DE LUCROS":"TRANSF. DISTRIBUIÇÃO DE LUCROS"):"MOVIMENTAÇÃO ENTRE CONTAS");
+                {cfg.contaEspelho&&cfg.intencaoEspelho&&(()=>{
+                  const ehOrigemAqui=n.valor<0; // aqui = a conta sendo conciliada; negativo = ela debita (é origem)
+                  const textoAqui=cfg.apelido?cfg.apelido.toUpperCase():textoLadoIntencao(cfg.intencaoEspelho,ehOrigemAqui);
+                  const textoLa=cfg.apelido?cfg.apelido.toUpperCase():textoLadoIntencao(cfg.intencaoEspelho,!ehOrigemAqui);
                   const nomeLa=(data.contas||[]).find(c=>c.id===cfg.contaEspelho);
                   return <div style={{fontSize:9,color:C.textMuted,background:"#fff",borderRadius:5,padding:"6px 8px",lineHeight:1.5}}>
                     <b>Aqui ({contaExtrato}):</b> {textoAqui} ({fmt(n.valor)})<br/>
@@ -4741,7 +4781,7 @@ function TransferenciaEspelhada({data,onUpdate}){
   const contasAtivas=(data.contas||[]).filter(c=>c.ativa!==false);
   const [dataOp,setDataOp]=useState(new Date().toISOString().slice(0,10));
   const [valor,setValor]=useState("");
-  const [intencao,setIntencao]=useState("MOVIMENTACAO");
+  const [intencao,setIntencao]=useState("");
   const [origem,setOrigem]=useState("");
   const [destino,setDestino]=useState("");
   const [apelido,setApelido]=useState("");
@@ -4760,6 +4800,7 @@ function TransferenciaEspelhada({data,onUpdate}){
     if(!v||v<=0){ alert("Valor inválido."); return; }
     if(!origem||!destino){ alert("Escolha origem e destino."); return; }
     if(origem===destino){ alert("Origem e destino não podem ser a mesma conta."); return; }
+    if(!intencao){ alert("Escolha a finalidade da transferência antes de lançar."); return; }
     setLoad(true);
     try{
       const r=await api({action:"lancarTransferenciaEspelhada",data:dataOp,valor:v,
@@ -4810,15 +4851,14 @@ function TransferenciaEspelhada({data,onUpdate}){
       <input type="text" value={apelido} onChange={e=>setApelido(e.target.value)} placeholder="ex: Distr. lucros agosto"
         style={{width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",marginBottom:14}}/>
 
-      {origem&&destino&&origem!==destino&&(()=>{
+      {origem&&destino&&origem!==destino&&intencao&&(()=>{
         // [13/08] Mesma previa clara adicionada na conciliacao -- mostra o
         // texto exato de cada lado antes de lancar, pra nunca sobrar
         // duvida de qual lado fica com qual rotulo.
-        const ehLucros=intencao==="LUCROS";
         const nomeOrigem=(contasAtivas.find(c=>c.id===origem)||{}).nome||origem;
         const nomeDestino=(contasAtivas.find(c=>c.id===destino)||{}).nome||destino;
-        const textoOrigem=apelido?apelido.toUpperCase():(ehLucros?"TRANSF. DISTRIBUIÇÃO DE LUCROS":"MOVIMENTAÇÃO ENTRE CONTAS");
-        const textoDestino=apelido?apelido.toUpperCase():(ehLucros?"TRANSF. RECEBIMENTO DE LUCROS":"MOVIMENTAÇÃO ENTRE CONTAS");
+        const textoOrigem=apelido?apelido.toUpperCase():textoLadoIntencao(intencao,true);
+        const textoDestino=apelido?apelido.toUpperCase():textoLadoIntencao(intencao,false);
         return <div style={{fontSize:11,color:C.textMuted,background:C.borderLight,borderRadius:8,padding:"8px 10px",lineHeight:1.6,marginBottom:14}}>
           <b>{nomeOrigem} (sai):</b> {textoOrigem}<br/>
           <b>{nomeDestino} (entra):</b> {textoDestino}
@@ -5035,8 +5075,9 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
   // [14/08, NOVO] Pra transferencia SEM parId nenhum (lancada direto, fora
   // do mecanismo de espelho) -- "adota" o item, gravando um parId novo
   // nele e criando o outro lado, na mesma tacada.
-  const [intencaoVincular,setIntencaoVincular]=useState("MOVIMENTACAO");
+  const [intencaoVincular,setIntencaoVincular]=useState("");
   async function vincularComoEspelho(contaAlvo){
+    if(!intencaoVincular){ alert("Escolha a finalidade da transferência antes de vincular."); return; }
     setLoadPar(true);
     try{ onUpdate(await api({action:"vincularComoEspelho",row:item.row,contaFaltante:contaAlvo,intencao:intencaoVincular})); }
     catch(e){ alert(e.message); }
@@ -9741,7 +9782,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260814.2127 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260816.2105 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -9824,7 +9865,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260814.2127
+      // HTML v3.20260816.2105
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
