@@ -4461,11 +4461,12 @@ function ConciliarExtratoTab({data,onUpdate}){
   // pelo mesmo conciliarExtrato), acha quem tem valor parecido com esse
   // "novo" nao reconhecido -- so EXECUTADO entra aqui (PROGRAMADO segue o
   // caminho normal de "Dar baixa", nao faz sentido so colar alias nele).
+  // [15/08, PORTADO -- pedido do Marcus] Sugestão agora vem pronta do
+  // backend (mesmo motor único que cartão usa: texto + valor, não só
+  // valor cru como antes) -- front só exibe, nunca mais recalcula com
+  // critério próprio.
   function candidatosVinculo(n){
-    const exec=(resultado.aguardando||[]).filter(a=>a.status==="EXECUTADO");
-    const exatos=exec.filter(a=>Math.abs(Math.abs(a.valor)-Math.abs(n.valor))<0.01&&Math.sign(a.valor)===Math.sign(n.valor));
-    const pool=exatos.length?exatos:exec.filter(a=>Math.sign(a.valor)===Math.sign(n.valor)&&Math.abs(Math.abs(a.valor)-Math.abs(n.valor))<=Math.max(2,Math.abs(n.valor)*0.02));
-    return pool.sort((a,b)=>Math.abs(new Date(a.data)-new Date(n.data))-Math.abs(new Date(b.data)-new Date(n.data))).slice(0,5);
+    return n.sugestaoVinculo ? [n.sugestaoVinculo] : [];
   }
 
   async function vincularExistente(n,candidato){
@@ -4629,7 +4630,10 @@ function ConciliarExtratoTab({data,onUpdate}){
             {(()=>{const cands=candidatosVinculo(n);return cands.length>0&&<div style={{background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:6,padding:"8px 9px",marginBottom:8}}>
               <div style={{fontSize:9,fontWeight:800,color:"#1D4ED8",letterSpacing:".04em",marginBottom:5}}>JÁ EXISTE NO HISTÓRICO, SÓ COM OUTRO NOME?</div>
               {cands.map(c=><div key={c.row} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:6,padding:"3px 0"}}>
-                <span style={{fontSize:11,color:C.textSub,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{fmtD(c.data)} · {c.desc} · {fmt(c.valor)}</span>
+                <span style={{fontSize:11,color:C.textSub,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                  {fmtD(c.data)} · {c.desc} · {fmt(c.valor)}
+                  {c.forca==="fraco"&&<span style={{color:"#D97706",fontWeight:700}}> · confiança baixa</span>}
+                </span>
                 <button onClick={()=>vincularExistente(n,c)} disabled={load}
                   style={{flexShrink:0,background:"#1D4ED8",color:"#fff",border:"none",borderRadius:6,padding:"4px 9px",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
                   Vincular
@@ -5046,6 +5050,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
   const [novoPlantoes,setNovoPlantoes]=useState("");
   const [loadPlantoes,setLoadPlantoes]=useState(false);
   const [vincularRegraCategoria,setVincularRegraCategoria]=useState(false);
+  const [ignorarDeficitDCP,setIgnorarDeficitDCP]=useState(false);
   const [loadPar,setLoadPar]=useState(false);
 
   // [14/08, NOVO -- pedido do Marcus] Identifica se esse item é uma
@@ -5117,7 +5122,12 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
     try{
       const sinal=neg?-1:1;
       if(execMode){
-        onUpdate(await api({action:"baixa",row:item.row,valorReal:numBR(val)*sinal,dataReal:dt}));
+        const payload={action:"baixa",row:item.row,valorReal:numBR(val)*sinal,dataReal:dt};
+        // [17/08, NOVO -- pedido do Marcus] Escape-hatch pra fechamento de
+        // semana DCP em ciclo atípico -- não propaga a sobra/estouro pro
+        // próximo ciclo, só registra como perdoado (auditoria).
+        if(item.categoria==="DCP_PROVISAO"&&ignorarDeficitDCP) payload.ignorarDeficit=true;
+        onUpdate(await api(payload));
       } else {
         let r=null;
         if(dt!==item.data) r=await api({action:"editar",row:item.row,campo:"DATA",valor:dt});
@@ -5296,6 +5306,10 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
     </div>}
     {item.categoria==="DCP_PROVISAO"&&execMode&&<div style={{fontSize:10,color:"#92400E",background:C.accentLight,borderRadius:6,padding:"6px 8px",marginBottom:8}}>
       Fechamento de semana DCP: a sobra/estouro é redistribuída automaticamente entre as próximas segundas e a linha fecha em R$ 0,00 no Histórico — o valor digitado acima é ignorado. Feche as semanas em ordem (a mais antiga primeiro).
+      <label style={{display:"flex",alignItems:"center",gap:6,marginTop:7,paddingTop:7,borderTop:"1px dashed #FBBF24",cursor:"pointer",fontWeight:700}}>
+        <input type="checkbox" checked={ignorarDeficitDCP} onChange={e=>setIgnorarDeficitDCP(e.target.checked)}/>
+        Ciclo atípico — não propagar essa sobra/estouro pro próximo ciclo (fica registrado como perdoado, pra auditoria)
+      </label>
     </div>}
     {(()=>{const fc=fonteCalculadaDeItem(item,data); if(!fc) return null; return <div style={{background:"#fff",border:"1px dashed "+C.teal,borderRadius:6,padding:8,marginBottom:8}}>
       <div style={{fontSize:10,color:C.teal,fontWeight:700,marginBottom:4}}>PLANTÕES DIFERENTES ESSE MÊS?</div>
@@ -9782,7 +9796,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260816.2105 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260817.0932 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -9865,7 +9879,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260816.2105
+      // HTML v3.20260817.0932
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
