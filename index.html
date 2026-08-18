@@ -7733,7 +7733,9 @@ function BotaoLancar({data,onUpdate,onIrPara}){
     raiz:[{id:"gastos",label:"Gastos"},{id:"ganhos",label:"Ganhos"},{id:"emprestimos",label:"Empréstimos"},
       {id:"cofresinvest",label:"Cofres/Invest."},{id:"cartoes",label:"Cartões"}],
     gastos:[{id:"fixa_conta",label:"Despesas Fixas"},{id:"dcp_conta",label:"Gastos Semanais"},{id:"extra_conta",label:"Extraordinário"},
-      {id:"gastos_compras_link",label:"Compras no Cartão →",acao:()=>setTrilha(["cartoes","cartoes_compras"])}],
+      {id:"gastos_compras_link",label:"Compras no Cartão →",acao:()=>setTrilha(["cartoes","cartoes_compras"])},
+      {id:"gastos_transferencia_link",label:"Movimentação Entre Contas →",
+        acao:()=>{fecharTudo();onIrPara&&onIrPara({tab:"transferencias"});}}],
     ganhos:[{id:"ganhos_receitas",label:"Receitas"},{id:"ganhos_avulso",label:"Avulso"}],
     emprestimos:[{id:"emp_tomar",label:"Tomar Empréstimo"},{id:"emp_pagamento",label:"Pagamento de Empréstimo"}],
     emp_pagamento:[{id:"cred_parcelados",label:"Parcelado"},{id:"cred_posfixados",label:"Pós-Fixado"}],
@@ -9811,7 +9813,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260817.1803 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260818.1112 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -9894,7 +9896,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260817.1803
+      // HTML v3.20260818.1112
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
