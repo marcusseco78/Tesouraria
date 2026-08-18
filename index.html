@@ -4916,9 +4916,24 @@ function DCPTab({data,onUpdate,onIrPara}){
   // Todos os envelopes (linhas DCP_PROVISAO) existentes, em ordem cronologica
   const envelopes=useMemo(()=>fluxo.filter(r=>r.categoria==="DCP_PROVISAO").sort((a,b)=>a.data<b.data?-1:1),[fluxo]);
   const porCiclo=useMemo(()=>{
-    const m={};
-    envelopes.forEach(e=>{ (m[e.ciclo]=m[e.ciclo]||[]).push(e); });
-    return Object.entries(m);
+    // [17/08, CORRIGIDO -- bug real do Marcus] Agrupar só pelo NOME do
+    // ciclo ("JUN/JUL") juntava visualmente o ciclo de 2026 com o de 2027
+    // assim que o horizonte de geração cobrisse os dois -- nomes de ciclo
+    // não têm ano (mesmo risco já achado e corrigido na distribuição de
+    // carry hoje mais cedo, agora batendo aqui na exibição). Agrupamento
+    // agora é sequencial: só continua no mesmo grupo se a próxima
+    // envelope for do MESMO nome de ciclo E vier logo em seguida (até 40
+    // dias de intervalo -- cobre a virada Dez/Jan sem separar à toa).
+    // Qualquer salto maior sempre abre um grupo novo, mesmo com nome
+    // repetido.
+    const grupos=[];
+    envelopes.forEach(e=>{
+      const ultimo=grupos[grupos.length-1];
+      const gapOk=ultimo&&ultimo.itens.length&&(new Date(e.data)-new Date(ultimo.itens[ultimo.itens.length-1].data))<=40*86400000;
+      if(ultimo&&ultimo.nome===e.ciclo&&gapOk) ultimo.itens.push(e);
+      else grupos.push({nome:e.ciclo,itens:[e]});
+    });
+    return grupos.map(g=>[g.nome,g.itens]);
   },[envelopes]);
 
   // Transacoes que pertencem a um envelope especifico (pela DATA-CHAVE exata,
@@ -4972,7 +4987,7 @@ function DCPTab({data,onUpdate,onIrPara}){
     <EditorEnvelope data={data} onUpdate={onUpdate}/>
     <SugestaoReagendamento onUpdate={onUpdate}/>
     {!envelopes.length&&<div style={{padding:"40px 20px",textAlign:"center",color:C.textMuted,fontSize:14}}>Nenhum envelope DCP gerado ainda — toca "🔄 Gerar DCP" acima.</div>}
-    {porCiclo.map(([ciclo,lista])=><div key={ciclo}>
+    {porCiclo.map(([ciclo,lista])=><div key={ciclo+"|"+(lista[0]&&lista[0].data)}>
       <div style={{padding:"10px 14px 4px",fontSize:12,fontWeight:700,color:C.accent,background:"#F9FAFB",borderBottom:"1px solid "+C.border}}>{ciclo}</div>
       {lista.map(env=>{
         const transacoes=transacoesDoEnvelope(env.data);
@@ -9796,7 +9811,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260817.1326 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260817.1803 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
@@ -9879,7 +9894,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260817.1326
+      // HTML v3.20260817.1803
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
