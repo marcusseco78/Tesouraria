@@ -1119,11 +1119,59 @@ function corDoItem(item, hj){
   return {cor:null,selo:null,bg:bgCat,descCor,confirmadoExtrato};
 }
 
+// ── SOM DE FEEDBACK [NOVO 18/08] ─────────────────────────────────────────────
+// Tique suave (gerado por código via Web Audio API, sem arquivo externo --
+// funciona offline no GitHub Pages) tocado no inicio e no fim de toda acao
+// que chama o backend (salvar, lancar, confirmar, mesclar etc -- api() e o
+// unico ponto de entrada pro backend, entao um gancho aqui cobre tudo).
+// Toggle persistido em localStorage, visivel no cabecalho em todas as telas.
+// AudioContext criado so no primeiro uso (lazy) -- precisa de gesto do
+// usuario (clique), o que ja e sempre o caso aqui.
+let _audioCtx=null;
+function _getAudioCtx(){
+  try{
+    if(!_audioCtx) _audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    if(_audioCtx.state==="suspended") _audioCtx.resume();
+    return _audioCtx;
+  }catch(e){ return null; }
+}
+function somFeedbackAtivo(){
+  try{ return localStorage.getItem("tesouraria_som_ativo")!=="0"; }catch(e){ return true; }
+}
+function tocarSom(tipo){
+  if(!somFeedbackAtivo()) return;
+  const ctx=_getAudioCtx();
+  if(!ctx) return;
+  try{
+    const freq = tipo==="sucesso" ? 1180 : tipo==="erro" ? 320 : 780;
+    const dur = tipo==="erro" ? 0.16 : 0.09;
+    const vol = 0.06;
+    const t0=ctx.currentTime;
+    const osc=ctx.createOscillator();
+    const gain=ctx.createGain();
+    osc.type="sine";
+    osc.frequency.setValueAtTime(freq,t0);
+    gain.gain.setValueAtTime(0,t0);
+    gain.gain.linearRampToValueAtTime(vol,t0+0.015);
+    gain.gain.linearRampToValueAtTime(0,t0+dur);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(t0); osc.stop(t0+dur+0.02);
+  }catch(e){}
+}
+
 async function api(payload){
-  const r=await fetch(getApiUrl(),{method:"POST",redirect:"follow",
-    headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(payload)});
-  const j=await r.json();
-  if(!j.ok) throw new Error(j.error||"Erro");
+  tocarSom("inicio");
+  let r,j;
+  try{
+    r=await fetch(getApiUrl(),{method:"POST",redirect:"follow",
+      headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(payload)});
+    j=await r.json();
+  }catch(e){
+    tocarSom("erro");
+    throw e;
+  }
+  if(!j.ok){ tocarSom("erro"); throw new Error(j.error||"Erro"); }
+  tocarSom("sucesso");
   return j;
 }
 
@@ -8800,6 +8848,32 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     setLoadDestravaFatura(false);
   }
 
+  // [NOVO 18/08] "Ajuste não-OFX" -- pra ajustes que o próprio banco aplica
+  // sem nunca gerar transação real datada em CSV/OFX (ex: excedente de
+  // pagamento de fatura anterior, que o Nubank abate como crédito silencioso
+  // na fatura seguinte, visível só como "Pagamento antecipado" no app do
+  // banco, sem data). Só aparece quando a fatura já está TRAVADA -- é
+  // justamente o caso que os outros mecanismos (lançar compra, conciliar)
+  // não cobrem.
+  const [ajusteAberto,setAjusteAberto]=useState(false);
+  const [ajusteDesc,setAjusteDesc]=useState("");
+  const [ajusteValor,setAjusteValor]=useState("");
+  const [ajusteDirecao,setAjusteDirecao]=useState("diminui");
+  const [loadAjuste,setLoadAjuste]=useState(false);
+  async function enviarAjusteFatura(){
+    const valorNum=Number(String(ajusteValor).replace(",","."));
+    if(!ajusteDesc.trim()){ alert("Descreve o ajuste (ex: Pagamento antecipado Nu)."); return; }
+    if(!valorNum){ alert("Valor inválido."); return; }
+    setLoadAjuste(true);
+    try{
+      const r=await api({action:"adicionarAjusteFatura",cartao,vencimento:faturaAtual.venc,
+        valor:valorNum,direcao:ajusteDirecao,descricao:ajusteDesc.trim()});
+      onUpdate(r);
+      setAjusteAberto(false); setAjusteDesc(""); setAjusteValor("");
+    }catch(e){ alert(e.message); }
+    setLoadAjuste(false);
+  }
+
   async function apagarTodosItemComEssaDescricao(desc){
     if(!window.confirm("Apagar TODOS os itens ainda PENDENTES com a descrição \""+desc+"\" no cartão "+cartao+"? Itens já PAGOS não são tocados."))return;
     setELoad(true);
@@ -9006,8 +9080,16 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   const confirmados=faturaAtual.itens.filter(r=>r[7]==="PAGO"||(r[7]==="PENDENTE"&&r[0]<=hj));
   const previstos  =faturaAtual.itens.filter(r=>r[7]==="PENDENTE"&&r[0]>hj);
 
-  const totalConf =confirmados.reduce((s,r)=>s+Math.abs(Number(r[2])||0),0);
-  const totalPrev =previstos.reduce((s,r)=>s+Math.abs(Number(r[2])||0),0);
+  // [CORRIGIDO 18/08] Antes usava Math.abs -- toda linha, positiva ou
+  // negativa, so aumentava o total (impossivel representar um credito que
+  // reduz a fatura, tipo "pagamento antecipado" que o Nubank aplica sem
+  // nunca gerar transacao real em CSV/OFX). Compra normal ja e sempre
+  // negativa nesta aba (convencao existente, confirmado nos dados reais),
+  // entao somar com sinal e negar da EXATAMENTE o mesmo resultado de antes
+  // pra qualquer linha que ja existia -- so muda o resultado pra uma linha
+  // de ajuste positiva nova (credito), que agora sim consegue subtrair.
+  const totalConf =-confirmados.reduce((s,r)=>s+(Number(r[2])||0),0);
+  const totalPrev =-previstos.reduce((s,r)=>s+(Number(r[2])||0),0);
   const totalFatura=totalConf+totalPrev;
 
   // Cruza com o Fluxo para achar quanto ja foi pago (e quanto falta) dessa
@@ -9282,6 +9364,33 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
             style={{padding:"5px 10px",borderRadius:6,background:"#1E40AF",color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
             {loadDestravaFatura?"…":"🔓 Destravar esta fatura"}
           </button>
+          <button onClick={()=>setAjusteAberto(!ajusteAberto)}
+            style={{padding:"5px 10px",borderRadius:6,background:"transparent",color:"#1E40AF",fontSize:11,fontWeight:700,border:"1px solid #1E40AF",cursor:"pointer",fontFamily:"inherit",marginLeft:6}}>
+            {ajusteAberto?"✕ Cancelar":"+ Ajuste não-OFX"}
+          </button>
+          {ajusteAberto&&<div style={{marginTop:8,padding:"10px 12px",background:"#EFF6FF",borderRadius:8,textAlign:"left"}}>
+            <div style={{fontSize:10,color:C.textMuted,marginBottom:8,lineHeight:1.4}}>
+              Pra ajuste que o próprio banco aplica sem nunca aparecer em CSV/OFX
+              (ex: "Pagamento antecipado" sem data, visível só no app do Nu).
+            </div>
+            <input value={ajusteDesc} onChange={e=>setAjusteDesc(e.target.value)}
+              placeholder="Descrição (ex: Pagamento antecipado Nu)"
+              style={{width:"100%",padding:"7px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",marginBottom:6,boxSizing:"border-box"}}/>
+            <div style={{display:"flex",gap:6,marginBottom:6}}>
+              <input value={ajusteValor} onChange={e=>setAjusteValor(e.target.value)}
+                placeholder="Valor (ex: 50,00)" inputMode="decimal"
+                style={{flex:1,padding:"7px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+              <select value={ajusteDirecao} onChange={e=>setAjusteDirecao(e.target.value)}
+                style={{flex:1,padding:"7px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit"}}>
+                <option value="diminui">Diminui a fatura</option>
+                <option value="aumenta">Aumenta a fatura</option>
+              </select>
+            </div>
+            <button onClick={enviarAjusteFatura} disabled={loadAjuste}
+              style={{width:"100%",padding:"8px",borderRadius:6,background:"#1E40AF",color:"#fff",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+              {loadAjuste?"…":"Lançar ajuste"}
+            </button>
+          </div>}
         </div>}
       </div>
       {navBtn(1,idxInicial+fatIdx>=faturas.length-1)}
@@ -9779,6 +9888,16 @@ function Tesouraria(){
     const t=setTimeout(()=>setDestaque(null),3000); // pisca e depois esquece sozinho
     return ()=>clearTimeout(t);
   },[destaque]);
+  // [NOVO 18/08] Toggle de som de feedback -- vive no cabecalho (fora do
+  // switch de abas), entao aparece igual em todas as telas. Estado local so
+  // pra repintar o botao; a fonte da verdade e o localStorage (somFeedbackAtivo()).
+  const [somOn,setSomOn]=useState(()=>somFeedbackAtivo());
+  function alternarSom(){
+    const novo=!somOn;
+    try{ localStorage.setItem("tesouraria_som_ativo", novo?"1":"0"); }catch(e){}
+    setSomOn(novo);
+    if(novo) tocarSom("sucesso"); // feedback imediato ao ligar
+  }
   const [msgs,setMsgs]=useState(()=>{try{const s=localStorage.getItem("t_chat");return s?JSON.parse(s):[];}catch{return [];}});
   useEffect(()=>{try{localStorage.setItem("t_chat",JSON.stringify(msgs));}catch{}},[msgs]);
   useEffect(()=>{carregar();},[]);
@@ -9813,9 +9932,13 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260818.1112 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260818.1345 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
+            <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
+              style={{fontSize:9,color:somOn?C.accent:C.textMuted,background:"none",border:"1px solid "+(somOn?C.accent:C.border),borderRadius:5,padding:"3px 7px",cursor:"pointer",fontFamily:"inherit"}}>
+              {somOn?"🔊":"🔇"}
+            </button>
             <button onClick={carregar} disabled={load} style={{fontSize:9,color:"#fff",background:C.blue,border:"none",borderRadius:5,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>
               {load?"…":"↻ Atualizar"}
             </button>
@@ -9896,7 +10019,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260818.1112
+      // HTML v3.20260818.1345
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
