@@ -4184,33 +4184,47 @@ function rotuloCategoriaPill(cat){
   return CAT_LABEL[cat]||cat;
 }
 function fmtCentro(v){ return fmt(v); }
-// ofx={desc,valor} app={desc,valor,categoria,row} -- forca: "exato"|"forte"|"manual"
+// ofx={desc,valor} app={desc,valor,categoria,row} -- forca: "exato"|"forte"|"manual"|"semclass"
 // row/onUpdate habilitam a edicao inline de apelido/categoria antes de
 // confirmar -- [NOVO 22/08, pedido do Marcus] evita herdar erro de
 // digitacao/classificacao pro lancamento hibrido definitivo.
-function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate}){
+// [NOVO 27/08] tipo="cartao"+aba generaliza pra fatura de cartao -- la
+// apelido mora em obs.apelido (acao editarApelidoItem), nao na propria
+// DESCRICAO como no extrato (acao editar generica). "semclass" cobre o
+// estado que so a fatura tinha: confirmado pelo banco mas sem categoria
+// segura ainda.
+function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba}){
   const [editando,setEditando]=useState(false);
   const [apelidoEdit,setApelidoEdit]=useState(app.desc);
   const [categoriaEdit,setCategoriaEdit]=useState(app.categoria);
   const [salvandoEdit,setSalvandoEdit]=useState(false);
-  const label=forca==="exato"?"confirmado":forca==="forte"?"confirmado (forte)":"mesclado";
-  const cor=forca==="exato"?C.green:forca==="forte"?C.blue:C.accent;
-  const bg=forca==="exato"?C.greenLight:forca==="forte"?C.blueLight:"#EEF2FF";
+  const label=forca==="exato"?"confirmado":forca==="forte"?"confirmado (forte)":forca==="semclass"?"sem classificação":"mesclado";
+  const cor=forca==="exato"?C.green:forca==="forte"?C.blue:forca==="semclass"?C.orange:C.accent;
+  const bg=forca==="exato"?C.greenLight:forca==="forte"?C.blueLight:forca==="semclass"?C.orangeLight:"#EEF2FF";
   const mudou=apelidoEdit.trim().toUpperCase()!==app.desc.toUpperCase()||categoriaEdit!==app.categoria;
   async function salvarEConfirmar(){
-    if(!row){ onConfirmar(); return; }
+    if(!row){ if(onConfirmar) onConfirmar(); return; }
     setSalvandoEdit(true);
     try{
       if(mudou){
         let r;
-        if(apelidoEdit.trim().toUpperCase()!==app.desc.toUpperCase())
-          r=await api({action:"editar",row,campo:"DESCRICAO",valor:apelidoEdit.trim().toUpperCase()});
-        if(categoriaEdit!==app.categoria)
-          r=await api({action:"editar",row,campo:"CATEGORIA",valor:categoriaEdit});
+        if(apelidoEdit.trim().toUpperCase()!==app.desc.toUpperCase()){
+          r=tipo==="cartao"
+            ?await api({action:"editarApelidoItem",aba,row,apelido:apelidoEdit.trim().toUpperCase()})
+            :await api({action:"editar",row,campo:"DESCRICAO",valor:apelidoEdit.trim().toUpperCase()});
+        }
+        if(categoriaEdit!==app.categoria){
+          if(tipo==="cartao"){
+            r=await api({action:"editar",aba,row,campo:"CATEGORIA",valor:categoriaEdit});
+            r=await api({action:"editar",aba,row,campo:"DCP",valor:categoriaEdit==="DCP"?"S":"N"});
+          }else{
+            r=await api({action:"editar",row,campo:"CATEGORIA",valor:categoriaEdit});
+          }
+        }
         if(r&&onUpdate) onUpdate(r);
       }
       setEditando(false);
-      onConfirmar();
+      if(onConfirmar) onConfirmar();
     }catch(e){ alert(e.message); }
     setSalvandoEdit(false);
   }
@@ -4257,10 +4271,10 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate}){
         <span style={{fontSize:9,flexShrink:0}}>📱</span>
       </div>
     </div>
-    <button onClick={salvarEConfirmar} disabled={confirmando||salvandoEdit}
+    {(onConfirmar||mudou)&&<button onClick={salvarEConfirmar} disabled={confirmando||salvandoEdit}
       style={{width:"100%",padding:"7px",borderRadius:6,background:cor,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit",marginTop:8}}>
-      {confirmando||salvandoEdit?"…":mudou?"Salvar correção e confirmar":"Confirmar baixa"}
-    </button>
+      {confirmando||salvandoEdit?"…":onConfirmar?(mudou?"Salvar correção e confirmar":"Confirmar baixa"):"Salvar correção"}
+    </button>}
   </div>;
 }
 
@@ -9683,21 +9697,54 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         const classificadoSeguro=_obsClassificadoSeguro(_obsCartaoRaw(r));
         const motivo=divergencia?{tipo:"divergencia",dado:divergencia}:null;
         const destacado=destaque?.tab==="cartoes"&&destaque.row===linhaR;
+        const apelidoAtual=_obsApelidoCartao(_obsCartaoRaw(r));
+        // [NOVO 27/08 -- pedido do Marcus: "lista dupla item a item, igual
+        // o extrato"] Divergencia e confirmado (com ou sem classificacao)
+        // agora usam o mesmo SeloPar do extrato -- 2 fontes, cada uma no
+        // seu lado, pilulas centralizadas. Previsto/pendente sem nenhum
+        // dado de banco ainda continuam na linha simples de sempre (nao
+        // ha 2 fontes pra mostrar lado a lado).
+        if(divergencia||confirmado){
+          return <div key={linhaR!=null?linhaR:i} id={"cart-item-"+linhaR}
+            style={{background:destacado?"#FEF3C7":"transparent",borderRadius:10,transition:"background 1s"}}>
+            <SeloPar
+              ofx={{desc:divergencia?divergencia.csv.title:r[1], valor:divergencia?divergencia.csv.amount:r[2]}}
+              app={{desc:apelidoAtual||r[1], valor:r[2], categoria:r[5]}}
+              forca={divergencia?(divergencia.forca||"forte"):(classificadoSeguro?"exato":"semclass")}
+              confirmando={eLoad}
+              onConfirmar={divergencia?()=>usarDadosDoCSV(divergencia):null}
+              row={linhaR} onUpdate={onUpdate} tipo="cartao" aba={abaCartao}
+            />
+            <div style={{display:"flex",justifyContent:"flex-end",marginTop:-4,marginBottom:6}}>
+              <button onClick={()=>isOpen?setEditRow(null):abrirEdicaoItem(r)} disabled={eLoad}
+                style={{background:C.borderLight,color:C.textSub,borderRadius:8,padding:"4px 9px",fontSize:14,border:"1px solid "+C.border,cursor:"pointer",lineHeight:1}}>
+                {isOpen?"×":"⋮ mais opções"}
+              </button>
+            </div>
+            {isOpen&&<PainelEdicaoItemCartao r={r} eDesc={eDesc} setEDesc={setEDesc} eValor={eValor} setEValor={setEValor}
+              eData={eData} setEData={setEData}
+              eNeg={eNeg} setENeg={setENeg} eCategoria={eCategoria} setECategoria={setECategoria}
+              eAlias={eAlias} setEAlias={setEAlias} eApelido={eApelido} setEApelido={setEApelido} eLoad={eLoad} motivo={motivo}
+              onSalvar={()=>salvarEdicaoItem({desc:r[1],valor:r[2],categoria:r[5],data:r[0],alias:_obsAliasCartao(_obsCartaoRaw(r)),apelido:apelidoAtual})} onApagar={apagarItem} onApagarTodos={()=>apagarTodosItemComEssaDescricao(r[1])} onCancelar={()=>setEditRow(null)}
+              onUsarCSV={divergencia?()=>usarDadosDoCSV(divergencia):null} previewCSV={divergencia?descComNotaPreservada(divergencia):null}
+              outrosItens={faturaAtual.itens.filter(x=>_linhaCartao(x)!==linhaR).map(x=>({row:_linhaCartao(x),desc:_obsApelidoCartao(_obsCartaoRaw(x))||x[1],valor:x[2],data:x[0],parcela:x[3],confirmado:confirmadosRows.has(_linhaCartao(x))||_obsConfirmadoOfx(_obsCartaoRaw(x))}))}
+              souConfirmado={confirmado}
+              onMesclar={(candidato)=>mesclarComItem(r,linhaR,confirmado,candidato)}
+              data={data} abaCartao={abaCartao} onUpdate={onUpdate} onIrPara={onIrPara}/>}
+          </div>;
+        }
         return <div key={linhaR!=null?linhaR:i} id={"cart-item-"+linhaR}>
         <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 12px",
-          background:destacado?"#FEF3C7":(divergencia?"#FFF7ED":(confirmado?"#F0FDF4":(previsto?C.borderLight:(r[7]==="PAGO"?C.greenLight:C.surface)))),transition:"background 1s",
+          background:destacado?"#FEF3C7":(previsto?C.borderLight:(r[7]==="PAGO"?C.greenLight:C.surface)),transition:"background 1s",
           opacity:previsto?0.85:1,
-          borderLeft:divergencia?"3px solid #FB923C":(confirmado?"3px solid "+C.green:(previsto?"3px dashed "+C.textMuted:"none")),
+          borderLeft:previsto?"3px dashed "+C.textMuted:"none",
           borderBottom:"1px solid "+C.borderLight,borderRadius:i===0?10:0}}>
           <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:13,fontWeight:600,color:previsto?C.textSub:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{_obsApelidoCartao(_obsCartaoRaw(r))||r[1]}</div>
+            <div style={{fontSize:13,fontWeight:600,color:previsto?C.textSub:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{apelidoAtual||r[1]}</div>
             <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{fmtD(r[0])} · parc:{r[3]} · {r[5]}{(()=>{const envId=_obsEnvelopeId(_obsCartaoRaw(r));if(!envId)return null;const env=parseEnvelopesCustom(data).find(e=>e.id===envId);return env?<TagEnvelopeCustom nome={env.nome}/>:null;})()}</div>
           </div>
           <span style={{fontSize:12,fontWeight:700,color:previsto?C.textSub:(r[7]==="PAGO"?C.green:C.red),flexShrink:0}}>{fmt(r[2])}</span>
-          {divergencia?<span style={{fontSize:9,background:"#FFEDD5",color:"#C2410C",padding:"2px 7px",borderRadius:10,flexShrink:0,fontWeight:700}}>🟠 DIVERGE</span>
-          :(confirmado&&classificadoSeguro)?<span style={{fontSize:9,background:"#EFF6FF",color:C.blue,padding:"2px 7px",borderRadius:10,flexShrink:0,fontWeight:700}}>🔒 Confirmado!</span>
-          :confirmado?<span style={{fontSize:9,background:"#FFF7ED",color:"#C2410C",padding:"2px 7px",borderRadius:10,flexShrink:0,fontWeight:700}}>🏦 OFX sem classificação</span>
-          :previsto?<span style={{fontSize:9,color:C.textMuted,padding:"2px 7px",borderRadius:10,
+          {previsto?<span style={{fontSize:9,color:C.textMuted,padding:"2px 7px",borderRadius:10,
             border:"1px dashed "+C.border,flexShrink:0,fontWeight:600}}>PREVISTO</span>
           :<span style={{fontSize:9,background:r[7]==="PAGO"?C.greenLight:C.accentLight,
             color:r[7]==="PAGO"?C.green:C.accent,padding:"2px 7px",borderRadius:10,flexShrink:0,fontWeight:700}}>
@@ -10063,7 +10110,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260827.0330 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260827.0500 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10150,7 +10197,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260827.0330
+      // HTML v3.20260827.0500
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
