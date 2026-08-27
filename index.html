@@ -4168,6 +4168,102 @@ function ConciliacaoHub({data,onUpdate,onIrPara}){
   </div>;
 }
 
+// [NOVO 22/08] Pilula/SeloPar -- desenho fechado com o Marcus na sessão de
+// conciliação (protótipo testado à exaustão antes de entrar aqui). Usado
+// primeiro no "JÁ DEBITOU" do extrato; mesmo componente reaproveitado na
+// tela de fatura de cartão quando essa etapa acontecer.
+function Pilula({children}){
+  return <span style={{
+    fontSize:8,fontWeight:600,color:C.textSub,background:C.borderLight,
+    borderRadius:999,padding:"1px 5px",flexShrink:0,minWidth:0,
+    overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:50,
+  }}>{children}</span>;
+}
+function rotuloCategoriaPill(cat){
+  if(cat==="DCP") return "Semanal";
+  return CAT_LABEL[cat]||cat;
+}
+function fmtCentro(v){ return fmt(v); }
+// ofx={desc,valor} app={desc,valor,categoria,row} -- forca: "exato"|"forte"|"manual"
+// row/onUpdate habilitam a edicao inline de apelido/categoria antes de
+// confirmar -- [NOVO 22/08, pedido do Marcus] evita herdar erro de
+// digitacao/classificacao pro lancamento hibrido definitivo.
+function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate}){
+  const [editando,setEditando]=useState(false);
+  const [apelidoEdit,setApelidoEdit]=useState(app.desc);
+  const [categoriaEdit,setCategoriaEdit]=useState(app.categoria);
+  const [salvandoEdit,setSalvandoEdit]=useState(false);
+  const label=forca==="exato"?"confirmado":forca==="forte"?"confirmado (forte)":"mesclado";
+  const cor=forca==="exato"?C.green:forca==="forte"?C.blue:C.accent;
+  const bg=forca==="exato"?C.greenLight:forca==="forte"?C.blueLight:"#EEF2FF";
+  const mudou=apelidoEdit.trim().toUpperCase()!==app.desc.toUpperCase()||categoriaEdit!==app.categoria;
+  async function salvarEConfirmar(){
+    if(!row){ onConfirmar(); return; }
+    setSalvandoEdit(true);
+    try{
+      if(mudou){
+        let r;
+        if(apelidoEdit.trim().toUpperCase()!==app.desc.toUpperCase())
+          r=await api({action:"editar",row,campo:"DESCRICAO",valor:apelidoEdit.trim().toUpperCase()});
+        if(categoriaEdit!==app.categoria)
+          r=await api({action:"editar",row,campo:"CATEGORIA",valor:categoriaEdit});
+        if(r&&onUpdate) onUpdate(r);
+      }
+      setEditando(false);
+      onConfirmar();
+    }catch(e){ alert(e.message); }
+    setSalvandoEdit(false);
+  }
+  return <div style={{padding:"9px 12px 8px",background:C.surface,borderRadius:10,marginBottom:6,border:"1px solid "+C.border}}>
+    <div style={{display:"flex",alignItems:"center",gap:6}}>
+      <span style={{fontSize:13,letterSpacing:-3}}>🏦📱</span>
+      <div style={{flex:1,minWidth:0,fontSize:12.5,fontWeight:700,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{app.desc}</div>
+      <Pilula>{rotuloCategoriaPill(app.categoria)}</Pilula>
+      <span style={{fontSize:12.5,fontWeight:700,color:C.text}}>{fmtCentro(app.valor)}</span>
+      {row&&<button onClick={()=>setEditando(!editando)} title="Corrigir apelido/categoria antes de confirmar" style={{
+        fontSize:10,color:editando?"#fff":C.textMuted,background:editando?C.accent:C.borderLight,border:"none",borderRadius:999,
+        width:18,height:18,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,padding:0,
+      }}>✎</button>}
+    </div>
+    <div style={{fontSize:9,fontWeight:700,color:cor,background:bg,borderRadius:4,padding:"1px 5px",display:"inline-block",marginTop:3,marginLeft:20}}>
+      ✓ {label}
+    </div>
+
+    {editando&&<div style={{marginTop:8,padding:"8px 9px",background:"#EFF6FF",borderRadius:8}}>
+      <div style={{fontSize:9,color:C.textMuted,marginBottom:6}}>Corrige antes de confirmar -- essa vira a versão definitiva do lançamento.</div>
+      <input value={apelidoEdit} onChange={e=>setApelidoEdit(e.target.value)}
+        placeholder="Apelido"
+        style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",marginBottom:6,textTransform:"uppercase",boxSizing:"border-box"}}/>
+      <select value={categoriaEdit} onChange={e=>setCategoriaEdit(e.target.value)}
+        style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",background:"#fff"}}>
+        {categoriasPorSinal(app.valor).map(c=><option key={c} value={c}>{CAT_LABEL[c]||c}</option>)}
+      </select>
+    </div>}
+    <div style={{marginLeft:6,marginTop:6,paddingLeft:12,borderLeft:"2px solid "+C.borderLight,
+      display:"grid",gridTemplateColumns:"1fr auto auto auto 1fr",alignItems:"center",columnGap:5,rowGap:3,opacity:.75}}>
+      <div style={{display:"flex",alignItems:"center",gap:4,minWidth:0}}>
+        <span style={{fontSize:9,flexShrink:0}}>🏦</span>
+        <span style={{flex:1,fontSize:9.5,fontWeight:600,color:C.textMuted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ofx.desc}</span>
+      </div>
+      <div/><Pilula>OFX</Pilula>
+      <span style={{fontSize:9.5,fontWeight:700,color:C.textMuted,whiteSpace:"nowrap"}}>{fmtCentro(ofx.valor)}</span>
+      <div/>
+      <div/>
+      <span style={{fontSize:9.5,fontWeight:700,color:C.textMuted,whiteSpace:"nowrap",textAlign:"right"}}>{fmtCentro(app.valor)}</span>
+      <Pilula>{rotuloCategoriaPill(app.categoria)}</Pilula>
+      <div/>
+      <div style={{display:"flex",alignItems:"center",gap:4,justifyContent:"flex-end",minWidth:0}}>
+        <span style={{flex:1,fontSize:9.5,fontWeight:600,color:C.textMuted,textAlign:"right",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{app.desc}</span>
+        <span style={{fontSize:9,flexShrink:0}}>📱</span>
+      </div>
+    </div>
+    <button onClick={salvarEConfirmar} disabled={confirmando||salvandoEdit}
+      style={{width:"100%",padding:"7px",borderRadius:6,background:cor,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit",marginTop:8}}>
+      {confirmando||salvandoEdit?"…":mudou?"Salvar correção e confirmar":"Confirmar baixa"}
+    </button>
+  </div>;
+}
+
 function ConciliarExtratoTab({data,onUpdate}){
   // [REMOVIDO 03/08] CATEGORIAS local (lista unica, misturando debito e
   // credito) -- substituida por categoriasPorSinal(valor), que escolhe entre
@@ -4232,6 +4328,11 @@ function ConciliarExtratoTab({data,onUpdate}){
     try{ const s=localStorage.getItem(LS_RESULTADO); return s?JSON.parse(s):null; }catch(e){ return null; }
   });
   const [load,setLoad]=useState(false);
+  // [NOVO 18/08] emVoo rastreia QUAL item especifico esta em chamada -- load
+  // sozinho so desabilita todos os botoes, mas nenhum muda de texto, entao
+  // Marcus nao sabia se o toque realmente saiu (risco de toque duplo sem
+  // querer). Cada botao individual agora mostra "…" so no que foi clicado.
+  const [emVoo,setEmVoo]=useState(null);
   const [cfgNovos,setCfgNovosRaw]=useState(()=>{
     try{ const s=localStorage.getItem(LS_CFGNOVOS); return s?JSON.parse(s):{}; }catch(e){ return {}; }
   });
@@ -4343,7 +4444,7 @@ function ConciliarExtratoTab({data,onUpdate}){
   }
 
   async function confirmarBaixa(item){
-    setLoad(true);
+    setLoad(true); setEmVoo(item.row);
     try{
       // [15/08, CORRIGIDO -- bug real do Marcus] Mandava item.valor (o
       // PROGRAMADO/antigo), nunca o valor de verdade do extrato -- com
@@ -4355,7 +4456,7 @@ function ConciliarExtratoTab({data,onUpdate}){
       onUpdate(r);
       setResultado(res=>({...res,paraBaixar:res.paraBaixar.filter(x=>x.row!==item.row)}));
     }catch(e){ alert(e.message); }
-    setLoad(false);
+    setLoad(false); setEmVoo(null);
   }
 
   async function lancarNovo(n){
@@ -4372,13 +4473,13 @@ function ConciliarExtratoTab({data,onUpdate}){
     // "DESPESA"/"GERAL" genérico no backend). Não vale pra pagamento de
     // fatura nem pra espelho, que usam outros campos pra se classificar.
     if(!cfg.pagFatura&&!cfg.criarEspelho&&!cfg.categoria){ alert("Escolha uma categoria antes de lançar."); return; }
-    setLoad(true);
+    setLoad(true); setEmVoo(chaveNovo(n));
     try{
       let r;
       if(cfg.pagFatura){
         const venc=vencimentoFaturaDoMes(n.data);
         const row=acharFaturaRow(cfg.pagFatura,venc);
-        if(!row){ alert("Não achei a fatura "+cfg.pagFatura+" com vencimento "+fmtD(venc)+" no Fluxo -- confirme se esse ciclo já foi gerado."); setLoad(false); return; }
+        if(!row){ alert("Não achei a fatura "+cfg.pagFatura+" com vencimento "+fmtD(venc)+" no Fluxo -- confirme se esse ciclo já foi gerado."); setLoad(false); setEmVoo(null); return; }
         r=await api({action:"pagarFaturaAvulso",row,valorPago:Math.abs(Number(n.valor)),data:n.data});
       }else if(cfg.criarEspelho&&cfg.contaEspelho){
         // [NOVO 09/08] Cria o PAR de uma vez -- o lado que estamos vendo no
@@ -4405,7 +4506,7 @@ function ConciliarExtratoTab({data,onUpdate}){
       onUpdate(r);
       setResultado(res=>({...res,novos:res.novos.filter(x=>chaveNovo(x)!==chaveNovo(n))}));
     }catch(e){ alert(e.message); }
-    setLoad(false);
+    setLoad(false); setEmVoo(null);
   }
 
   // "Lancar todos os marcados" -- poupa tempo de clicar item por item.
@@ -4514,11 +4615,11 @@ function ConciliarExtratoTab({data,onUpdate}){
   // valor cru como antes) -- front só exibe, nunca mais recalcula com
   // critério próprio.
   function candidatosVinculo(n){
-    return n.sugestaoVinculo ? [n.sugestaoVinculo] : [];
+    return n.candidatosVinculo || [];
   }
 
   async function vincularExistente(n,candidato){
-    setLoad(true);
+    setLoad(true); setEmVoo(candidato.row);
     try{
       const apelidoAtual=(cfgNovos[chaveNovo(n)]||{}).apelido||"";
       // [14/08, NOVO -- regra de mescla combinada com o Marcus] Manda a
@@ -4533,7 +4634,7 @@ function ConciliarExtratoTab({data,onUpdate}){
         novos:res.novos.filter(x=>chaveNovo(x)!==chaveNovo(n)),
         aguardando:res.aguardando.filter(a=>a.row!==candidato.row)}));
     }catch(e){ alert(e.message); }
-    setLoad(false);
+    setLoad(false); setEmVoo(null);
   }
 
   return <div style={{padding:"12px 14px"}}>
@@ -4607,24 +4708,24 @@ function ConciliarExtratoTab({data,onUpdate}){
 
       {resultado.paraBaixar.length>0&&<div style={{marginBottom:20}}>
         <div style={{fontSize:11,fontWeight:700,color:C.accent,marginBottom:6,letterSpacing:".05em"}}>
-          ✅ JÁ DEBITOU — DAR BAIXA ({resultado.paraBaixar.length})
+          ✅ JÁ DEBITOU — CONFIRMAR ({resultado.paraBaixar.length})
         </div>
         {resultado.paraBaixar.map(item=>{
-          const difValor=Math.abs((item.valorReal??item.valor)-item.valor)>0.01;
-          return <div key={item.row} style={{background:C.accentLight,borderRadius:8,padding:"10px 12px",marginBottom:6}}>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-            <span style={{fontSize:13,fontWeight:600,color:C.text}}>{item.desc}</span>
-            <span style={{fontSize:13,fontWeight:700,color:C.red}}>{fmt(item.valorReal??item.valor)}</span>
-          </div>
-          {difValor&&<div style={{fontSize:10,color:"#D97706",fontWeight:700,marginBottom:2}}>
-            ⚠ Programado era {fmt(item.valor)} — vai corrigir pro valor real do extrato ao confirmar
-          </div>}
-          <div style={{fontSize:10,color:C.textMuted,marginBottom:8}}>Programado pra {fmtD(item.dataProgramada)} · debitou de fato em {fmtD(item.dataReal)}</div>
-          <button onClick={()=>confirmarBaixa(item)} disabled={load}
-            style={{width:"100%",padding:"7px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-            Dar baixa
-          </button>
-        </div>;})}
+          const valorReal=item.valorReal??item.valor;
+          const forca=Math.abs(valorReal-item.valor)<=0.01?"exato":"forte";
+          return <div key={item.row}>
+            <div style={{fontSize:9,color:C.textMuted,marginBottom:2,marginLeft:2}}>{fmtD(item.dataReal)}</div>
+            <SeloPar
+              ofx={{desc:item.descBanco||item.desc, valor:valorReal}}
+              app={{desc:item.desc, valor:item.valor, categoria:item.categoria||""}}
+              forca={forca}
+              confirmando={emVoo===item.row}
+              onConfirmar={()=>confirmarBaixa(item)}
+              row={item.row}
+              onUpdate={onUpdate}
+            />
+          </div>;
+        })}
       </div>}
 
       {(()=>{
@@ -4684,7 +4785,7 @@ function ConciliarExtratoTab({data,onUpdate}){
                 </span>
                 <button onClick={()=>vincularExistente(n,c)} disabled={load}
                   style={{flexShrink:0,background:"#1D4ED8",color:"#fff",border:"none",borderRadius:6,padding:"4px 9px",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                  Vincular
+                  {emVoo===c.row?"…":"Vincular"}
                 </button>
               </div>)}
             </div>;})()}
@@ -4794,7 +4895,7 @@ function ConciliarExtratoTab({data,onUpdate}){
             <div style={{display:"flex",gap:6}}>
               <button onClick={()=>lancarNovo(n)} disabled={load||!cfg.incluir}
                 style={{flex:1,padding:"7px",borderRadius:6,background:cfg.incluir?"#EA580C":C.borderLight,color:cfg.incluir?"#fff":C.textMuted,fontSize:11,fontWeight:700,border:"none",cursor:cfg.incluir?"pointer":"default",fontFamily:"inherit"}}>
-                Lançar
+                {emVoo===chaveNovo(n)?"…":"Lançar"}
               </button>
               <button onClick={()=>dispensar(n)}
                 style={{padding:"7px 12px",borderRadius:6,background:"transparent",color:C.textMuted,fontSize:11,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
@@ -8441,6 +8542,10 @@ function ResetCartao({cartao, data, onUpdate}){
   // mesmo tipo de problema de classificacao errada silenciosa.
   const [revisao,setRevisao]=useState(null); // null = nada pra revisar ainda
   const [loadRevisao,setLoadRevisao]=useState(false);
+  // [NOVO 18/08] Mesma correcao do extrato -- loadRevisao sozinho desabilita
+  // todos os botoes da lista mas nenhum mudava de texto, sem feedback de
+  // qual item foi tocado.
+  const [emVooRevisao,setEmVooRevisao]=useState(null);
 
   async function handleFiles(fileList){
     const arquivos=Array.from(fileList);
@@ -8513,7 +8618,7 @@ function ResetCartao({cartao, data, onUpdate}){
 
   async function confirmarRevisao(idx){
     const item=revisao[idx];
-    setLoadRevisao(true);
+    setLoadRevisao(true); setEmVooRevisao(idx);
     try{
       const aba="CARTAO_"+cartao;
       await api({action:"editarCartaoItem",aba,row:item.row,campo:"CATEGORIA",valor:item.categoria});
@@ -8523,7 +8628,7 @@ function ResetCartao({cartao, data, onUpdate}){
       setRevisao(nova);
       onUpdate(await api({action:"getData"}));
     }catch(e){alert(e.message);}
-    setLoadRevisao(false);
+    setLoadRevisao(false); setEmVooRevisao(null);
   }
 
   const revisaoUI = revisao && revisao.length ? <div style={{border:"1px solid "+C.border,borderRadius:10,padding:"12px 14px",marginBottom:12,background:C.bg}}>
@@ -8545,7 +8650,7 @@ function ResetCartao({cartao, data, onUpdate}){
         </div>
         <button onClick={()=>confirmarRevisao(idx)} disabled={loadRevisao}
           style={{padding:"5px 12px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-          Confirmar
+          {emVooRevisao===idx?"…":"Confirmar"}
         </button>
       </div>
     )}
@@ -8603,6 +8708,7 @@ function ImportarAssinaturas({onUpdate}){
   // de criar duplicata as cegas ou de simplesmente nao avisar nada.
   const [sugestoes,setSugestoes]=useState(null);
   const [loadSug,setLoadSug]=useState(false);
+  const [emVooSug,setEmVooSug]=useState(null);
 
   async function executar(){
     setLoad(true);
@@ -8626,13 +8732,13 @@ function ImportarAssinaturas({onUpdate}){
 
   async function confirmarSugestao(idx){
     const s=sugestoes[idx];
-    setLoadSug(true);
+    setLoadSug(true); setEmVooSug(idx);
     try{
       const r=await api({action:"confirmarSugestaoAssinatura",recorrencia:s.recorrencia,candidato:s.candidato});
       onUpdate(r);
       setSugestoes(sugestoes.filter((_,i)=>i!==idx));
     }catch(e){alert(e.message);}
-    setLoadSug(false);
+    setLoadSug(false); setEmVooSug(null);
   }
 
   return <div>
@@ -8654,7 +8760,7 @@ function ImportarAssinaturas({onUpdate}){
           <div style={{display:"flex",gap:6,marginTop:6}}>
             <button onClick={()=>confirmarSugestao(idx)} disabled={loadSug}
               style={{padding:"5px 12px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-              Sim, é a mesma
+              {emVooSug===idx?"…":"Sim, é a mesma"}
             </button>
             <button onClick={()=>setSugestoes(sugestoes.filter((_,i)=>i!==idx))} disabled={loadSug}
               style={{padding:"5px 12px",borderRadius:6,background:"transparent",color:C.textMuted,fontSize:11,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
@@ -9957,7 +10063,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260818.1420 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260822.1500 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10044,7 +10150,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260818.1420
+      // HTML v3.20260822.1500
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
