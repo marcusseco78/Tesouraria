@@ -4386,7 +4386,18 @@ function LinhaOfxIsoladaCartao({item,numero,selecionado,onClick,cartao,onUpdate,
   async function salvarNovo(){
     setSalvando(true);
     try{
-      const r=await api({action:"lancarCartao",cartao,data_compra:item.date,parcelas:1,parcelaAtual:1,
+      // [CORRIGIDO 27/08 -- bug real achado pelo Marcus] Estava mandando
+      // parcelas:1/parcelaAtual:1 fixo, ignorando a parcela de verdade do
+      // CSV (item.parcela, ex: "4/12"). Isso quebrava a previsibilidade:
+      // uma compra pega no meio da serie nunca gerava as parcelas futuras
+      // restantes, e a marcacao de "qual parcela e essa" ficava errada.
+      // parcelaTotal/parcelaAtualNum seguem o mesmo parse que o formulario
+      // antigo (NovoDoCSV) ja usava, pra manter o mecanismo intacto.
+      const partesParc=(item.parcela&&item.parcela!=="1/1")?item.parcela.split("/"):["1","1"];
+      const parcelaAtualNum=parseInt(partesParc[0])||1;
+      const parcelaTotalNum=parseInt(partesParc[1])||1;
+      const r=await api({action:"lancarCartao",cartao,data_compra:item.date,
+        parcelas:parcelaTotalNum,parcelaAtual:parcelaAtualNum,
         descricao:item.title,valor:Math.abs(item.amount),categoria,dcp:categoria==="DCP"?"S":"N",
         apelido:apelido.trim().toUpperCase(),envelopeId:envelope||undefined,origemCSV:true});
       onUpdate(r);
@@ -10380,7 +10391,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260827.1700 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260827.1730 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10467,7 +10478,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260827.1700
+      // HTML v3.20260827.1730
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
