@@ -4172,6 +4172,14 @@ function ConciliacaoHub({data,onUpdate,onIrPara}){
 // conciliação (protótipo testado à exaustão antes de entrar aqui). Usado
 // primeiro no "JÁ DEBITOU" do extrato; mesmo componente reaproveitado na
 // tela de fatura de cartão quando essa etapa acontecer.
+
+// [NOVO 27/08, mesmo motivo do backend] item.title do CSV vem com sufixo
+// "- Parcela X/Y" quando existe -- mas a DESCRICAO ja confirmada na
+// planilha vem sempre limpa (parcela e campo proprio). Comparar sem
+// limpar nunca batia pra nenhuma compra parcelada de verdade.
+function limparParcelaTitulo(titulo){
+  return String(titulo||"").replace(/[- ]+parcela\s+\d+\/\d+/i,"").trim();
+}
 // [NOVO 27/08] Uma cor por par de pareamento manual -- senao 2+ pares na
 // mesma tela ficam impossiveis de distinguir (mesmo problema achado no
 // protótipo do extrato).
@@ -4371,7 +4379,7 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
 function LinhaOfxIsoladaCartao({item,numero,selecionado,onClick,cartao,onUpdate,onCriado}){
   const cor=numero?PALETA_PARES[(numero-1)%PALETA_PARES.length]:null;
   const [criando,setCriando]=useState(false);
-  const [apelido,setApelido]=useState(item.title);
+  const [apelido,setApelido]=useState(limparParcelaTitulo(item.title));
   const [categoria,setCategoria]=useState("DCP");
   const [envelope,setEnvelope]=useState("");
   const [salvando,setSalvando]=useState(false);
@@ -9551,7 +9559,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
       if(!_obsConfirmadoOfx(_obsCartaoRaw(r))) return false;
       if(fmtD(r[0])!==fmtD(item.date)) return false;
       if(Math.abs(Math.abs(r[2])-Math.abs(item.amount))>0.01) return false;
-      return String(r[1]||"").trim().toUpperCase()===String(item.title||"").trim().toUpperCase();
+      return String(r[1]||"").trim().toUpperCase()===limparParcelaTitulo(item.title).toUpperCase();
     }));
     return filtrados.sort((a,b)=>new Date(b.date)-new Date(a.date));
   },[concValida,conciliacao,faturaAtual.itens]);
@@ -10372,7 +10380,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260827.1600 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260827.1700 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10459,7 +10467,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260827.1600
+      // HTML v3.20260827.1700
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
