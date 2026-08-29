@@ -4187,6 +4187,15 @@ function Pilula({children,ativa,editavel,onClick}){
     cursor:editavel?"pointer":"default",border:editavel&&!ativa?"1px dashed "+C.border:"none",
   }}>{children}</span>;
 }
+// [NOVO 27/08, pedido do Marcus] Mostra parcela (3/6, 3/3 etc) só quando
+// existe de verdade -- 1/1 (a vista) nao precisa poluir a tela. Protegido
+// dos 2 lados (banco e app) -- nao e campo simples, e estrutural (muda a
+// sequencia de linhas futuras), edicao continua so pelo caminho completo.
+function parcelaBadge(p){
+  const s=String(p||"").trim();
+  if(!s||s==="1/1") return null;
+  return <span style={{fontSize:8.5,fontWeight:700,color:C.textMuted,flexShrink:0}}>{s}</span>;
+}
 function rotuloCategoriaPill(cat){
   if(cat==="DCP") return "Semanal";
   return CAT_LABEL[cat]||cat;
@@ -4267,15 +4276,18 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
   }
 
   return <div>
-    <div onClick={()=>!editando&&row&&setEditando(true)} style={{
+    <div onClick={()=>{
+        if(editando){ setApelidoEdit(app.desc); setCategoriaEdit(app.categoria); setEnvelopeEdit(envelopeAtual||""); setEditando(false); }
+        else if(row){ setEditando(true); }
+      }} style={{
       display:"flex",alignItems:"center",gap:6,padding:"9px 12px",
       background:editando?"#EFF6FF":C.surface,borderRadius:"10px 10px 0 0",
       border:"1px solid "+(editando?C.blue:C.border),borderBottom:"none",
-      cursor:row&&!editando?"pointer":"default",boxSizing:"border-box",
+      cursor:row?"pointer":"default",boxSizing:"border-box",
     }}>
       <span style={{fontSize:13,letterSpacing:-3,flexShrink:0}}>🏦📱</span>
       {editando?(
-        <input value={apelidoEdit} onChange={e=>setApelidoEdit(e.target.value)} placeholder="Apelido" autoFocus
+        <input value={apelidoEdit} onChange={e=>setApelidoEdit(e.target.value)} onClick={e=>e.stopPropagation()} placeholder="Apelido" autoFocus
           style={{flex:1,minWidth:0,fontSize:11.5,fontWeight:700,padding:"3px 6px",borderRadius:5,border:"1px solid "+C.blue,textTransform:"uppercase",fontFamily:"inherit",boxSizing:"border-box"}}/>
       ):(
         <div style={{flex:1,minWidth:0,fontSize:12.5,fontWeight:700,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{app.desc}</div>
@@ -4300,10 +4312,16 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
         <span style={{fontSize:9.5,fontWeight:600,color:C.textMuted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ofx.desc}</span>
       </div>
       <div/><Pilula>OFX</Pilula>
-      <span style={{fontSize:9.5,fontWeight:700,color:C.textMuted,whiteSpace:"nowrap"}}>{fmtCentro(ofx.valor)}</span>
+      <div style={{display:"flex",alignItems:"center",gap:3,justifyContent:"flex-end"}}>
+        {parcelaBadge(ofx.parcela)}
+        <span style={{fontSize:9.5,fontWeight:700,color:C.textMuted,whiteSpace:"nowrap"}}>{fmtCentro(ofx.valor)}</span>
+      </div>
       <div/>
       <div/>
-      <span style={{fontSize:9.5,fontWeight:700,color:C.textMuted,whiteSpace:"nowrap",textAlign:"right"}}>{fmtCentro(app.valor)}</span>
+      <div style={{display:"flex",alignItems:"center",gap:3,justifyContent:"flex-end"}}>
+        <span style={{fontSize:9.5,fontWeight:700,color:C.textMuted,whiteSpace:"nowrap"}}>{fmtCentro(app.valor)}</span>
+        {parcelaBadge(app.parcela)}
+      </div>
       <Pilula>{rotuloCategoriaPill(categoriaEdit)}</Pilula>
       <div/>
       <div style={{display:"flex",alignItems:"center",gap:4,justifyContent:"flex-end",minWidth:0}}>
@@ -4346,21 +4364,60 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
 
 // [NOVO 27/08 -- substitui o formulario grande "NOVOS NO CSV"] Item do CSV
 // sem nenhuma linha correspondente na planilha ainda -- so o banco, nunca
-// editavel (mesma regra do SeloPar: OFX e verdade). Toca pra selecionar e
-// parear manualmente com um "aguardando" (LinhaAppIsoladaCartao) solto.
-function LinhaOfxIsoladaCartao({item,numero,selecionado,onClick}){
+// editavel (mesma regra do SeloPar: OFX e verdade). Toca no corpo da linha
+// pra selecionar e parear manualmente com um "aguardando" solto. O "+"
+// (canto, nao propaga o toque de parear) abre criacao direta do zero, pra
+// quando genuinamente nao existe nenhum app correspondente pra parear.
+function LinhaOfxIsoladaCartao({item,numero,selecionado,onClick,cartao,onUpdate,onCriado}){
   const cor=numero?PALETA_PARES[(numero-1)%PALETA_PARES.length]:null;
-  return <div onClick={onClick} style={{
-    display:"flex",alignItems:"center",gap:6,padding:"8px 10px",marginBottom:6,
-    background:cor?cor.bg:(selecionado?"#EFF6FF":C.surface),
-    border:"1px solid "+(cor?cor.cor:(selecionado?C.blue:C.border)),
-    borderRadius:8,width:"90%",marginRight:"auto",boxSizing:"border-box",cursor:"pointer",
-  }}>
-    <span style={{fontSize:13,flexShrink:0}}>🏦</span>
-    <span style={{width:"42%",minWidth:0,fontSize:12,fontWeight:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.title}</span>
-    <span style={{width:"22%",display:"flex",justifyContent:"center",flexShrink:0}}><Pilula>OFX</Pilula></span>
-    <span style={{flex:1,fontSize:12,fontWeight:700,color:C.text,textAlign:"right"}}>{fmt(item.amount)}</span>
-    {numero&&<span style={{fontSize:10,fontWeight:800,color:"#fff",background:cor.cor,borderRadius:999,width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginLeft:4}}>{numero}</span>}
+  const [criando,setCriando]=useState(false);
+  const [apelido,setApelido]=useState(item.title);
+  const [categoria,setCategoria]=useState("DCP");
+  const [envelope,setEnvelope]=useState("");
+  const [salvando,setSalvando]=useState(false);
+  async function salvarNovo(){
+    setSalvando(true);
+    try{
+      const r=await api({action:"lancarCartao",cartao,data_compra:item.date,parcelas:1,parcelaAtual:1,
+        descricao:item.title,valor:Math.abs(item.amount),categoria,dcp:categoria==="DCP"?"S":"N",
+        apelido:apelido.trim().toUpperCase(),envelopeId:envelope||undefined,origemCSV:true});
+      onUpdate(r);
+      onCriado&&onCriado();
+    }catch(e){ alert(e.message); }
+    setSalvando(false);
+  }
+  return <div style={{width:"90%",marginRight:"auto",marginBottom:6}}>
+    <div onClick={()=>!criando&&onClick()} style={{
+      display:"flex",alignItems:"center",gap:6,padding:"8px 10px",
+      background:cor?cor.bg:(selecionado?"#EFF6FF":C.surface),
+      border:"1px solid "+(cor?cor.cor:(selecionado?C.blue:C.border)),
+      borderRadius:criando?"8px 8px 0 0":8,boxSizing:"border-box",cursor:"pointer",
+    }}>
+      <span style={{fontSize:13,flexShrink:0}}>🏦</span>
+      <span style={{width:"36%",minWidth:0,fontSize:12,fontWeight:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.title}</span>
+      <span style={{width:"22%",display:"flex",justifyContent:"center",flexShrink:0}}><Pilula>OFX</Pilula></span>
+      <span style={{flex:1,display:"flex",alignItems:"center",justifyContent:"flex-end",gap:3}}>
+        {parcelaBadge(item.parcela)}
+        <span style={{fontSize:12,fontWeight:700,color:C.text}}>{fmt(item.amount)}</span>
+      </span>
+      {numero?
+        <span style={{fontSize:10,fontWeight:800,color:"#fff",background:cor.cor,borderRadius:999,width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginLeft:4}}>{numero}</span>
+      :<button onClick={e=>{e.stopPropagation();setCriando(!criando);}} title="Criar lançamento novo do zero (sem parear)" style={{
+          width:18,height:18,borderRadius:999,border:"none",background:criando?C.accent:C.borderLight,color:criando?"#fff":C.textSub,
+          fontSize:11,fontWeight:800,cursor:"pointer",flexShrink:0,marginLeft:2,lineHeight:1,
+        }}>+</button>}
+    </div>
+    {criando&&<div style={{border:"1px solid "+C.blue,borderTop:"none",borderRadius:"0 0 8px 8px",padding:"7px 10px",background:"#EFF6FF"}}>
+      <input value={apelido} onChange={e=>setApelido(e.target.value)} placeholder="Apelido" autoFocus
+        style={{width:"100%",fontSize:11,fontWeight:600,padding:"4px 6px",borderRadius:5,border:"1px solid "+C.border,textTransform:"uppercase",fontFamily:"inherit",marginBottom:6,boxSizing:"border-box"}}/>
+      <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
+        {categoriasPorSinal(-Math.abs(item.amount)).map(c=><Pilula key={c} editavel ativa={categoria===c} onClick={()=>setCategoria(c)}>{rotuloCategoriaPill(c)}</Pilula>)}
+        <div style={{flex:1}}/>
+        <button onClick={salvarNovo} disabled={salvando} style={{
+          padding:"5px 12px",borderRadius:7,border:"none",background:C.accent,color:"#fff",fontSize:11,fontWeight:700,fontFamily:"inherit",cursor:"pointer",flexShrink:0,
+        }}>{salvando?"…":"Lançar"}</button>
+      </div>
+    </div>}
   </div>;
 }
 
@@ -4377,7 +4434,10 @@ function LinhaAppIsoladaCartao({aguardando,numero,selecionado,onClickParear}){
     borderRadius:8,width:"90%",marginLeft:"auto",boxSizing:"border-box",cursor:"pointer",
   }}>
     {numero&&<span style={{fontSize:10,fontWeight:800,color:"#fff",background:cor.cor,borderRadius:999,width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{numero}</span>}
-    <span style={{flex:1,fontSize:12,fontWeight:700,color:C.text}}>{fmt(aguardando.valor)}</span>
+    <span style={{flex:1,display:"flex",alignItems:"center",gap:3}}>
+      {parcelaBadge(aguardando.parcela)}
+      <span style={{fontSize:12,fontWeight:700,color:C.text}}>{fmt(aguardando.valor)}</span>
+    </span>
     <span style={{width:"22%",display:"flex",justifyContent:"center",flexShrink:0}}><Pilula>{rotuloCategoriaPill(aguardando.categoria)}</Pilula></span>
     <span style={{width:"42%",minWidth:0,fontSize:12,fontWeight:600,color:C.text,textAlign:"right",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{aguardando.desc}</span>
     <span style={{fontSize:13,flexShrink:0}}>📱</span>
@@ -8984,7 +9044,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   }
   async function mesclarParesCartao(){
     setMesclando(true);
-    const idxsUsados=[];
+    const itensUsados=[];
     try{
       for(const num of Object.keys(paresPorNumero)){
         const {ofxId,appId}=paresPorNumero[num];
@@ -8995,12 +9055,17 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         const r=await api({action:"vincularCompraCartao",cartao,row:rowApp,
           descricaoCsv:item.title,valorCsv:item.amount,dataCsv:item.date,parcelaCsv:item.parcela});
         onUpdate(r);
-        idxsUsados.push(idxOfx);
+        itensUsados.push(item);
         setConciliacao(c=>c?{...c,
           aguardandoFatura:(c.aguardandoFatura||[]).filter(a=>a.row!==rowApp),
           confirmadosFatura:[...(c.confirmadosFatura||[]),{row:rowApp}]}:c);
       }
-      setConciliacao(c=>c?{...c,foraDaPlanilha:(c.foraDaPlanilha||[]).filter((_,idx)=>!idxsUsados.includes(idx))}:c);
+      // [CORRIGIDO 27/08 -- bug real achado nesta rodada] novosDoCSV e' uma
+      // VIEW filtrada/ordenada de conciliacao.foraDaPlanilha, nao o mesmo
+      // array -- remover por INDICE removia o item errado do estado bruto.
+      // Remove por conteudo (data+titulo+valor) em vez de posicao.
+      setConciliacao(c=>c?{...c,foraDaPlanilha:(c.foraDaPlanilha||[]).filter(f=>
+        !itensUsados.some(u=>u.date===f.date&&u.title===f.title&&u.amount===f.amount))}:c);
       setParesPorNumero({}); setParIdParaNumero({});
     }catch(e){ alert(e.message); }
     setMesclando(false);
@@ -9463,7 +9528,33 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     if(concValida)(conciliacao.possiveisDivergencias||[]).forEach(d=>mp.set(d.planilha.row,d));
     return mp;
   },[concValida,conciliacao]);
-  const novosDoCSV=concValida?(conciliacao.foraDaPlanilha||[]):[];
+  // [NOVO 27/08 -- achado real com o Marcus] Sem ordenacao antes (a ordem
+  // vinha crua do CSV) -- agora ordenado por data. Tambem filtra
+  // defensivamente qualquer item que ja bate (mesma data+valor) com uma
+  // linha JA confirmada na planilha -- em algum caso real o motor nao
+  // re-casa um item ja confirmadoOfx numa nova rodada de conciliacao
+  // (causa raiz exata ainda nao identificada, precisa reproduzir com CSV
+  // real numa proxima sessao), e sem esse filtro o item aparecia solto E
+  // ja mesclado ao mesmo tempo -- duplicata visual clara.
+  const novosDoCSV=useMemo(()=>{
+    if(!concValida) return [];
+    const brutos=conciliacao.foraDaPlanilha||[];
+    // [CORRIGIDO 27/08, insight do Marcus] Antes so checava data+valor --
+    // podia deixar passar falso positivo (2 compras diferentes, mesmo dia,
+    // mesmo valor por coincidencia) e nao dava garantia de verdade. Agora
+    // exige tambem o nome bancario EXATO -- desde que todo mesclado
+    // (auto-match, vincular manual, ou "+lancar" do OFX) sempre grava a
+    // DESCRICAO como o texto cru do banco, os 3 juntos (valor+data+nome
+    // bancario, exatos) sao a identidade real de "esse OFX ja foi
+    // trabalhado", sem depender de aproximacao nenhuma.
+    const filtrados=brutos.filter(item=>!faturaAtual.itens.some(r=>{
+      if(!_obsConfirmadoOfx(_obsCartaoRaw(r))) return false;
+      if(fmtD(r[0])!==fmtD(item.date)) return false;
+      if(Math.abs(Math.abs(r[2])-Math.abs(item.amount))>0.01) return false;
+      return String(r[1]||"").trim().toUpperCase()===String(item.title||"").trim().toUpperCase();
+    }));
+    return filtrados.sort((a,b)=>new Date(b.date)-new Date(a.date));
+  },[concValida,conciliacao,faturaAtual.itens]);
 
   async function lancarNovo(){
     if(!nDesc.trim()||!nValor)return;
@@ -9793,6 +9884,8 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
               numero={parIdParaNumero[idOfx]}
               selecionado={selecionadoPar&&selecionadoPar.id===idOfx}
               onClick={()=>tocarPareamento(idOfx,"ofx")}
+              cartao={cartao} onUpdate={onUpdate}
+              onCriado={()=>setConciliacao(c=>c?{...c,foraDaPlanilha:(c.foraDaPlanilha||[]).filter(f=>!(f.date===item.date&&f.title===item.title&&f.amount===item.amount))}:c)}
             />
           </React.Fragment>;
         });
@@ -9867,7 +9960,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           const idApp="app_"+linhaR;
           return <React.Fragment key={linhaR}>
             {cabecalhoData}
-            <LinhaAppIsoladaCartao aguardando={{row:linhaR,desc:apelidoAtual||r[1],valor:r[2],categoria:r[5],envelopeId:_obsEnvelopeId(_obsCartaoRaw(r))}}
+            <LinhaAppIsoladaCartao aguardando={{row:linhaR,desc:apelidoAtual||r[1],valor:r[2],categoria:r[5],parcela:r[3],envelopeId:_obsEnvelopeId(_obsCartaoRaw(r))}}
               numero={parIdParaNumero[idApp]}
               selecionado={selecionadoPar&&selecionadoPar.id===idApp}
               onClickParear={()=>tocarPareamento(idApp,"app")}
@@ -9889,8 +9982,8 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
             <div id={"cart-item-"+linhaR}
               style={{background:destacado?"#FEF3C7":"transparent",borderRadius:10,transition:"background 1s"}}>
               <SeloPar
-                ofx={{desc:divergencia?divergencia.csv.title:r[1], valor:divergencia?divergencia.csv.amount:r[2]}}
-                app={{desc:apelidoAtual||r[1], valor:r[2], categoria:r[5]}}
+                ofx={{desc:divergencia?divergencia.csv.title:r[1], valor:divergencia?divergencia.csv.amount:r[2], parcela:divergencia?divergencia.csv.parcela:r[3]}}
+                app={{desc:apelidoAtual||r[1], valor:r[2], categoria:r[5], parcela:r[3]}}
                 forca={divergencia?(divergencia.forca||"forte"):(classificadoSeguro?"exato":"semclass")}
                 confirmando={eLoad}
                 onConfirmar={divergencia?()=>usarDadosDoCSV(divergencia):null}
@@ -10279,7 +10372,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260827.1200 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260827.1600 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10366,7 +10459,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260827.1200
+      // HTML v3.20260827.1600
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
