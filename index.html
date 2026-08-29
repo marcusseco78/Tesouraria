@@ -4172,6 +4172,13 @@ function ConciliacaoHub({data,onUpdate,onIrPara}){
 // conciliação (protótipo testado à exaustão antes de entrar aqui). Usado
 // primeiro no "JÁ DEBITOU" do extrato; mesmo componente reaproveitado na
 // tela de fatura de cartão quando essa etapa acontecer.
+// [NOVO 27/08] Uma cor por par de pareamento manual -- senao 2+ pares na
+// mesma tela ficam impossiveis de distinguir (mesmo problema achado no
+// protótipo do extrato).
+const PALETA_PARES=[
+  {cor:"#EA580C",bg:"#FFF7ED"},{cor:"#7C3AED",bg:"#F5F3FF"},{cor:"#0D9488",bg:"#F0FDFA"},
+  {cor:"#DB2777",bg:"#FDF2F8"},{cor:"#CA8A04",bg:"#FEFCE8"},
+];
 function Pilula({children,ativa,editavel,onClick}){
   return <span onClick={editavel?onClick:undefined} style={{
     fontSize:8,fontWeight:600,color:ativa?"#fff":C.textSub,background:ativa?C.accent:C.borderLight,
@@ -4334,6 +4341,46 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
       style={{width:"100%",padding:"7px",borderRadius:"0 0 10px 10px",background:cor,color:"#fff",fontSize:11,fontWeight:700,border:"none",borderTop:"none",cursor:"pointer",fontFamily:"inherit"}}>
       {confirmando?"…":"Confirmar baixa"}
     </button>}
+  </div>;
+}
+
+// [NOVO 27/08 -- substitui o formulario grande "NOVOS NO CSV"] Item do CSV
+// sem nenhuma linha correspondente na planilha ainda -- so o banco, nunca
+// editavel (mesma regra do SeloPar: OFX e verdade). Toca pra selecionar e
+// parear manualmente com um "aguardando" (LinhaAppIsoladaCartao) solto.
+function LinhaOfxIsoladaCartao({item,numero,selecionado,onClick}){
+  const cor=numero?PALETA_PARES[(numero-1)%PALETA_PARES.length]:null;
+  return <div onClick={onClick} style={{
+    display:"flex",alignItems:"center",gap:6,padding:"8px 10px",marginBottom:6,
+    background:cor?cor.bg:(selecionado?"#EFF6FF":C.surface),
+    border:"1px solid "+(cor?cor.cor:(selecionado?C.blue:C.border)),
+    borderRadius:8,width:"90%",marginRight:"auto",boxSizing:"border-box",cursor:"pointer",
+  }}>
+    <span style={{fontSize:13,flexShrink:0}}>🏦</span>
+    <span style={{width:"42%",minWidth:0,fontSize:12,fontWeight:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.title}</span>
+    <span style={{width:"22%",display:"flex",justifyContent:"center",flexShrink:0}}><Pilula>OFX</Pilula></span>
+    <span style={{flex:1,fontSize:12,fontWeight:700,color:C.text,textAlign:"right"}}>{fmt(item.amount)}</span>
+    {numero&&<span style={{fontSize:10,fontWeight:800,color:"#fff",background:cor.cor,borderRadius:999,width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginLeft:4}}>{numero}</span>}
+  </div>;
+}
+
+// Item da planilha (PENDENTE) que ainda nao apareceu no CSV desta rodada --
+// toca pra selecionar/parear com um OFX solto (mesmo mecanismo do lado
+// banco). Edicao de apelido/categoria desses itens continua pelo caminho
+// normal (⋮) -- fora de escopo aqui, que resolve so o pareamento.
+function LinhaAppIsoladaCartao({aguardando,numero,selecionado,onClickParear}){
+  const cor=numero?PALETA_PARES[(numero-1)%PALETA_PARES.length]:null;
+  return <div onClick={onClickParear} style={{
+    display:"flex",alignItems:"center",gap:6,padding:"8px 10px",
+    background:cor?cor.bg:(selecionado?"#EFF6FF":C.surface),
+    border:"1px solid "+(cor?cor.cor:(selecionado?C.blue:C.border)),
+    borderRadius:8,width:"90%",marginLeft:"auto",boxSizing:"border-box",cursor:"pointer",
+  }}>
+    {numero&&<span style={{fontSize:10,fontWeight:800,color:"#fff",background:cor.cor,borderRadius:999,width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{numero}</span>}
+    <span style={{flex:1,fontSize:12,fontWeight:700,color:C.text}}>{fmt(aguardando.valor)}</span>
+    <span style={{width:"22%",display:"flex",justifyContent:"center",flexShrink:0}}><Pilula>{rotuloCategoriaPill(aguardando.categoria)}</Pilula></span>
+    <span style={{width:"42%",minWidth:0,fontSize:12,fontWeight:600,color:C.text,textAlign:"right",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{aguardando.desc}</span>
+    <span style={{fontSize:13,flexShrink:0}}>📱</span>
   </div>;
 }
 
@@ -8906,6 +8953,58 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   const [eLoad,setELoad]=useState(false);
   // resultado da última conciliação de CSV rodada nesta aba (sem Gemini)
   const [conciliacao,setConciliacao]=useState(null); // {cartao, vencimentoAlvo, foraDaPlanilha, aguardandoFatura, possiveisDivergencias}
+  // [NOVO 27/08 -- substitui o formulario grande "NOVOS NO CSV"] Estado do
+  // pareamento manual por toque: toca um OFX solto, depois um App solto,
+  // os 2 ganham numero+cor (ainda 2 linhas soltas); "Mesclar" de fato chama
+  // vincularCompraCartao pra cada par.
+  const [paresPorNumero,setParesPorNumero]=useState({}); // numero -> {ofxIdx, appRow}
+  const [parIdParaNumero,setParIdParaNumero]=useState({}); // "ofx_i"|"app_row" -> numero
+  const [selecionadoPar,setSelecionadoPar]=useState(null); // {id,lado}
+  const [proximoNumeroPar,setProximoNumeroPar]=useState(1);
+  const [mesclando,setMesclando]=useState(false);
+  function tocarPareamento(id,lado){
+    if(parIdParaNumero[id]){
+      const num=parIdParaNumero[id];
+      const grupo=paresPorNumero[num];
+      const novoParId={...parIdParaNumero}; delete novoParId[grupo.ofxId]; delete novoParId[grupo.appId];
+      const novoPorNumero={...paresPorNumero}; delete novoPorNumero[num];
+      setParIdParaNumero(novoParId); setParesPorNumero(novoPorNumero);
+      return;
+    }
+    if(!selecionadoPar){ setSelecionadoPar({id,lado}); return; }
+    if(selecionadoPar.id===id){ setSelecionadoPar(null); return; }
+    if(selecionadoPar.lado===lado){ setSelecionadoPar({id,lado}); return; }
+    const ofxId=lado==="ofx"?id:selecionadoPar.id;
+    const appId=lado==="app"?id:selecionadoPar.id;
+    const num=proximoNumeroPar;
+    setParesPorNumero(prev=>({...prev,[num]:{ofxId,appId}}));
+    setParIdParaNumero(prev=>({...prev,[ofxId]:num,[appId]:num}));
+    setProximoNumeroPar(num+1);
+    setSelecionadoPar(null);
+  }
+  async function mesclarParesCartao(){
+    setMesclando(true);
+    const idxsUsados=[];
+    try{
+      for(const num of Object.keys(paresPorNumero)){
+        const {ofxId,appId}=paresPorNumero[num];
+        const idxOfx=Number(ofxId.replace("ofx_",""));
+        const rowApp=Number(appId.replace("app_",""));
+        const item=novosDoCSV[idxOfx];
+        if(!item) continue;
+        const r=await api({action:"vincularCompraCartao",cartao,row:rowApp,
+          descricaoCsv:item.title,valorCsv:item.amount,dataCsv:item.date,parcelaCsv:item.parcela});
+        onUpdate(r);
+        idxsUsados.push(idxOfx);
+        setConciliacao(c=>c?{...c,
+          aguardandoFatura:(c.aguardandoFatura||[]).filter(a=>a.row!==rowApp),
+          confirmadosFatura:[...(c.confirmadosFatura||[]),{row:rowApp}]}:c);
+      }
+      setConciliacao(c=>c?{...c,foraDaPlanilha:(c.foraDaPlanilha||[]).filter((_,idx)=>!idxsUsados.includes(idx))}:c);
+      setParesPorNumero({}); setParIdParaNumero({});
+    }catch(e){ alert(e.message); }
+    setMesclando(false);
+  }
 
   // [ATUALIZADO 03/08, Fase 2 multi-cartao] rows vem do mapa generico
   // data.cartaoItens (cobre qualquer cartao ativo, nao so PF/PJ) -- PF/PJ
@@ -9674,34 +9773,34 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
       {showForm?"Cancelar":"+ Nova compra"}
     </button>
 
-    {/* 🔴 Itens que apareceram no CSV mas ainda não têm linha na planilha */}
-    {novosDoCSV.length>0&&<div style={{marginBottom:12}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 4px"}}>
-        <span style={{fontSize:11,fontWeight:700,color:C.red,letterSpacing:".05em"}}>
-          🔴 NOVOS NO CSV — ainda não lançados ({novosDoCSV.length})
-        </span>
-        {novosDoCSV.length>1&&<button onClick={lancarTodosNovosCartao} disabled={load||!marcadosNovosCartao.length}
-          style={{fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:6,background:marcadosNovosCartao.length?"#EA580C":C.borderLight,
-            color:marcadosNovosCartao.length?"#fff":C.textMuted,border:"none",cursor:marcadosNovosCartao.length?"pointer":"default",fontFamily:"inherit"}}>
-          {progressoLancarTodos?("⏳ Lançando "+progressoLancarTodos.feito+"/"+progressoLancarTodos.total+"…"):("🚀 Lançar todos marcados ("+marcadosNovosCartao.length+")")}
-        </button>}
+    {/* [NOVO 27/08] Itens do CSV sem linha correspondente na planilha --
+        toque pra parear com um "aguardando" (que aparece na lista principal
+        logo abaixo, marcado com a mesma cor quando pareado). Sem formulario
+        grande, sem secao vermelha separada -- so as linhas soltas. */}
+    {novosDoCSV.length>0&&<div style={{marginBottom:8}}>
+      <div style={{fontSize:10,color:C.textMuted,marginBottom:8,lineHeight:1.4}}>
+        {novosDoCSV.length} lançamento(s) do banco sem par ainda. Toca num 🏦 solto, depois num 📱 solto (mais abaixo, nos "PENDENTE") pra parear.
       </div>
-      {resultadoLancarTodos&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-          background:resultadoLancarTodos.ok?"#DCFCE7":"#FEE2E2",color:resultadoLancarTodos.ok?"#166534":"#991B1B",
-          padding:"8px 12px",borderRadius:8,marginBottom:8,fontSize:12,fontWeight:600}}>
-        <span>{resultadoLancarTodos.ok?"✅ ":"⚠️ "}{resultadoLancarTodos.msg}</span>
-        <button onClick={()=>setResultadoLancarTodos(null)} style={{background:"none",border:"none",color:"inherit",fontWeight:700,cursor:"pointer",fontSize:14,padding:"0 4px"}}>✕</button>
-      </div>}
-      {novosDoCSV.map((item,i)=>{const chave=item.date+"|"+item.title+"|"+item.amount+"|"+i;
-        return <NovoDoCSV key={chave}
-        item={item} cartao={cartao} onUpdate={onUpdate} data={data}
-        onResolvido={()=>removerNovoDoCSV(item,chave)}
-        onVinculado={(rowVinculada)=>setConciliacao(c=>c?{...c,
-          aguardandoFatura:(c.aguardandoFatura||[]).filter(a=>a.row!==rowVinculada),
-          confirmadosFatura:[...(c.confirmadosFatura||[]),{row:rowVinculada}]}:c)}
-        onNovaLinhaConfirmada={(row)=>setConciliacao(c=>c?{...c,confirmadosFatura:[...(c.confirmadosFatura||[]),{row}]}:c)}
-        candidatos={concValida?(conciliacao.aguardandoFatura||[]):[]}
-        onSync={cfg=>setSyncNovosCartao(s=>({...s,[chave]:cfg}))}/>;})}
+      {(()=>{
+        let dataAnterior=null;
+        return [...novosDoCSV].map((item,i)=>{
+          const dataStr=fmtD(item.date);
+          const novoDia=dataStr!==dataAnterior; dataAnterior=dataStr;
+          const idOfx="ofx_"+i;
+          return <React.Fragment key={idOfx}>
+            {novoDia&&<div style={{fontSize:11,fontWeight:800,color:C.textMuted,margin:"10px 2px 6px",paddingBottom:4,borderBottom:"1px solid "+C.border}}>{dataStr}</div>}
+            <LinhaOfxIsoladaCartao item={item}
+              numero={parIdParaNumero[idOfx]}
+              selecionado={selecionadoPar&&selecionadoPar.id===idOfx}
+              onClick={()=>tocarPareamento(idOfx,"ofx")}
+            />
+          </React.Fragment>;
+        });
+      })()}
+      {Object.keys(paresPorNumero).length>0&&<button onClick={mesclarParesCartao} disabled={mesclando}
+        style={{width:"100%",padding:"10px",borderRadius:8,background:C.accent,color:"#fff",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit",marginTop:6}}>
+        {mesclando?"…":`Mesclar ${Object.keys(paresPorNumero).length} par(es) marcado(s)`}
+      </button>}
     </div>}
 
     {/* Form novo lançamento */}
@@ -9756,10 +9855,26 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         const motivo=divergencia?{tipo:"divergencia",dado:divergencia}:null;
         const destacado=destaque?.tab==="cartoes"&&destaque.row===linhaR;
         const apelidoAtual=_obsApelidoCartao(_obsCartaoRaw(r));
+        const aguardandoItem=concValida&&(conciliacao.aguardandoFatura||[]).find(a=>a.row===linhaR);
         const dataStr=fmtD(r[0]);
         const novoDia=dataStr!==dataAnterior;
         dataAnterior=dataStr;
         const cabecalhoData=novoDia?<div style={{fontSize:11,fontWeight:800,color:C.textMuted,margin:"12px 2px 6px",paddingBottom:4,borderBottom:"1px solid "+C.border}}>{dataStr}</div>:null;
+        // [NOVO 27/08] PENDENTE que a conciliacao ativa marcou como
+        // "aguardando" (banco ainda nao trouxe essa transacao) vira
+        // pareavel por toque -- mesmo mecanismo do OFX solto acima.
+        if(aguardandoItem){
+          const idApp="app_"+linhaR;
+          return <React.Fragment key={linhaR}>
+            {cabecalhoData}
+            <LinhaAppIsoladaCartao aguardando={{row:linhaR,desc:apelidoAtual||r[1],valor:r[2],categoria:r[5],envelopeId:_obsEnvelopeId(_obsCartaoRaw(r))}}
+              numero={parIdParaNumero[idApp]}
+              selecionado={selecionadoPar&&selecionadoPar.id===idApp}
+              onClickParear={()=>tocarPareamento(idApp,"app")}
+              cartao={cartao} onUpdate={onUpdate} data={data}
+            />
+          </React.Fragment>;
+        }
         // [NOVO 27/08 -- pedido do Marcus: "lista dupla item a item, igual
         // o extrato"] Divergencia e confirmado (com ou sem classificacao)
         // agora usam o mesmo SeloPar do extrato -- 2 fontes, cada uma no
@@ -10164,7 +10279,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260827.1000 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260827.1200 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10251,7 +10366,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260827.1000
+      // HTML v3.20260827.1200
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
