@@ -9596,7 +9596,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   // ordenada de verdade antes de renderizar -- sem secao, sem reinicio.
   const linhasCombinadas=useMemo(()=>{
     const soltos=novosDoCSV.map((item,i)=>({__tipo:"ofx_solto",__data:new Date(item.date),item,__idx:i}));
-    const reais=faturaAtual.itens.map(r=>({__tipo:"real",__data:r[0],r}));
+    const reais=faturaAtual.itens.map(r=>({__tipo:"real",__data:new Date(r[0]),r}));
     return [...soltos,...reais].sort((a,b)=>b.__data-a.__data);
   },[novosDoCSV,faturaAtual.itens]);
 
@@ -10407,7 +10407,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260827.2000 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260827.2100 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10494,7 +10494,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260827.2000
+      // HTML v3.20260827.2100
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
