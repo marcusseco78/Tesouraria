@@ -4204,9 +4204,20 @@ function parcelaBadge(p){
   if(!s||s==="1/1") return null;
   return <span style={{fontSize:8.5,fontWeight:700,color:C.textMuted,flexShrink:0}}>{s}</span>;
 }
+// [NOVO 27/08, pedido do Marcus: "pílulas mais legíveis e uniformes"]
+// Siglas curtas de 3-4 letras pra categoria -- antes cada pílula tinha um
+// tamanho diferente (ex: "Extraordinário" truncava feio, "DCP" cabia
+// inteiro) porque usava o rótulo completo (CAT_LABEL). Agora todo lugar
+// que mostra categoria em pílula (SeloPar, linhas soltas de pareamento,
+// formulário de "+lançar") fica do mesmo tamanho, sem truncar.
+const CAT_SIGLA={
+  "DCP":"SEM", "DESPESA FIXA":"FIXA", "DIVIDA_PARCELADA":"PARC",
+  "DIVIDA_NAO_PARCELADA":"DNPA", "EXTRAORDINARIA":"EXTR", "IMPOSTO":"IMPO",
+  "INVESTIMENTO":"INVE", "TRANSFERENCIA":"TRAN",
+  "RECEITA":"RECE", "DEPOSITO_AVULSO":"DEPO",
+};
 function rotuloCategoriaPill(cat){
-  if(cat==="DCP") return "Semanal";
-  return CAT_LABEL[cat]||cat;
+  return CAT_SIGLA[cat]||cat;
 }
 function fmtCentro(v){ return fmt(v); }
 /**
@@ -4301,6 +4312,7 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
         <div style={{flex:1,minWidth:0,fontSize:12.5,fontWeight:700,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{app.desc}</div>
       )}
       <Pilula>{rotuloCategoriaPill(app.categoria)}</Pilula>
+      {parcelaBadge(app.parcela)}
       <span style={{fontSize:12.5,fontWeight:700,color:C.text,flexShrink:0}}>{fmtCentro(app.valor)}</span>
     </div>
     {!editando&&<div style={{fontSize:9,fontWeight:700,color:cor,background:bg,padding:"1px 5px 1px 12px",display:"block"}}>
@@ -9575,6 +9587,19 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     return filtrados.sort((a,b)=>new Date(b.date)-new Date(a.date));
   },[concValida,conciliacao,faturaAtual.itens]);
 
+  // [CORRIGIDO 27/08 -- pedido do Marcus, atendido só pela metade antes]
+  // As 2 fontes (OFX solto sem linha na planilha, e linhas reais da
+  // planilha) viviam em 2 blocos JSX separados, cada um ordenado por data
+  // por dentro de si mesmo -- mas ao juntar os 2 blocos na tela, a data
+  // "reiniciava" (ex: cai pra 14/08 no fim do bloco 1, depois volta pra
+  // 26/08 no comeco do bloco 2). Agora e uma lista so, combinada e
+  // ordenada de verdade antes de renderizar -- sem secao, sem reinicio.
+  const linhasCombinadas=useMemo(()=>{
+    const soltos=novosDoCSV.map((item,i)=>({__tipo:"ofx_solto",__data:new Date(item.date),item,__idx:i}));
+    const reais=faturaAtual.itens.map(r=>({__tipo:"real",__data:r[0],r}));
+    return [...soltos,...reais].sort((a,b)=>b.__data-a.__data);
+  },[novosDoCSV,faturaAtual.itens]);
+
   async function lancarNovo(){
     if(!nDesc.trim()||!nValor)return;
     setLoad(true);
@@ -9883,38 +9908,6 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
       {showForm?"Cancelar":"+ Nova compra"}
     </button>
 
-    {/* [NOVO 27/08] Itens do CSV sem linha correspondente na planilha --
-        toque pra parear com um "aguardando" (que aparece na lista principal
-        logo abaixo, marcado com a mesma cor quando pareado). Sem formulario
-        grande, sem secao vermelha separada -- so as linhas soltas. */}
-    {novosDoCSV.length>0&&<div style={{marginBottom:8}}>
-      <div style={{fontSize:10,color:C.textMuted,marginBottom:8,lineHeight:1.4}}>
-        {novosDoCSV.length} lançamento(s) do banco sem par ainda. Toca num 🏦 solto, depois num 📱 solto (mais abaixo, nos "PENDENTE") pra parear.
-      </div>
-      {(()=>{
-        let dataAnterior=null;
-        return [...novosDoCSV].map((item,i)=>{
-          const dataStr=fmtD(item.date);
-          const novoDia=dataStr!==dataAnterior; dataAnterior=dataStr;
-          const idOfx="ofx_"+i;
-          return <React.Fragment key={idOfx}>
-            {novoDia&&<div style={{fontSize:11,fontWeight:800,color:C.textMuted,margin:"10px 2px 6px",paddingBottom:4,borderBottom:"1px solid "+C.border}}>{dataStr}</div>}
-            <LinhaOfxIsoladaCartao item={item}
-              numero={parIdParaNumero[idOfx]}
-              selecionado={selecionadoPar&&selecionadoPar.id===idOfx}
-              onClick={()=>tocarPareamento(idOfx,"ofx")}
-              cartao={cartao} onUpdate={onUpdate}
-              onCriado={()=>setConciliacao(c=>c?{...c,foraDaPlanilha:(c.foraDaPlanilha||[]).filter(f=>!(f.date===item.date&&f.title===item.title&&f.amount===item.amount))}:c)}
-            />
-          </React.Fragment>;
-        });
-      })()}
-      {Object.keys(paresPorNumero).length>0&&<button onClick={mesclarParesCartao} disabled={mesclando}
-        style={{width:"100%",padding:"10px",borderRadius:8,background:C.accent,color:"#fff",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit",marginTop:6}}>
-        {mesclando?"…":`Mesclar ${Object.keys(paresPorNumero).length} par(es) marcado(s)`}
-      </button>}
-    </div>}
-
     {/* Form novo lançamento */}
     {showForm&&<Card style={{marginBottom:12,padding:"14px 16px"}}>
       <input value={nDesc} onChange={e=>setNDesc(e.target.value.toUpperCase())} placeholder="Descrição"
@@ -9940,114 +9933,137 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
       </button>
     </Card>}
 
-    {/* Lista unica, cronologica decrescente -- confirmados e previstos juntos.
-        Previsto (ainda nao caiu no CSV) so muda o ESTILO (apagado/tracejado),
-        nao a posicao -- parcelas do mes anterior (dia 28/30/31) naturalmente
-        vao pro fim por serem as datas mais antigas da fatura. */}
-    {faturaAtual.itens.length>0&&<div style={{marginBottom:4}}>
+    {/* Lista unica e continua -- OFX solto (sem linha na planilha ainda) e
+        linhas reais (confirmado/divergencia/aguardando/previsto) misturados
+        numa so sequencia por data, sem secao separada. [CORRIGIDO 27/08 --
+        antes eram 2 blocos, cada um ordenado por dentro de si, mas a data
+        "reiniciava" ao trocar de bloco.] */}
+    {linhasCombinadas.length>0&&<div style={{marginBottom:4}}>
       <div style={{fontSize:11,fontWeight:700,color:C.textSub,padding:"6px 4px",letterSpacing:".05em"}}>
         LANÇAMENTOS ({faturaAtual.itens.length}) · {confirmados.length} confirmado(s) · {previstos.length} previsto(s)
+        {novosDoCSV.length>0&&` · ${novosDoCSV.length} do banco sem par`}
       </div>
+      {novosDoCSV.length>0&&<div style={{fontSize:10,color:C.textMuted,padding:"0 4px 8px",lineHeight:1.4}}>
+        Toca num 🏦 solto, depois num 📱 solto, pra parear.
+      </div>}
       {(()=>{
-        // [NOVO 27/08 -- pedido do Marcus] Agrupar por data, igual o
-        // protótipo do extrato -- cabeçalho novo só quando o dia muda
-        // (lista já vem ordenada por data decrescente).
         let dataAnterior=null;
-        return [...faturaAtual.itens].sort((a,b)=>b[0]>a[0]?1:-1).map((r,i)=>{
-        const linhaR=_linhaCartao(r);
-        const isOpen=editRow!=null&&editRow===linhaR;
-        const previsto=r[7]==="PENDENTE"&&r[0]>hj;
-        const divergencia=divergenciasByRow.get(linhaR);
-        // [CORRIGIDO 30/07] Selo agora e persistido (obs.confirmadoOfx,
-        // gravado na propria linha) OU o resultado efemero desta sessao --
-        // antes so existia o efemero, entao sair da tela e voltar apagava
-        // todos os selos verdes mesmo sem nada ter mudado de verdade.
-        const confirmado=confirmadosRows.has(linhaR)||_obsConfirmadoOfx(_obsCartaoRaw(r));
-        const classificadoSeguro=_obsClassificadoSeguro(_obsCartaoRaw(r));
-        const motivo=divergencia?{tipo:"divergencia",dado:divergencia}:null;
-        const destacado=destaque?.tab==="cartoes"&&destaque.row===linhaR;
-        const apelidoAtual=_obsApelidoCartao(_obsCartaoRaw(r));
-        const aguardandoItem=concValida&&(conciliacao.aguardandoFatura||[]).find(a=>a.row===linhaR);
-        const dataStr=fmtD(r[0]);
-        const novoDia=dataStr!==dataAnterior;
-        dataAnterior=dataStr;
-        const cabecalhoData=novoDia?<div style={{fontSize:11,fontWeight:800,color:C.textMuted,margin:"12px 2px 6px",paddingBottom:4,borderBottom:"1px solid "+C.border}}>{dataStr}</div>:null;
-        // [NOVO 27/08] PENDENTE que a conciliacao ativa marcou como
-        // "aguardando" (banco ainda nao trouxe essa transacao) vira
-        // pareavel por toque -- mesmo mecanismo do OFX solto acima.
-        if(aguardandoItem){
-          const idApp="app_"+linhaR;
-          return <React.Fragment key={linhaR}>
-            {cabecalhoData}
-            <LinhaAppIsoladaCartao aguardando={{row:linhaR,desc:apelidoAtual||r[1],valor:r[2],categoria:r[5],parcela:r[3],envelopeId:_obsEnvelopeId(_obsCartaoRaw(r))}}
-              numero={parIdParaNumero[idApp]}
-              selecionado={selecionadoPar&&selecionadoPar.id===idApp}
-              onClickParear={()=>tocarPareamento(idApp,"app")}
-              cartao={cartao} onUpdate={onUpdate} data={data}
-            />
-          </React.Fragment>;
-        }
-        // [NOVO 27/08 -- pedido do Marcus: "lista dupla item a item, igual
-        // o extrato"] Divergencia e confirmado (com ou sem classificacao)
-        // agora usam o mesmo SeloPar do extrato -- 2 fontes, cada uma no
-        // seu lado, pilulas centralizadas. SEM menu extra aqui de proposito
-        // -- pedido explicito de ficar enxuto: so apelido+categoria (app)
-        // sao editaveis, o resto vem do OFX e nao mexe. Previsto/pendente
-        // sem nenhum dado de banco ainda continuam na linha simples (nao
-        // ha 2 fontes pra mostrar lado a lado nesses).
-        if(divergencia||confirmado){
-          return <React.Fragment key={linhaR!=null?linhaR:i}>
-            {cabecalhoData}
-            <div id={"cart-item-"+linhaR}
-              style={{background:destacado?"#FEF3C7":"transparent",borderRadius:10,transition:"background 1s"}}>
-              <SeloPar
-                ofx={{desc:divergencia?divergencia.csv.title:r[1], valor:divergencia?divergencia.csv.amount:r[2], parcela:divergencia?divergencia.csv.parcela:r[3]}}
-                app={{desc:apelidoAtual||r[1], valor:r[2], categoria:r[5], parcela:r[3]}}
-                forca={divergencia?(divergencia.forca||"forte"):(classificadoSeguro?"exato":"semclass")}
-                confirmando={eLoad}
-                onConfirmar={divergencia?()=>usarDadosDoCSV(divergencia):null}
-                row={linhaR} onUpdate={onUpdate} tipo="cartao" aba={abaCartao}
-                data={data} envelopeAtual={_obsEnvelopeId(_obsCartaoRaw(r))}
+        return linhasCombinadas.map((linha,i)=>{
+          const dataStr=fmtD(linha.__data);
+          const novoDia=dataStr!==dataAnterior; dataAnterior=dataStr;
+          const cabecalhoData=novoDia?<div style={{fontSize:11,fontWeight:800,color:C.textMuted,margin:"12px 2px 6px",paddingBottom:4,borderBottom:"1px solid "+C.border}}>{dataStr}</div>:null;
+
+          if(linha.__tipo==="ofx_solto"){
+            const item=linha.item, idOfx="ofx_"+linha.__idx;
+            return <React.Fragment key={idOfx}>
+              {cabecalhoData}
+              <LinhaOfxIsoladaCartao item={item}
+                numero={parIdParaNumero[idOfx]}
+                selecionado={selecionadoPar&&selecionadoPar.id===idOfx}
+                onClick={()=>tocarPareamento(idOfx,"ofx")}
+                cartao={cartao} onUpdate={onUpdate}
+                onCriado={()=>setConciliacao(c=>c?{...c,foraDaPlanilha:(c.foraDaPlanilha||[]).filter(f=>!(f.date===item.date&&f.title===item.title&&f.amount===item.amount))}:c)}
               />
+            </React.Fragment>;
+          }
+
+          const r=linha.r;
+          const linhaR=_linhaCartao(r);
+          const isOpen=editRow!=null&&editRow===linhaR;
+          const previsto=r[7]==="PENDENTE"&&r[0]>hj;
+          const divergencia=divergenciasByRow.get(linhaR);
+          // [CORRIGIDO 30/07] Selo agora e persistido (obs.confirmadoOfx,
+          // gravado na propria linha) OU o resultado efemero desta sessao --
+          // antes so existia o efemero, entao sair da tela e voltar apagava
+          // todos os selos verdes mesmo sem nada ter mudado de verdade.
+          const confirmado=confirmadosRows.has(linhaR)||_obsConfirmadoOfx(_obsCartaoRaw(r));
+          const classificadoSeguro=_obsClassificadoSeguro(_obsCartaoRaw(r));
+          const motivo=divergencia?{tipo:"divergencia",dado:divergencia}:null;
+          const destacado=destaque?.tab==="cartoes"&&destaque.row===linhaR;
+          const apelidoAtual=_obsApelidoCartao(_obsCartaoRaw(r));
+          const aguardandoItem=concValida&&(conciliacao.aguardandoFatura||[]).find(a=>a.row===linhaR);
+          // [NOVO 27/08] PENDENTE que a conciliacao ativa marcou como
+          // "aguardando" (banco ainda nao trouxe essa transacao) vira
+          // pareavel por toque -- mesmo mecanismo do OFX solto acima.
+          if(aguardandoItem){
+            const idApp="app_"+linhaR;
+            return <React.Fragment key={linhaR}>
+              {cabecalhoData}
+              <LinhaAppIsoladaCartao aguardando={{row:linhaR,desc:apelidoAtual||r[1],valor:r[2],categoria:r[5],parcela:r[3],envelopeId:_obsEnvelopeId(_obsCartaoRaw(r))}}
+                numero={parIdParaNumero[idApp]}
+                selecionado={selecionadoPar&&selecionadoPar.id===idApp}
+                onClickParear={()=>tocarPareamento(idApp,"app")}
+                cartao={cartao} onUpdate={onUpdate} data={data}
+              />
+            </React.Fragment>;
+          }
+          // [NOVO 27/08 -- pedido do Marcus: "lista dupla item a item, igual
+          // o extrato"] Divergencia e confirmado (com ou sem classificacao)
+          // agora usam o mesmo SeloPar do extrato -- 2 fontes, cada uma no
+          // seu lado, pilulas centralizadas. SEM menu extra aqui de proposito
+          // -- pedido explicito de ficar enxuto: so apelido+categoria (app)
+          // sao editaveis, o resto vem do OFX e nao mexe. Previsto/pendente
+          // sem nenhum dado de banco ainda continuam na linha simples (nao
+          // ha 2 fontes pra mostrar lado a lado nesses).
+          if(divergencia||confirmado){
+            return <React.Fragment key={linhaR!=null?linhaR:i}>
+              {cabecalhoData}
+              <div id={"cart-item-"+linhaR}
+                style={{background:destacado?"#FEF3C7":"transparent",borderRadius:10,transition:"background 1s"}}>
+                <SeloPar
+                  ofx={{desc:divergencia?divergencia.csv.title:r[1], valor:divergencia?divergencia.csv.amount:r[2], parcela:divergencia?divergencia.csv.parcela:r[3]}}
+                  app={{desc:apelidoAtual||r[1], valor:r[2], categoria:r[5], parcela:r[3]}}
+                  forca={divergencia?(divergencia.forca||"forte"):(classificadoSeguro?"exato":"semclass")}
+                  confirmando={eLoad}
+                  onConfirmar={divergencia?()=>usarDadosDoCSV(divergencia):null}
+                  row={linhaR} onUpdate={onUpdate} tipo="cartao" aba={abaCartao}
+                  data={data} envelopeAtual={_obsEnvelopeId(_obsCartaoRaw(r))}
+                />
+              </div>
+            </React.Fragment>;
+          }
+          return <React.Fragment key={linhaR!=null?linhaR:i}>
+          {cabecalhoData}
+          <div id={"cart-item-"+linhaR}>
+          <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 12px",
+            background:destacado?"#FEF3C7":(previsto?C.borderLight:(r[7]==="PAGO"?C.greenLight:C.surface)),transition:"background 1s",
+            opacity:previsto?0.85:1,
+            borderLeft:previsto?"3px dashed "+C.textMuted:"none",
+            borderBottom:"1px solid "+C.borderLight,borderRadius:i===0?10:0}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,fontWeight:600,color:previsto?C.textSub:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{apelidoAtual||r[1]}</div>
+              <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{fmtD(r[0])} · parc:{r[3]} · {r[5]}{(()=>{const envId=_obsEnvelopeId(_obsCartaoRaw(r));if(!envId)return null;const env=parseEnvelopesCustom(data).find(e=>e.id===envId);return env?<TagEnvelopeCustom nome={env.nome}/>:null;})()}</div>
             </div>
-          </React.Fragment>;
-        }
-        return <React.Fragment key={linhaR!=null?linhaR:i}>
-        {cabecalhoData}
-        <div id={"cart-item-"+linhaR}>
-        <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 12px",
-          background:destacado?"#FEF3C7":(previsto?C.borderLight:(r[7]==="PAGO"?C.greenLight:C.surface)),transition:"background 1s",
-          opacity:previsto?0.85:1,
-          borderLeft:previsto?"3px dashed "+C.textMuted:"none",
-          borderBottom:"1px solid "+C.borderLight,borderRadius:i===0?10:0}}>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:13,fontWeight:600,color:previsto?C.textSub:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{apelidoAtual||r[1]}</div>
-            <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{fmtD(r[0])} · parc:{r[3]} · {r[5]}{(()=>{const envId=_obsEnvelopeId(_obsCartaoRaw(r));if(!envId)return null;const env=parseEnvelopesCustom(data).find(e=>e.id===envId);return env?<TagEnvelopeCustom nome={env.nome}/>:null;})()}</div>
+            <span style={{fontSize:12,fontWeight:700,color:previsto?C.textSub:(r[7]==="PAGO"?C.green:C.red),flexShrink:0}}>{fmt(r[2])}</span>
+            {previsto?<span style={{fontSize:9,color:C.textMuted,padding:"2px 7px",borderRadius:10,
+              border:"1px dashed "+C.border,flexShrink:0,fontWeight:600}}>PREVISTO</span>
+            :<span style={{fontSize:9,background:r[7]==="PAGO"?C.greenLight:C.accentLight,
+              color:r[7]==="PAGO"?C.green:C.accent,padding:"2px 7px",borderRadius:10,flexShrink:0,fontWeight:700}}>
+              {r[7]}
+            </span>}
+            {linhaR!=null&&<button onClick={()=>isOpen?setEditRow(null):abrirEdicaoItem(r)} disabled={eLoad}
+              style={{background:previsto?"transparent":C.borderLight,color:C.textSub,borderRadius:8,padding:"5px 10px",fontSize:16,border:"1px solid "+C.border,cursor:"pointer",flexShrink:0,lineHeight:1}}>
+              {isOpen?"×":"⋮"}
+            </button>}
           </div>
-          <span style={{fontSize:12,fontWeight:700,color:previsto?C.textSub:(r[7]==="PAGO"?C.green:C.red),flexShrink:0}}>{fmt(r[2])}</span>
-          {previsto?<span style={{fontSize:9,color:C.textMuted,padding:"2px 7px",borderRadius:10,
-            border:"1px dashed "+C.border,flexShrink:0,fontWeight:600}}>PREVISTO</span>
-          :<span style={{fontSize:9,background:r[7]==="PAGO"?C.greenLight:C.accentLight,
-            color:r[7]==="PAGO"?C.green:C.accent,padding:"2px 7px",borderRadius:10,flexShrink:0,fontWeight:700}}>
-            {r[7]}
-          </span>}
-          {linhaR!=null&&<button onClick={()=>isOpen?setEditRow(null):abrirEdicaoItem(r)} disabled={eLoad}
-            style={{background:previsto?"transparent":C.borderLight,color:C.textSub,borderRadius:8,padding:"5px 10px",fontSize:16,border:"1px solid "+C.border,cursor:"pointer",flexShrink:0,lineHeight:1}}>
-            {isOpen?"×":"⋮"}
-          </button>}
-        </div>
-        {isOpen&&<PainelEdicaoItemCartao r={r} eDesc={eDesc} setEDesc={setEDesc} eValor={eValor} setEValor={setEValor}
-          eData={eData} setEData={setEData}
-          eNeg={eNeg} setENeg={setENeg} eCategoria={eCategoria} setECategoria={setECategoria}
-          eAlias={eAlias} setEAlias={setEAlias} eApelido={eApelido} setEApelido={setEApelido} eLoad={eLoad} motivo={motivo}
-          onSalvar={()=>salvarEdicaoItem({desc:r[1],valor:r[2],categoria:r[5],data:r[0],alias:_obsAliasCartao(_obsCartaoRaw(r)),apelido:_obsApelidoCartao(_obsCartaoRaw(r))})} onApagar={apagarItem} onApagarTodos={()=>apagarTodosItemComEssaDescricao(r[1])} onCancelar={()=>setEditRow(null)}
-          onUsarCSV={divergencia?()=>usarDadosDoCSV(divergencia):null} previewCSV={divergencia?descComNotaPreservada(divergencia):null}
-          outrosItens={faturaAtual.itens.filter(x=>_linhaCartao(x)!==linhaR).map(x=>({row:_linhaCartao(x),desc:_obsApelidoCartao(_obsCartaoRaw(x))||x[1],valor:x[2],data:x[0],parcela:x[3],confirmado:confirmadosRows.has(_linhaCartao(x))||_obsConfirmadoOfx(_obsCartaoRaw(x))}))}
-          souConfirmado={confirmado}
-          onMesclar={(candidato)=>mesclarComItem(r,linhaR,confirmado,candidato)}
-          data={data} abaCartao={abaCartao} onUpdate={onUpdate} onIrPara={onIrPara}/>}
-      </div></React.Fragment>;});})()}
+          {isOpen&&<PainelEdicaoItemCartao r={r} eDesc={eDesc} setEDesc={setEDesc} eValor={eValor} setEValor={setEValor}
+            eData={eData} setEData={setEData}
+            eNeg={eNeg} setENeg={setENeg} eCategoria={eCategoria} setECategoria={setECategoria}
+            eAlias={eAlias} setEAlias={setEAlias} eApelido={eApelido} setEApelido={setEApelido} eLoad={eLoad} motivo={motivo}
+            onSalvar={()=>salvarEdicaoItem({desc:r[1],valor:r[2],categoria:r[5],data:r[0],alias:_obsAliasCartao(_obsCartaoRaw(r)),apelido:_obsApelidoCartao(_obsCartaoRaw(r))})} onApagar={apagarItem} onApagarTodos={()=>apagarTodosItemComEssaDescricao(r[1])} onCancelar={()=>setEditRow(null)}
+            onUsarCSV={divergencia?()=>usarDadosDoCSV(divergencia):null} previewCSV={divergencia?descComNotaPreservada(divergencia):null}
+            outrosItens={faturaAtual.itens.filter(x=>_linhaCartao(x)!==linhaR).map(x=>({row:_linhaCartao(x),desc:_obsApelidoCartao(_obsCartaoRaw(x))||x[1],valor:x[2],data:x[0],parcela:x[3],confirmado:confirmadosRows.has(_linhaCartao(x))||_obsConfirmadoOfx(_obsCartaoRaw(x))}))}
+            souConfirmado={confirmado}
+            onMesclar={(candidato)=>mesclarComItem(r,linhaR,confirmado,candidato)}
+            data={data} abaCartao={abaCartao} onUpdate={onUpdate} onIrPara={onIrPara}/>}
+        </div></React.Fragment>;});
+      })()}
+      {Object.keys(paresPorNumero).length>0&&<button onClick={mesclarParesCartao} disabled={mesclando}
+        style={{width:"100%",padding:"10px",borderRadius:8,background:C.accent,color:"#fff",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit",marginTop:10}}>
+        {mesclando?"…":`Mesclar ${Object.keys(paresPorNumero).length} par(es) marcado(s)`}
+      </button>}
     </div>}
+
   </div>;
 }
 
@@ -10391,7 +10407,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260827.1730 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260827.2000 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10478,7 +10494,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260827.1730
+      // HTML v3.20260827.2000
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
