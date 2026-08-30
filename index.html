@@ -135,7 +135,32 @@ function projetarLinhaFutura(saldoBase,tipoInvestimento,params,cicloInicio,event
   });
   return resultado;
 }
-const fmtD=s=>{const m=String(s||"").match(/^(\d{4})-(\d{2})-(\d{2})/);return m?m[3]+"/"+m[2]+"/"+m[1].slice(2):""};
+// [CORRIGIDO 27/08 -- bug real meu] Antes so entendia string ISO (regex).
+// Quando linhasCombinadas passou a normalizar __data pra Date (pra
+// consertar o sort quebrado), fmtD(objetoDate) virava string vazia pra
+// TUDO (String(date) nao bate no regex) -- e foi por isso que os
+// cabecalhos de data sumiram inteiros. Agora aceita os 2 formatos.
+// [CORRIGIDO 27/08] new Date("AAAA-MM-DD") sem hora e interpretado como
+// meia-noite UTC pelo JS -- num fuso atras de UTC (Brasil, UTC-3), ler de
+// volta com .getDate() podia "voltar" um dia. Constrói com os componentes
+// Y/M/D direto (construtor local do Date), nunca passa pelo parser de
+// string -- sem risco de fuso horário.
+function _dataLocalSegura(v){
+  if(v instanceof Date){
+    if(isNaN(v.getTime())) return v;
+    return v; // já é Date -- provavelmente já correto, não reprocessa
+  }
+  const m=String(v||"").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return new Date(Number(m[1]),Number(m[2])-1,Number(m[3]));
+  return new Date(v);
+}
+const fmtD=s=>{
+  if(s instanceof Date){
+    if(isNaN(s.getTime())) return "";
+    return String(s.getDate()).padStart(2,"0")+"/"+String(s.getMonth()+1).padStart(2,"0")+"/"+String(s.getFullYear()).slice(2);
+  }
+  const m=String(s||"").match(/^(\d{4})-(\d{2})-(\d{2})/);return m?m[3]+"/"+m[2]+"/"+m[1].slice(2):"";
+};
 // [NOVO 19/07] "Nome fantasia" do cartao -- so exibicao, nunca muda o TIPO
 // interno ("CARTAO PF"/"CARTAO PJ" continuam sendo os mesmos em toda
 // comparacao/calculo).
@@ -9595,8 +9620,8 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   // 26/08 no comeco do bloco 2). Agora e uma lista so, combinada e
   // ordenada de verdade antes de renderizar -- sem secao, sem reinicio.
   const linhasCombinadas=useMemo(()=>{
-    const soltos=novosDoCSV.map((item,i)=>({__tipo:"ofx_solto",__data:new Date(item.date),item,__idx:i}));
-    const reais=faturaAtual.itens.map(r=>({__tipo:"real",__data:new Date(r[0]),r}));
+    const soltos=novosDoCSV.map((item,i)=>({__tipo:"ofx_solto",__data:_dataLocalSegura(item.date),item,__idx:i}));
+    const reais=faturaAtual.itens.map(r=>({__tipo:"real",__data:_dataLocalSegura(r[0]),r}));
     return [...soltos,...reais].sort((a,b)=>b.__data-a.__data);
   },[novosDoCSV,faturaAtual.itens]);
 
@@ -10407,7 +10432,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260827.2100 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260827.2200 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10494,7 +10519,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260827.2100
+      // HTML v3.20260827.2200
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
