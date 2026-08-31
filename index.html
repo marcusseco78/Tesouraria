@@ -10076,11 +10076,30 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           const motivo=divergencia?{tipo:"divergencia",dado:divergencia}:null;
           const destacado=destaque?.tab==="cartoes"&&destaque.row===linhaR;
           const apelidoAtual=_obsApelidoCartao(_obsCartaoRaw(r));
-          const aguardandoItem=concValida&&(conciliacao.aguardandoFatura||[]).find(a=>a.row===linhaR);
+          // [CORRIGIDO 27/08, 2a rodada -- achado real do Marcus] Antes só
+          // olhava a lista congelada (conciliacao.aguardandoFatura),
+          // calculada no MOMENTO em que a conciliação rodou. Se o item
+          // estava confirmado NAQUELE momento (não entrou na lista) e
+          // depois foi desprotegido pelo cadeado, ele nunca teria pra onde
+          // ir além da linha simples antiga -- foi exatamente o caso do
+          // "Ifood Club" destravado. Agora decide pelo ESTADO ATUAL da
+          // linha (pendente, não previsto, não confirmado, sem
+          // divergência) -- não depende mais de ter sido capturado na
+          // hora certa por uma conciliação específica.
+          // [CORRIGIDO 27/08, 3a rodada -- achado real do Marcus, mesmo
+          // problema em outro disfarce] "concValida" exige uma sessão de
+          // conciliação viva NA MEMÓRIA do componente -- se você troca de
+          // aba e volta, ou recarrega, essa sessão se perde (é um useState
+          // comum, não persiste) e "concValida" vira falso, mesmo que a
+          // linha continue exatamente tão pareável quanto antes. Tirando
+          // essa dependência de vez: pendente + não previsto + não
+          // confirmado + sem divergência é pareável sempre, com ou sem
+          // sessão de conciliação ativa.
+          const aguardandoAtivo=!previsto&&r[7]==="PENDENTE"&&!confirmado&&!divergencia;
           // [NOVO 27/08] PENDENTE que a conciliacao ativa marcou como
           // "aguardando" (banco ainda nao trouxe essa transacao) vira
           // pareavel por toque -- mesmo mecanismo do OFX solto acima.
-          if(aguardandoItem){
+          if(aguardandoAtivo){
             const idApp="app_"+linhaR;
             return <React.Fragment key={linhaR}>
               {cabecalhoData}
@@ -10502,7 +10521,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260828.0000 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260828.0100 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10589,7 +10608,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260828.0000
+      // HTML v3.20260828.0100
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
