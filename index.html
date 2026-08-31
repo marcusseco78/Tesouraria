@@ -4241,6 +4241,15 @@ const CAT_SIGLA={
   "INVESTIMENTO":"INVE", "TRANSFERENCIA":"TRAN",
   "RECEITA":"RECE", "DEPOSITO_AVULSO":"DEPO",
 };
+// [NOVO 27/08 -- bug real achado pelo Marcus] Chave ESTÁVEL (conteúdo) pra
+// item OFX solto -- antes usava a posição (índice) dentro de novosDoCSV,
+// que é uma lista que ENCOLHE toda vez que um item confirma e sai dela.
+// Quando isso acontecia, o item seguinte "subia" pra posição do item que
+// saiu, e o React reaproveitava o componente (e o estado interno dele,
+// tipo o texto já digitado no apelido!) por engano -- por isso o Certisign
+// abriu com "MARKET4U" escrito, herdado do item anterior. Chave por
+// conteúdo nunca colide desse jeito.
+function _idOfxSolto(item){ return "ofx_"+item.date+"|"+item.title+"|"+item.amount; }
 function rotuloCategoriaPill(cat){
   return CAT_SIGLA[cat]||cat;
 }
@@ -4413,41 +4422,18 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
 // pra selecionar e parear manualmente com um "aguardando" solto. O "+"
 // (canto, nao propaga o toque de parear) abre criacao direta do zero, pra
 // quando genuinamente nao existe nenhum app correspondente pra parear.
-function LinhaOfxIsoladaCartao({item,numero,selecionado,onClick,cartao,onUpdate,onCriado}){
+// [SIMPLIFICADO 27/08 -- redesenho combinado com o Marcus] Não cria mais
+// nada sozinha -- o "+" agora só avisa o pai (onCriarPrevia) pra criar uma
+// prévia local (nada salvo ainda) e já parear ela com este item. Editar a
+// prévia e desfazer o par vivem no PreviaAppCartao, logo abaixo.
+function LinhaOfxIsoladaCartao({item,numero,selecionado,onClick,onCriarPrevia}){
   const cor=numero?PALETA_PARES[(numero-1)%PALETA_PARES.length]:null;
-  const [criando,setCriando]=useState(false);
-  const [apelido,setApelido]=useState(limparParcelaTitulo(item.title));
-  const [categoria,setCategoria]=useState("DCP");
-  const [envelope,setEnvelope]=useState("");
-  const [salvando,setSalvando]=useState(false);
-  async function salvarNovo(){
-    setSalvando(true);
-    try{
-      // [CORRIGIDO 27/08 -- bug real achado pelo Marcus] Estava mandando
-      // parcelas:1/parcelaAtual:1 fixo, ignorando a parcela de verdade do
-      // CSV (item.parcela, ex: "4/12"). Isso quebrava a previsibilidade:
-      // uma compra pega no meio da serie nunca gerava as parcelas futuras
-      // restantes, e a marcacao de "qual parcela e essa" ficava errada.
-      // parcelaTotal/parcelaAtualNum seguem o mesmo parse que o formulario
-      // antigo (NovoDoCSV) ja usava, pra manter o mecanismo intacto.
-      const partesParc=(item.parcela&&item.parcela!=="1/1")?item.parcela.split("/"):["1","1"];
-      const parcelaAtualNum=parseInt(partesParc[0])||1;
-      const parcelaTotalNum=parseInt(partesParc[1])||1;
-      const r=await api({action:"lancarCartao",cartao,data_compra:item.date,
-        parcelas:parcelaTotalNum,parcelaAtual:parcelaAtualNum,
-        descricao:item.title,valor:Math.abs(item.amount),categoria,dcp:categoria==="DCP"?"S":"N",
-        apelido:apelido.trim().toUpperCase(),envelopeId:envelope||undefined,origemCSV:true});
-      onUpdate(r);
-      onCriado&&onCriado();
-    }catch(e){ alert(e.message); }
-    setSalvando(false);
-  }
   return <div style={{width:"90%",marginRight:"auto",marginBottom:6}}>
-    <div onClick={()=>!criando&&onClick()} style={{
+    <div onClick={onClick} style={{
       display:"flex",alignItems:"center",gap:6,padding:"8px 10px",
       background:cor?cor.bg:(selecionado?"#EFF6FF":C.surface),
       border:"1px solid "+(cor?cor.cor:(selecionado?C.blue:C.border)),
-      borderRadius:criando?"8px 8px 0 0":8,boxSizing:"border-box",cursor:"pointer",
+      borderRadius:8,boxSizing:"border-box",cursor:"pointer",
     }}>
       <span style={{fontSize:13,flexShrink:0}}>🏦</span>
       <span style={{width:"36%",minWidth:0,fontSize:12,fontWeight:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.title}</span>
@@ -4458,22 +4444,48 @@ function LinhaOfxIsoladaCartao({item,numero,selecionado,onClick,cartao,onUpdate,
       </span>
       {numero?
         <span style={{fontSize:10,fontWeight:800,color:"#fff",background:cor.cor,borderRadius:999,width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginLeft:4}}>{numero}</span>
-      :<button onClick={e=>{e.stopPropagation();setCriando(!criando);}} title="Criar lançamento novo do zero (sem parear)" style={{
-          width:18,height:18,borderRadius:999,border:"none",background:criando?C.accent:C.borderLight,color:criando?"#fff":C.textSub,
+      :<button onClick={e=>{e.stopPropagation();onCriarPrevia();}} title="Criar uma prévia (mãe ainda não existe) e já parear com este item" style={{
+          width:18,height:18,borderRadius:999,border:"none",background:C.borderLight,color:C.textSub,
           fontSize:11,fontWeight:800,cursor:"pointer",flexShrink:0,marginLeft:2,lineHeight:1,
         }}>+</button>}
     </div>
-    {criando&&<div style={{border:"1px solid "+C.blue,borderTop:"none",borderRadius:"0 0 8px 8px",padding:"7px 10px",background:"#EFF6FF"}}>
-      <input value={apelido} onChange={e=>setApelido(e.target.value)} placeholder="Apelido" autoFocus
-        style={{width:"100%",fontSize:11,fontWeight:600,padding:"4px 6px",borderRadius:5,border:"1px solid "+C.border,textTransform:"uppercase",fontFamily:"inherit",marginBottom:6,boxSizing:"border-box"}}/>
+  </div>;
+}
+
+// [NOVO 27/08 -- redesenho combinado com o Marcus] Prévia de lançamento
+// app que AINDA NÃO EXISTE -- nasce do "+" de um OFX solto, já pareada com
+// ele. Nunca é salva sozinha: é só estado local (React), nunca vira linha
+// órfã na planilha. Some ela E desfaz o par juntos (desvincular) --
+// nenhuma outra forma de apagar existe de propósito, pra nunca deixar um
+// "lançamento app solteiro fantasma sem OFX". Só grava de verdade quando
+// o botão "Mesclar" roda (lancarCartao, criação+confirmação numa chamada
+// só).
+function PreviaAppCartao({item,previa,numero,envelopes,onMudar,onDesvincular}){
+  const cor=numero?PALETA_PARES[(numero-1)%PALETA_PARES.length]:{cor:C.blue,bg:"#EFF6FF"};
+  return <div style={{width:"90%",marginLeft:"auto",marginBottom:6}}>
+    <div style={{
+      display:"flex",alignItems:"center",gap:6,padding:"8px 10px",
+      background:cor.bg,border:"1px solid "+cor.cor,borderRadius:"8px 8px 0 0",boxSizing:"border-box",
+    }}>
+      {numero&&<span style={{fontSize:10,fontWeight:800,color:"#fff",background:cor.cor,borderRadius:999,width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{numero}</span>}
+      <input value={previa.apelido} onChange={e=>onMudar({...previa,apelido:e.target.value})} placeholder="Apelido (obrigatório)" autoFocus
+        style={{flex:1,minWidth:0,fontSize:11,fontWeight:700,padding:"3px 6px",borderRadius:5,border:"1px solid "+(previa.apelido.trim()?C.border:C.red),textTransform:"uppercase",fontFamily:"inherit",boxSizing:"border-box"}}/>
+      <button onClick={onDesvincular} title="Desvincular -- apaga a prévia e desfaz o par" style={{
+        width:20,height:20,borderRadius:999,border:"none",background:C.redLight,color:C.red,fontSize:11,fontWeight:800,cursor:"pointer",flexShrink:0,
+      }}>✕</button>
+      <span style={{fontSize:13,flexShrink:0}}>📱</span>
+    </div>
+    <div style={{border:"1px solid "+cor.cor,borderTop:"none",borderRadius:"0 0 8px 8px",padding:"7px 10px",background:cor.bg}}>
+      {envelopes.length>0&&<select value={previa.envelope} onChange={e=>onMudar({...previa,envelope:e.target.value})}
+        style={{width:"100%",fontSize:10.5,padding:"4px 6px",borderRadius:5,border:"1px solid "+C.border,color:C.textSub,background:"#fff",fontFamily:"inherit",marginBottom:6,boxSizing:"border-box"}}>
+        <option value="">Envelope: nenhum</option>
+        {envelopes.map(e=><option key={e.id} value={e.id}>Envelope: {e.nome}</option>)}
+      </select>}
       <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
-        {categoriasPorSinal(-Math.abs(item.amount)).map(c=><Pilula key={c} editavel ativa={categoria===c} onClick={()=>setCategoria(c)}>{rotuloCategoriaPill(c)}</Pilula>)}
-        <div style={{flex:1}}/>
-        <button onClick={salvarNovo} disabled={salvando} style={{
-          padding:"5px 12px",borderRadius:7,border:"none",background:C.accent,color:"#fff",fontSize:11,fontWeight:700,fontFamily:"inherit",cursor:"pointer",flexShrink:0,
-        }}>{salvando?"…":"Lançar"}</button>
+        {categoriasPorSinal(-Math.abs(item.amount)).map(c=><Pilula key={c} editavel ativa={previa.categoria===c} onClick={()=>onMudar({...previa,categoria:c})}>{rotuloCategoriaPill(c)}</Pilula>)}
       </div>
-    </div>}
+      {!previa.categoria&&<div style={{fontSize:9,color:C.red,marginTop:4}}>Escolha uma categoria (obrigatório pra mesclar).</div>}
+    </div>
   </div>;
 }
 
@@ -9078,6 +9090,23 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   const [selecionadoPar,setSelecionadoPar]=useState(null); // {id,lado}
   const [proximoNumeroPar,setProximoNumeroPar]=useState(1);
   const [mesclando,setMesclando]=useState(false);
+  // [NOVO 27/08 -- redesenho combinado com o Marcus, voltando a inspiração
+  // original do esquema] previasApp = "mães" que ainda não existem, criadas
+  // pelo "+" de um OFX solto -- puro estado local, nunca gravado sozinho.
+  // Chave = idOfx (mesma chave estável de _idOfxSolto). Só vira linha de
+  // verdade quando "Mesclar" roda (lancarCartao).
+  const [previasApp,setPreviasApp]=useState({}); // idOfx -> {apelido, categoria, envelope}
+  function criarPrevia(item,idOfx){
+    const idPreview="prev_"+idOfx;
+    setPreviasApp(prev=>({...prev,[idOfx]:{apelido:limparParcelaTitulo(item.title),categoria:"",envelope:""}}));
+    const num=proximoNumeroPar;
+    setParesPorNumero(prev=>({...prev,[num]:{ofxId:idOfx,appId:idPreview}}));
+    setParIdParaNumero(prev=>({...prev,[idOfx]:num,[idPreview]:num}));
+    setProximoNumeroPar(num+1);
+  }
+  function mudarPrevia(idOfx,novaPrevia){
+    setPreviasApp(prev=>({...prev,[idOfx]:novaPrevia}));
+  }
   function tocarPareamento(id,lado){
     if(parIdParaNumero[id]){
       const num=parIdParaNumero[id];
@@ -9085,6 +9114,13 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
       const novoParId={...parIdParaNumero}; delete novoParId[grupo.ofxId]; delete novoParId[grupo.appId];
       const novoPorNumero={...paresPorNumero}; delete novoPorNumero[num];
       setParIdParaNumero(novoParId); setParesPorNumero(novoPorNumero);
+      // [NOVO 27/08] Desvincular um par-prévia apaga a prévia junto -- nunca
+      // deixa um "lançamento app solteiro fantasma sem OFX" (pedido
+      // explícito do Marcus). Prévia é só estado local, então "apagar" aqui
+      // é simplesmente parar de guardar ela.
+      if(String(grupo.appId).indexOf("prev_")===0){
+        setPreviasApp(prev=>{const n={...prev}; delete n[grupo.ofxId]; return n;});
+      }
       return;
     }
     if(!selecionadoPar){ setSelecionadoPar({id,lado}); return; }
@@ -9099,22 +9135,50 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     setSelecionadoPar(null);
   }
   async function mesclarParesCartao(){
+    // [NOVO 27/08] Valida ANTES de disparar qualquer chamada -- apelido e
+    // categoria são obrigatórios em toda prévia, senão nasceria um
+    // lançamento sem categoria (o que a fatura já trata como "sem
+    // classificação", mas aqui é melhor barrar de saída, já que é a
+    // própria mãe que estamos criando, não algo herdado).
+    for(const num of Object.keys(paresPorNumero)){
+      const {ofxId,appId}=paresPorNumero[num];
+      if(String(appId).indexOf("prev_")===0){
+        const previa=previasApp[ofxId];
+        if(!previa||!previa.apelido.trim()||!previa.categoria){
+          alert("Preencha apelido e categoria em todas as prévias antes de mesclar.");
+          return;
+        }
+      }
+    }
     setMesclando(true);
     const itensUsados=[];
     try{
       for(const num of Object.keys(paresPorNumero)){
         const {ofxId,appId}=paresPorNumero[num];
-        const idxOfx=Number(ofxId.replace("ofx_",""));
-        const rowApp=Number(appId.replace("app_",""));
-        const item=novosDoCSV[idxOfx];
+        const item=novosDoCSV.find(it=>_idOfxSolto(it)===ofxId);
         if(!item) continue;
-        const r=await api({action:"vincularCompraCartao",cartao,row:rowApp,
-          descricaoCsv:item.title,valorCsv:item.amount,dataCsv:item.date,parcelaCsv:item.parcela});
-        onUpdate(r);
+        if(String(appId).indexOf("prev_")===0){
+          // [NOVO 27/08] Par-prévia -- a "mãe" nasce agora, já casada com o
+          // OFX. lancarCartao cria e confirma numa chamada só (mesma lógica
+          // de parcela que o antigo "+lançar" já usava).
+          const previa=previasApp[ofxId];
+          const partesParc=(item.parcela&&item.parcela!=="1/1")?item.parcela.split("/"):["1","1"];
+          const r=await api({action:"lancarCartao",cartao,data_compra:item.date,
+            parcelas:parseInt(partesParc[1])||1,parcelaAtual:parseInt(partesParc[0])||1,
+            descricao:item.title,valor:Math.abs(item.amount),categoria:previa.categoria,
+            dcp:previa.categoria==="DCP"?"S":"N",apelido:previa.apelido.trim().toUpperCase(),
+            envelopeId:previa.envelope||undefined,origemCSV:true});
+          onUpdate(r);
+        }else{
+          const rowApp=Number(appId.replace("app_",""));
+          const r=await api({action:"vincularCompraCartao",cartao,row:rowApp,
+            descricaoCsv:item.title,valorCsv:item.amount,dataCsv:item.date,parcelaCsv:item.parcela});
+          onUpdate(r);
+          setConciliacao(c=>c?{...c,
+            aguardandoFatura:(c.aguardandoFatura||[]).filter(a=>a.row!==rowApp),
+            confirmadosFatura:[...(c.confirmadosFatura||[]),{row:rowApp}]}:c);
+        }
         itensUsados.push(item);
-        setConciliacao(c=>c?{...c,
-          aguardandoFatura:(c.aguardandoFatura||[]).filter(a=>a.row!==rowApp),
-          confirmadosFatura:[...(c.confirmadosFatura||[]),{row:rowApp}]}:c);
       }
       // [CORRIGIDO 27/08 -- bug real achado nesta rodada] novosDoCSV e' uma
       // VIEW filtrada/ordenada de conciliacao.foraDaPlanilha, nao o mesmo
@@ -9122,7 +9186,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
       // Remove por conteudo (data+titulo+valor) em vez de posicao.
       setConciliacao(c=>c?{...c,foraDaPlanilha:(c.foraDaPlanilha||[]).filter(f=>
         !itensUsados.some(u=>u.date===f.date&&u.title===f.title&&u.amount===f.amount))}:c);
-      setParesPorNumero({}); setParIdParaNumero({});
+      setParesPorNumero({}); setParIdParaNumero({}); setPreviasApp({});
     }catch(e){ alert(e.message); }
     setMesclando(false);
   }
@@ -9979,16 +10043,22 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           const cabecalhoData=novoDia?<div style={{fontSize:11,fontWeight:800,color:C.textMuted,margin:"12px 2px 6px",paddingBottom:4,borderBottom:"1px solid "+C.border}}>{dataStr}</div>:null;
 
           if(linha.__tipo==="ofx_solto"){
-            const item=linha.item, idOfx="ofx_"+linha.__idx;
+            const item=linha.item, idOfx=_idOfxSolto(item);
+            const previa=previasApp[idOfx];
             return <React.Fragment key={idOfx}>
               {cabecalhoData}
               <LinhaOfxIsoladaCartao item={item}
                 numero={parIdParaNumero[idOfx]}
                 selecionado={selecionadoPar&&selecionadoPar.id===idOfx}
                 onClick={()=>tocarPareamento(idOfx,"ofx")}
-                cartao={cartao} onUpdate={onUpdate}
-                onCriado={()=>setConciliacao(c=>c?{...c,foraDaPlanilha:(c.foraDaPlanilha||[]).filter(f=>!(f.date===item.date&&f.title===item.title&&f.amount===item.amount))}:c)}
+                onCriarPrevia={()=>criarPrevia(item,idOfx)}
               />
+              {previa&&<PreviaAppCartao item={item} previa={previa}
+                numero={parIdParaNumero[idOfx]}
+                envelopes={parseEnvelopesCustom(data)}
+                onMudar={nova=>mudarPrevia(idOfx,nova)}
+                onDesvincular={()=>tocarPareamento("prev_"+idOfx,"app")}
+              />}
             </React.Fragment>;
           }
 
@@ -10432,7 +10502,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260827.2300 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260828.0000 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10519,7 +10589,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260827.2300
+      // HTML v3.20260828.0000
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
