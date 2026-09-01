@@ -9059,7 +9059,16 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   const [loadContaCartao,setLoadContaCartao]=useState(false);
   async function salvarContaCartao(novaConta){
     setLoadContaCartao(true);
-    try{ onUpdate(await api({action:"editarCartao",id:cartao,conta:novaConta})); }
+    try{
+      const r=await api({action:"editarCartao",id:cartao,conta:novaConta});
+      onUpdate(r);
+      // [NOVO 28/08, pedido do Marcus] Avisa quando linhas ja existentes de
+      // "Fatura Cartao X" no Fluxo foram atualizadas junto -- pra nao ficar
+      // "invisível" que algo mais mudou além da config.
+      if(r.contaCartaoPropagada&&r.contaCartaoPropagada.linhasEditadas>0){
+        alert(`Conta atualizada. ${r.contaCartaoPropagada.linhasEditadas} lançamento(s) futuro(s) de fatura no Fluxo também foram movidos pra essa conta.`);
+      }
+    }
     catch(e){ alert(e.message); }
     setLoadContaCartao(false);
   }
@@ -10521,7 +10530,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260828.0130 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260828.0200 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10608,7 +10617,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260828.0130
+      // HTML v3.20260828.0200
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
