@@ -9165,7 +9165,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           const partesParc=(item.parcela&&item.parcela!=="1/1")?item.parcela.split("/"):["1","1"];
           const r=await api({action:"lancarCartao",cartao,data_compra:item.date,
             parcelas:parseInt(partesParc[1])||1,parcelaAtual:parseInt(partesParc[0])||1,
-            descricao:item.title,valor:Math.abs(item.amount),categoria:previa.categoria,
+            descricao:item.title,valor:(-1)*Math.abs(item.amount),categoria:previa.categoria,
             dcp:previa.categoria==="DCP"?"S":"N",apelido:previa.apelido.trim().toUpperCase(),
             envelopeId:previa.envelope||undefined,origemCSV:true});
           onUpdate(r);
@@ -10521,7 +10521,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260828.0100 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260828.0130 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10608,7 +10608,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260828.0100
+      // HTML v3.20260828.0130
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
