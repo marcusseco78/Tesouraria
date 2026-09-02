@@ -3931,10 +3931,16 @@ function ConfiguracoesGerais({data,onUpdate,onIrPara}){
                 {contasAtivas.map(ct=><option key={ct.id} value={ct.id}>{ct.nome}</option>)}
               </select>}
               <div style={{display:"flex",gap:6,marginBottom:6}}>
-                <input type="number" min="1" max="31" value={editFechCartao} onChange={e=>setEditFechCartao(e.target.value)} placeholder="Fecha"
-                  style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
-                <input type="number" min="1" max="31" value={editVencCartao} onChange={e=>setEditVencCartao(e.target.value)} placeholder="Vence"
-                  style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+                <div style={{flex:1}}>
+                  <span style={{fontSize:9,color:C.textMuted}}>FECHA NO DIA</span>
+                  <input type="number" min="1" max="31" value={editFechCartao} onChange={e=>setEditFechCartao(e.target.value)}
+                    style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+                </div>
+                <div style={{flex:1}}>
+                  <span style={{fontSize:9,color:C.textMuted}}>VENCE NO DIA</span>
+                  <input type="number" min="1" max="31" value={editVencCartao} onChange={e=>setEditVencCartao(e.target.value)}
+                    style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+                </div>
               </div>
               <div style={{display:"flex",gap:6}}>
                 <button onClick={()=>salvarEdicaoCartaoCad(c.id)} disabled={loadCartaoCad}
@@ -9572,6 +9578,44 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
 
   const faturaAtual=faturas[idxInicial+fatIdx];
 
+  // [CORRIGIDO 28/08 -- bug real achado pelo Marcus: crash "Rendered fewer
+  // hooks than expected" (React #300) ao entrar na aba Cartões] Esses 4
+  // useMemo nasceram HOJE mais cedo, mas foram colocados DEPOIS do
+  // "if(!faturaAtual) return" que já existia -- quando faturaAtual vinha
+  // vazio numa renderização, o React pulava os 4 hooks; quando enchia,
+  // chamava todos -- quantidade de hooks mudando entre renders, proibido
+  // pelas Rules of Hooks. Movidos pra ANTES do return antecipado, com
+  // proteção contra faturaAtual vazio em cada um (senão faturaAtual.itens
+  // quebraria direto, já que agora rodam mesmo sem fatura nenhuma).
+  const concValida=conciliacao&&conciliacao.cartao===cartao&&
+    (!conciliacao.vencimentoAlvo||conciliacao.vencimentoAlvo===faturaAtual?.venc);
+  const confirmadosRows=useMemo(()=>{
+    if(!concValida)return new Set();
+    return new Set((conciliacao.confirmadosFatura||[]).map(a=>a.row));
+  },[concValida,conciliacao]);
+  const divergenciasByRow=useMemo(()=>{
+    const mp=new Map();
+    if(concValida)(conciliacao.possiveisDivergencias||[]).forEach(d=>mp.set(d.planilha.row,d));
+    return mp;
+  },[concValida,conciliacao]);
+  const novosDoCSV=useMemo(()=>{
+    if(!concValida||!faturaAtual) return [];
+    const brutos=conciliacao.foraDaPlanilha||[];
+    const filtrados=brutos.filter(item=>!faturaAtual.itens.some(r=>{
+      if(!_obsConfirmadoOfx(_obsCartaoRaw(r))) return false;
+      if(fmtD(r[0])!==fmtD(item.date)) return false;
+      if(Math.abs(Math.abs(r[2])-Math.abs(item.amount))>0.01) return false;
+      return String(r[1]||"").trim().toUpperCase()===limparParcelaTitulo(item.title).toUpperCase();
+    }));
+    return filtrados.sort((a,b)=>new Date(b.date)-new Date(a.date));
+  },[concValida,conciliacao,faturaAtual]);
+  const linhasCombinadas=useMemo(()=>{
+    if(!faturaAtual) return [];
+    const soltos=novosDoCSV.map((item,i)=>({__tipo:"ofx_solto",__data:_dataLocalSegura(item.date),item,__idx:i}));
+    const reais=faturaAtual.itens.map(r=>({__tipo:"real",__data:_dataLocalSegura(r[0]),r}));
+    return [...soltos,...reais].sort((a,b)=>b.__data-a.__data);
+  },[novosDoCSV,faturaAtual]);
+
   if(!faturaAtual) return <div style={{padding:"40px 20px",textAlign:"center",color:C.textMuted,fontSize:14}}>
     Nenhuma fatura encontrada. Suba um CSV ou adicione um lançamento.
   </div>;
@@ -9654,60 +9698,10 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   [pagamentosFaturaAnterior]);
   const restanteFaturaAnterior=Math.max(0,totalFaturaAnterior-totalPagoFaturaAnterior);
 
-  // Só aplica os selos de conciliação se ela foi rodada pro MESMO cartão e
-  // (quando identificado) pra MESMA fatura que está em tela agora -- senão um
-  // resultado antigo de outra fatura ficaria "vazando" selo em fatura errada.
-  const concValida=conciliacao&&conciliacao.cartao===cartao&&
-    (!conciliacao.vencimentoAlvo||conciliacao.vencimentoAlvo===faturaAtual.venc);
-  const confirmadosRows=useMemo(()=>{
-    if(!concValida)return new Set();
-    return new Set((conciliacao.confirmadosFatura||[]).map(a=>a.row));
-  },[concValida,conciliacao]);
-  const divergenciasByRow=useMemo(()=>{
-    const mp=new Map();
-    if(concValida)(conciliacao.possiveisDivergencias||[]).forEach(d=>mp.set(d.planilha.row,d));
-    return mp;
-  },[concValida,conciliacao]);
-  // [NOVO 27/08 -- achado real com o Marcus] Sem ordenacao antes (a ordem
-  // vinha crua do CSV) -- agora ordenado por data. Tambem filtra
-  // defensivamente qualquer item que ja bate (mesma data+valor) com uma
-  // linha JA confirmada na planilha -- em algum caso real o motor nao
-  // re-casa um item ja confirmadoOfx numa nova rodada de conciliacao
-  // (causa raiz exata ainda nao identificada, precisa reproduzir com CSV
-  // real numa proxima sessao), e sem esse filtro o item aparecia solto E
-  // ja mesclado ao mesmo tempo -- duplicata visual clara.
-  const novosDoCSV=useMemo(()=>{
-    if(!concValida) return [];
-    const brutos=conciliacao.foraDaPlanilha||[];
-    // [CORRIGIDO 27/08, insight do Marcus] Antes so checava data+valor --
-    // podia deixar passar falso positivo (2 compras diferentes, mesmo dia,
-    // mesmo valor por coincidencia) e nao dava garantia de verdade. Agora
-    // exige tambem o nome bancario EXATO -- desde que todo mesclado
-    // (auto-match, vincular manual, ou "+lancar" do OFX) sempre grava a
-    // DESCRICAO como o texto cru do banco, os 3 juntos (valor+data+nome
-    // bancario, exatos) sao a identidade real de "esse OFX ja foi
-    // trabalhado", sem depender de aproximacao nenhuma.
-    const filtrados=brutos.filter(item=>!faturaAtual.itens.some(r=>{
-      if(!_obsConfirmadoOfx(_obsCartaoRaw(r))) return false;
-      if(fmtD(r[0])!==fmtD(item.date)) return false;
-      if(Math.abs(Math.abs(r[2])-Math.abs(item.amount))>0.01) return false;
-      return String(r[1]||"").trim().toUpperCase()===limparParcelaTitulo(item.title).toUpperCase();
-    }));
-    return filtrados.sort((a,b)=>new Date(b.date)-new Date(a.date));
-  },[concValida,conciliacao,faturaAtual.itens]);
-
-  // [CORRIGIDO 27/08 -- pedido do Marcus, atendido só pela metade antes]
-  // As 2 fontes (OFX solto sem linha na planilha, e linhas reais da
-  // planilha) viviam em 2 blocos JSX separados, cada um ordenado por data
-  // por dentro de si mesmo -- mas ao juntar os 2 blocos na tela, a data
-  // "reiniciava" (ex: cai pra 14/08 no fim do bloco 1, depois volta pra
-  // 26/08 no comeco do bloco 2). Agora e uma lista so, combinada e
-  // ordenada de verdade antes de renderizar -- sem secao, sem reinicio.
-  const linhasCombinadas=useMemo(()=>{
-    const soltos=novosDoCSV.map((item,i)=>({__tipo:"ofx_solto",__data:_dataLocalSegura(item.date),item,__idx:i}));
-    const reais=faturaAtual.itens.map(r=>({__tipo:"real",__data:_dataLocalSegura(r[0]),r}));
-    return [...soltos,...reais].sort((a,b)=>b.__data-a.__data);
-  },[novosDoCSV,faturaAtual.itens]);
+  // concValida, confirmadosRows, divergenciasByRow, novosDoCSV e
+  // linhasCombinadas foram movidos pra ANTES do "if(!faturaAtual) return"
+  // acima -- ver comentário lá (bug real de ordem de hooks, corrigido
+  // 28/08).
 
   async function lancarNovo(){
     if(!nDesc.trim()||!nValor)return;
@@ -9748,81 +9742,8 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
       </button>
       {configCartaoAberta&&<div style={{background:C.borderLight,borderRadius:10,padding:"12px",textAlign:"left",marginTop:8}}>
         <div style={{fontSize:9,color:"#92400E",background:"#FEF3C7",borderRadius:6,padding:"6px 8px",marginBottom:10}}>
-          Área protegida — nome do cartão, dia de fechamento/vencimento e as 3 ações abaixo mexem em como o app inteiro calcula faturas. Reconstruir do zero em especial apaga e reescreve a aba inteira.
+          Nome, conta que paga e dia de fechamento/vencimento agora ficam em <b>Ferramentas → Configurações Gerais → 💳 Cadastro de cartões</b> (não duplicado mais aqui). "Reconstruir do zero" abaixo apaga e reescreve a aba inteira do cartão — única ação de risco desta tela.
         </div>
-
-        <div style={{fontSize:10,fontWeight:700,color:C.textSub,marginBottom:4}}>NOME DESTE CARTÃO</div>
-        {!editandoNome
-          ?<button onClick={()=>{setNomeEditado(data.config&&data.config["NOME_CARTAO_"+cartao]||"");setEditandoNome(true);}}
-            style={{background:"none",border:"1px solid "+C.border,borderRadius:6,color:C.textSub,fontSize:11,padding:"5px 10px",cursor:"pointer",fontFamily:"inherit",marginBottom:12}}>
-            ✏️ Renomear "{nomeCartao(cartao,data)}"
-          </button>
-          :<div style={{display:"flex",gap:6,alignItems:"center",marginBottom:12}}>
-            <input value={nomeEditado} onChange={e=>setNomeEditado(e.target.value.toUpperCase())}
-              placeholder={"Cartão "+cartao+" (padrão)"}
-              style={{flex:1,padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit"}}/>
-            <button onClick={salvarNomeCartao} disabled={load}
-              style={{padding:"5px 10px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-              Salvar
-            </button>
-            <button onClick={()=>setEditandoNome(false)}
-              style={{padding:"5px 8px",borderRadius:6,background:"none",color:C.textMuted,fontSize:11,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
-              X
-            </button>
-          </div>}
-
-        {contasAtivasCartaoCfg.length>1&&<>
-          <div style={{fontSize:10,fontWeight:700,color:C.textSub,marginBottom:4}}>CONTA QUE PAGA ESSA FATURA</div>
-          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
-            {contasAtivasCartaoCfg.map(c=>{
-              // [13/08, CORRIGIDO -- bug real do Marcus] Antes lia
-              // data.config["CONTA_CARTAO_"+cartao] -- resto da migracao
-              // antiga (config -> aba CARTOES de verdade). O botao SALVAVA
-              // certo no lugar novo (editarCartao escreve na aba CARTOES),
-              // mas a tela continuava lendo do lugar velho, que nunca mais
-              // e atualizado -- por isso "clicava em PJ e nao mudava nada"
-              // na tela, mesmo a planilha tendo gravado certo por baixo.
-              const cartaoAtualObj=(data.cartoes||[]).find(cc=>cc.id===cartao);
-              const contaAtual=(cartaoAtualObj&&cartaoAtualObj.conta)||"CONTA";
-              return <button key={c.id} onClick={()=>salvarContaCartao(c.id)} disabled={loadContaCartao}
-                style={{padding:"6px 10px",borderRadius:16,fontSize:12,fontWeight:700,border:"none",cursor:"pointer",
-                  background:contaAtual===c.id?C.accent:C.surface,color:contaAtual===c.id?"#fff":C.textMuted,
-                  border:contaAtual===c.id?"none":"1px solid "+C.border}}>{c.nome}</button>;
-            })}
-          </div>
-        </>}
-
-        <div style={{fontSize:10,fontWeight:700,color:C.textSub,marginBottom:4}}>FECHAMENTO E VENCIMENTO (deste cartão)</div>
-        {!editandoFatura
-          ?<button onClick={()=>{const fv=configFatura(data,cartao);setFechamentoEditado(String(fv.fechamento));setVencimentoEditado(String(fv.vencimento));setEditandoFatura(true);}}
-            style={{background:"none",border:"1px solid "+C.border,borderRadius:6,color:C.textSub,fontSize:11,padding:"5px 10px",cursor:"pointer",fontFamily:"inherit",marginBottom:12}}>
-            📅 Editar dia de fechamento/vencimento
-          </button>
-          :<div style={{background:C.surface,borderRadius:8,padding:"10px 12px",marginBottom:12}}>
-            <div style={{fontSize:9,color:C.textMuted,marginBottom:6}}>Padrão sem configurar: fecha no último dia do mês, vence dia 7 do mês seguinte.</div>
-            <div style={{display:"flex",gap:10,marginBottom:8}}>
-              <div style={{flex:1}}>
-                <span style={{fontSize:9,color:C.textMuted}}>FECHA NO DIA</span>
-                <input type="number" min="1" max="31" value={fechamentoEditado} onChange={e=>setFechamentoEditado(e.target.value)}
-                  style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"center",fontFamily:"inherit",boxSizing:"border-box"}}/>
-              </div>
-              <div style={{flex:1}}>
-                <span style={{fontSize:9,color:C.textMuted}}>VENCE NO DIA</span>
-                <input type="number" min="1" max="31" value={vencimentoEditado} onChange={e=>setVencimentoEditado(e.target.value)}
-                  style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"center",fontFamily:"inherit",boxSizing:"border-box"}}/>
-              </div>
-            </div>
-            <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
-              <button onClick={salvarConfigFatura} disabled={loadFatura}
-                style={{padding:"5px 12px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-                {loadFatura?"…":"Salvar"}
-              </button>
-              <button onClick={()=>setEditandoFatura(false)}
-                style={{padding:"5px 10px",borderRadius:6,background:"none",color:C.textMuted,fontSize:11,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
-                Cancelar
-              </button>
-            </div>
-          </div>}
 
         <div style={{fontSize:10,fontWeight:700,color:C.textSub,marginBottom:4}}>AÇÕES DE FATURA</div>
         <ConciliarCartao cartao={cartao} data={data} onUpdate={onUpdate} onResultado={r=>{setConciliacao(r);setSyncNovosCartao({});}}/>
@@ -9838,64 +9759,18 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
             ImportarAssinaturas continua definida (nao removida do arquivo,
             sem risco nenhum deixar parada) caso um dia precise dela de
             novo, so nao esta mais na tela. */}
-        {/* [NOVO 04/08] Correcao pontual do bug real de fronteira de mes
-            (ultimo dia do mes ficava preso na fatura errada) -- so afeta
-            compras PENDENTE cujo vencimento a formula nova recalcula
-            diferente do que ja esta gravado. Por padrao roda so na fatura
-            que esta na tela agora (faturaAtual.venc) -- raio de acao minimo,
-            pra testar uma fatura antes de rodar pro cartao inteiro. */}
-        <button onClick={async()=>{
-            setLoadCorrigirVenc(true);
-            try{
-              const r=await api({action:"corrigirVencimentoUltimoDiaMes",cartao,vencimentoAlvo:faturaAtual.venc});
-              onUpdate(r);
-              if(r.corrigidos===0) alert("Nada pra corrigir nesta fatura ("+fmtD(faturaAtual.venc)+") -- nenhuma compra pendente com vencimento na fronteira do mês estava errada.");
-              else alert(r.corrigidos+" parcela(s) corrigida(s) na fatura de "+fmtD(faturaAtual.venc)+" — vencimento recalculado pro dia certo.");
-            }catch(e){ alert(e.message); }
-            setLoadCorrigirVenc(false);
-          }} disabled={loadCorrigirVenc}
-          style={{width:"100%",padding:"8px",borderRadius:6,background:"transparent",color:C.textSub,fontSize:11,fontWeight:700,border:"1px dashed "+C.border,cursor:"pointer",fontFamily:"inherit",marginTop:6}}>
-          {loadCorrigirVenc?"Corrigindo…":"🔧 Corrigir vencimento — só esta fatura ("+fmtD(faturaAtual.venc)+")"}
-        </button>
-        <button onClick={async()=>{
-            if(!confirm("Corrigir em TODO o cartão, não só nesta fatura? Só mexe em compras PENDENTE cujo vencimento estava errado — nunca em PAGO."))return;
-            setLoadCorrigirVenc(true);
-            try{
-              const r=await api({action:"corrigirVencimentoUltimoDiaMes",cartao});
-              onUpdate(r);
-              if(r.corrigidos===0) alert("Nada pra corrigir -- nenhuma compra pendente com vencimento na fronteira do mês estava errada.");
-              else alert(r.corrigidos+" parcela(s) corrigida(s) no cartão inteiro — vencimento recalculado pro dia certo.");
-            }catch(e){ alert(e.message); }
-            setLoadCorrigirVenc(false);
-          }} disabled={loadCorrigirVenc}
-          style={{width:"100%",padding:"6px",borderRadius:6,background:"transparent",color:C.textMuted,fontSize:10,fontWeight:600,border:"none",cursor:"pointer",fontFamily:"inherit",marginTop:2,textDecoration:"underline"}}>
-          ou corrigir o cartão inteiro de uma vez
-        </button>
-        {/* [NOVO 06/08, achado real com o Marcus] Duplicata provavel --
-            "GLOBOPLAY" vs "GLOBO*GLOBOPLAY" etc: mesmo lançamento com
-            nome de banco diferente, ficando sem mesclar toda vez que
-            reconstroi/importa assinatura. Nunca mescla sozinho -- só
-            sugere, o Marcus confirma cada par. */}
-        <button onClick={buscarDuplicatas} disabled={loadDuplicatas}
-          style={{width:"100%",padding:"8px",borderRadius:6,background:"transparent",color:C.textSub,fontSize:11,fontWeight:700,border:"1px dashed "+C.border,cursor:"pointer",fontFamily:"inherit",marginTop:6}}>
-          {loadDuplicatas?"Procurando…":"🔍 Achar possíveis duplicatas"}
-        </button>
-        {duplicatas&&<div style={{marginTop:8}}>
-          {duplicatas.length===0
-            ?<div style={{fontSize:11,color:C.textMuted}}>Nenhuma duplicata provável encontrada.</div>
-            :duplicatas.map((sug,idx)=>
-              <div key={idx} style={{border:"1px solid "+C.border,borderRadius:8,padding:"8px 10px",marginBottom:6,background:"#fff"}}>
-                <div style={{fontSize:11,color:C.text}}>
-                  <b>{sug.a.desc}</b> ({fmtD(sug.a.data)}, R$ {sug.a.valor.toFixed(2).replace(".",",")}{sug.a.confirmado?" · confirmado":""})
-                  <br/>vs <b>{sug.b.desc}</b> ({fmtD(sug.b.data)}, R$ {sug.b.valor.toFixed(2).replace(".",",")}{sug.b.confirmado?" · confirmado":""})
-                </div>
-                <button onClick={()=>mesclarSugestao(sug,idx)} disabled={loadDuplicatas}
-                  style={{marginTop:6,padding:"5px 12px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-                  Mesclar
-                </button>
-              </div>
-            )}
-        </div>}
+        {/* [REMOVIDO 28/08, pedido do Marcus] "Corrigir vencimento" era
+            remendo pontual de 04/08 pra um bug especifico de calculo na
+            fronteira do mes -- a causa raiz ja foi corrigida na formula na
+            epoca; esse botao so alcancava dado ANTIGO escrito antes do
+            conserto. "Reconstruir do zero" ja cobre o mesmo caso (reescreve
+            tudo com a formula atual). Sem utilidade continua.
+            [REMOVIDO 28/08, pedido do Marcus] "Achar possíveis duplicatas"
+            era a versao mais antiga (06/08) da mesma ideia que a lista
+            fundida por data + pareamento por toque + aprendizado de alias
+            ja resolve de um jeito mais integrado. Redundante. Funcoes
+            (buscarDuplicatas/mesclarSugestao/corrigirVencimentoUltimoDiaMes)
+            continuam definidas no arquivo, so sem botao na tela. */}
       </div>}
     </div>
 
@@ -10551,7 +10426,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260828.0300 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260828.0500 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10638,7 +10513,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260828.0300
+      // HTML v3.20260828.0500
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
