@@ -9099,6 +9099,14 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   const [selecionadoPar,setSelecionadoPar]=useState(null); // {id,lado}
   const [proximoNumeroPar,setProximoNumeroPar]=useState(1);
   const [mesclando,setMesclando]=useState(false);
+  // [NOVO 28/08, bug real achado pelo Marcus -- "Nanda Filme" duplicado]
+  // setMesclando(true) e' assincrono -- so desabilita o botao de verdade
+  // depois do PROXIMO render. Num toque duplo rapido (comum no celular),
+  // as 2 chamadas podem escapar da guarda "disabled={mesclando}" antes do
+  // React ter chance de re-renderizar, disparando mesclarParesCartao duas
+  // vezes com os MESMOS pares -- cada um vira lancarCartao/vincular 2x.
+  // useRef muda na hora, sem esperar render nenhum -- trava de verdade.
+  const mesclandoRef=useRef(false);
   // [NOVO 27/08 -- redesenho combinado com o Marcus, voltando a inspiração
   // original do esquema] previasApp = "mães" que ainda não existem, criadas
   // pelo "+" de um OFX solto -- puro estado local, nunca gravado sozinho.
@@ -9144,6 +9152,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     setSelecionadoPar(null);
   }
   async function mesclarParesCartao(){
+    if(mesclandoRef.current) return; // trava síncrona -- bloqueia toque duplo na hora, sem esperar render
     // [NOVO 27/08] Valida ANTES de disparar qualquer chamada -- apelido e
     // categoria são obrigatórios em toda prévia, senão nasceria um
     // lançamento sem categoria (o que a fatura já trata como "sem
@@ -9159,6 +9168,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         }
       }
     }
+    mesclandoRef.current=true;
     setMesclando(true);
     const itensUsados=[];
     try{
@@ -9197,6 +9207,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         !itensUsados.some(u=>u.date===f.date&&u.title===f.title&&u.amount===f.amount))}:c);
       setParesPorNumero({}); setParIdParaNumero({}); setPreviasApp({});
     }catch(e){ alert(e.message); }
+    mesclandoRef.current=false;
     setMesclando(false);
   }
 
@@ -9816,7 +9827,17 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         <div style={{fontSize:10,fontWeight:700,color:C.textSub,marginBottom:4}}>AÇÕES DE FATURA</div>
         <ConciliarCartao cartao={cartao} data={data} onUpdate={onUpdate} onResultado={r=>{setConciliacao(r);setSyncNovosCartao({});}}/>
         <ResetCartao cartao={cartao} data={data} onUpdate={onUpdate}/>
-        <ImportarAssinaturas onUpdate={onUpdate}/>
+        {/* [REMOVIDO 28/08, pedido do Marcus] "Importar/reparar assinaturas
+            de cartão" -- misturava 4 coisas: (1) corrigirDestinoIndevido
+            (talvez ainda util), (2) lista PESSOAL hardcoded de 19
+            assinaturas do Marcus (fazia sentido rodar 1x no bootstrap
+            inicial, nao como botao generico pra qualquer usuario), (3)
+            geracao de 12 ciclos -- ja roda sozinha na viradaCiclo, (4) sync
+            de valor de fatura -- ja roda sozinha em sincronizarFaturas no
+            carregamento. Sem sentido como botao visivel; a funcao
+            ImportarAssinaturas continua definida (nao removida do arquivo,
+            sem risco nenhum deixar parada) caso um dia precise dela de
+            novo, so nao esta mais na tela. */}
         {/* [NOVO 04/08] Correcao pontual do bug real de fronteira de mes
             (ultimo dia do mes ficava preso na fatura errada) -- so afeta
             compras PENDENTE cujo vencimento a formula nova recalcula
@@ -10530,7 +10551,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260828.0200 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260828.0300 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10617,7 +10638,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260828.0200
+      // HTML v3.20260828.0300
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
