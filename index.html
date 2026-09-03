@@ -7465,10 +7465,6 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
             Cancelar
           </button>
         </div>
-        <button onClick={()=>regerar(item)} disabled={load}
-          style={{width:"100%",marginTop:8,padding:"6px",borderRadius:8,background:"transparent",color:C.teal,fontSize:11,border:"1px dashed #99F6E4",cursor:"pointer",fontFamily:"inherit"}}>
-          🔁 Regerar ocorrências futuras (apaga programado/pendente e recria com a config atual)
-        </button>
         <button onClick={()=>apagar(item)} disabled={load}
           style={{width:"100%",marginTop:8,padding:"6px",borderRadius:8,background:"transparent",color:C.red,fontSize:11,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
           🗑 Apagar esta recorrência
@@ -7610,21 +7606,31 @@ function Recorrencias({data,onUpdate}){
   // primeiro, do mesmo jeito, antes de fazer o que sao pra fazer.
   async function _persistirCamposRecorrencia(item){
     let ultimoResultado=null;
+    // [NOVO 02/09] Vários campos são salvos em sequência aqui -- se um
+    // deles (ex: VALOR) disparar _precisaRegenerar mas um campo salvo
+    // DEPOIS (ex: ALIAS_CSV) não, o "ultimoResultado=" sozinho perderia o
+    // sinalizador (o resultado mais recente vence, sem sinalizador nenhum).
+    // Guarda à parte, assim que aparece, e recoloca no resultado final.
+    let precisaRegenerarAcumulado=null;
+    function _guardarResultado(r){
+      if(r&&r._precisaRegenerar) precisaRegenerarAcumulado=r._precisaRegenerar;
+      ultimoResultado=r;
+    }
     const novoValor=numBR(val)*(neg?-1:1);
     const novoDia=parseInt(dia);
     const novaTolerancia=tolerancia===""?null:parseInt(tolerancia);
     if(novoValor!==item.valor)
-      ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"VALOR",valor:String(novoValor),resumo:""});
+      _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"VALOR",valor:String(novoValor),resumo:""}));
     if(destinoEdit==="FLUXO"&&formaEdit!==(item.forma||"CONTA"))
-      ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"FORMA",valor:formaEdit,resumo:""});
+      _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"FORMA",valor:formaEdit,resumo:""}));
     if(novoDia!==parseInt(item.diaVenc))
-      ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_VENC",valor:String(novoDia),resumo:""});
+      _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_VENC",valor:String(novoDia),resumo:""}));
     if(diaTipoEdit!==item.diaTipo)
-      ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_TIPO",valor:diaTipoEdit,resumo:""});
+      _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_TIPO",valor:diaTipoEdit,resumo:""}));
     if(parseInt(diaNEdit)!==item.diaN)
-      ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_N",valor:diaNEdit,resumo:""});
+      _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_N",valor:diaNEdit,resumo:""}));
     if(novaTolerancia!=null&&novaTolerancia!==Number(item.tolerancia))
-      ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"TOLERANCIA_DIAS",valor:String(novaTolerancia),resumo:""});
+      _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"TOLERANCIA_DIAS",valor:String(novaTolerancia),resumo:""}));
     const novoAlias=alias.trim().toUpperCase();
     if(novoAlias!==String(item.alias||"").trim().toUpperCase()){
       // [NOVO 02/09] O backend só pergunta quando alguma ocorrência futura
@@ -7637,10 +7643,11 @@ function Recorrencias({data,onUpdate}){
         if(confirm("Já existem "+info.quantidade+" lançamento(s) futuro(s) de \""+info.descricao+"\" com um nome bancário diferente gravado. Atualizar todos pro nome novo?"))
           rAlias=await api({action:"editarRecorrencia",descricao:item.desc,campo:"ALIAS_CSV",valor:novoAlias,resumo:"",forcarAlias:true});
       }
-      ultimoResultado=rAlias;
+      _guardarResultado(rAlias);
     }
     if(envelopePadrao!==String(item.envelopePadrao||""))
-      ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"ENVELOPE_PADRAO",valor:envelopePadrao,resumo:""});
+      _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"ENVELOPE_PADRAO",valor:envelopePadrao,resumo:""}));
+    if(precisaRegenerarAcumulado&&ultimoResultado) ultimoResultado._precisaRegenerar=precisaRegenerarAcumulado;
     return ultimoResultado;
   }
 
@@ -7670,6 +7677,22 @@ function Recorrencias({data,onUpdate}){
         }
       }
       ultimoResultado=(await _persistirCamposRecorrencia(item))||ultimoResultado;
+      // [NOVO 02/09, decidido com o Marcus] Fusão Salvar/Regerar: um botão
+      // só. Se algum dos campos que acabou de mudar não cascateia sozinho
+      // pras ocorrências já geradas (cartão mudando valor/dia/parcelas;
+      // recorrência semanal mudando de dia — ver editarRecorrencia no
+      // backend), o backend devolve _precisaRegenerar em vez de fazer
+      // qualquer coisa destrutiva sozinho. Só aí pergunta — 1 vez, mesmo
+      // que várias trocas de campo tenham disparado o sinalizador.
+      if(ultimoResultado&&ultimoResultado._precisaRegenerar){
+        const infoReg=ultimoResultado._precisaRegenerar;
+        if(confirm("Isso também afeta "+infoReg.quantidade+" ocorrência(s) futura(s) já gerada(s) de \""+infoReg.descricao+"\". Atualizar todas com a configuração nova agora? Executado/pago nunca é tocado.")){
+          const rReg=await api({action:"regerarOcorrenciasRecorrencia",descricao:item.desc});
+          ultimoResultado=rReg;
+          const res=rReg._resultadoRegerar;
+          if(res) alert("Pronto: atualizado "+(res.geradosFluxo+res.geradosCartaoPF+res.geradosCartaoPJ)+" ocorrência(s) com a configuração nova.");
+        }
+      }
       onUpdate(ultimoResultado||await api({action:"getData"}));
     }catch(e){alert(e.message);}
     setLoad(false);setEdit(null);
@@ -10439,7 +10462,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260902.2020 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260902.2330 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10526,7 +10549,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260902.2020
+      // HTML v3.20260902.2330
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
