@@ -4219,7 +4219,19 @@ const PALETA_PARES=[
   {cor:"#EA580C",bg:"#FFF7ED"},{cor:"#7C3AED",bg:"#F5F3FF"},{cor:"#0D9488",bg:"#F0FDFA"},
   {cor:"#DB2777",bg:"#FDF2F8"},{cor:"#CA8A04",bg:"#FEFCE8"},
 ];
-function Pilula({children,ativa,editavel,onClick}){
+function Pilula({children,ativa,editavel,onClick,grande}){
+  // [NOVO 03/09, pedido do Marcus] Variante "grande" -- mesma fonte/padding
+  // do seletor de CONTA CROMA/INTENSIVA (fontSize 12, padding 7x12), usada
+  // só nas pílulas de ESCOLHER categoria (prévia de extrato/cartão). A
+  // variante pequena original continua intocada -- é usada no SeloPar como
+  // selo compacto read-only, onde 8px é o que cabe numa linha só.
+  if(grande){
+    return <span onClick={editavel?onClick:undefined} style={{
+      fontSize:12,fontWeight:700,color:ativa?"#fff":C.textSub,background:ativa?C.accent:C.borderLight,
+      borderRadius:16,padding:"7px 12px",cursor:editavel?"pointer":"default",
+      border:editavel&&!ativa?"1px dashed "+C.border:"none",
+    }}>{children}</span>;
+  }
   return <span onClick={editavel?onClick:undefined} style={{
     fontSize:8,fontWeight:600,color:ativa?"#fff":C.textSub,background:ativa?C.accent:C.borderLight,
     borderRadius:999,padding:"1px 5px",flexShrink:0,minWidth:0,
@@ -4259,6 +4271,19 @@ const CAT_SIGLA={
 function _idOfxSolto(item){ return "ofx_"+item.date+"|"+item.title+"|"+item.amount; }
 function rotuloCategoriaPill(cat){
   return CAT_SIGLA[cat]||cat;
+}
+// [NOVO 03/09, pedido do Marcus: "não lembro o que DNPA/IMPO/PARC/INVE
+// significam, aumenta a pílula e usa palavra por extenso"] Só usado na
+// variante grande (Pilula grande) -- o selo compacto do SeloPar continua
+// com a sigla de sempre, sem espaço pra palavra inteira.
+const CAT_LABEL_GRANDE={
+  "DCP":"Sem", "DESPESA FIXA":"Fixa", "DIVIDA_PARCELADA":"Parcelada",
+  "DIVIDA_NAO_PARCELADA":"Dívida", "EXTRAORDINARIA":"Extra", "IMPOSTO":"Imposto",
+  "INVESTIMENTO":"Investimento", "TRANSFERENCIA":"Transferência",
+  "RECEITA":"Receita", "DEPOSITO_AVULSO":"Depósito",
+};
+function rotuloCategoriaPillGrande(cat){
+  return CAT_LABEL_GRANDE[cat]||CAT_SIGLA[cat]||cat;
 }
 function fmtCentro(v){ return fmt(v); }
 /**
@@ -4408,8 +4433,8 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
 
     {/* categoria + acoes -- so quando editando, tudo numa linha */}
     {editando&&<div style={{border:"1px solid "+C.blue,borderTop:"none",borderRadius:"0 0 8px 8px",padding:"7px 10px",background:"#EFF6FF"}}>
-      <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
-        {categoriasPorSinal(app.valor).map(c=><Pilula key={c} editavel ativa={categoriaEdit===c} onClick={()=>setCategoriaEdit(c)}>{rotuloCategoriaPill(c)}</Pilula>)}
+      <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+        {categoriasPorSinal(app.valor).map(c=><Pilula key={c} grande editavel ativa={categoriaEdit===c} onClick={()=>setCategoriaEdit(c)}>{rotuloCategoriaPillGrande(c)}</Pilula>)}
         <div style={{flex:1}}/>
         {ehMesclado&&(tipo==="cartao"||tipo==="extrato")&&<button onClick={toggleProtecao} disabled={salvando} title={protegido
           ?"Protegido -- a próxima conciliação sabe que isso já é essa mescla e não mexe"
@@ -4444,8 +4469,8 @@ function LinhaOfxIsoladaCartao({item,numero,selecionado,onClick,onCriarPrevia}){
   return <div style={{width:"90%",marginRight:"auto",marginBottom:6}}>
     <div onClick={onClick} style={{
       display:"flex",alignItems:"center",gap:6,padding:"8px 10px",
-      background:cor?cor.bg:(selecionado?"#EFF6FF":C.surface),
-      border:"1px solid "+(cor?cor.cor:(selecionado?C.blue:C.border)),
+      background:cor?cor.bg:(selecionado?"#EFF6FF":C.redLight),
+      border:"1px solid "+(cor?cor.cor:(selecionado?C.blue:C.red)),
       borderRadius:8,boxSizing:"border-box",cursor:"pointer",
     }}>
       <span style={{fontSize:13,flexShrink:0}}>🏦</span>
@@ -4494,8 +4519,8 @@ function PreviaAppCartao({item,previa,numero,envelopes,onMudar,onDesvincular}){
         <option value="">Envelope: nenhum</option>
         {envelopes.map(e=><option key={e.id} value={e.id}>Envelope: {e.nome}</option>)}
       </select>}
-      <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
-        {categoriasPorSinal(-Math.abs(item.amount)).map(c=><Pilula key={c} editavel ativa={previa.categoria===c} onClick={()=>onMudar({...previa,categoria:c})}>{rotuloCategoriaPill(c)}</Pilula>)}
+      <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+        {categoriasPorSinal(-Math.abs(item.amount)).map(c=><Pilula key={c} grande editavel ativa={previa.categoria===c} onClick={()=>onMudar({...previa,categoria:c})}>{rotuloCategoriaPillGrande(c)}</Pilula>)}
       </div>
       {!previa.categoria&&<div style={{fontSize:9,color:C.red,marginTop:4}}>Escolha uma categoria (obrigatório pra mesclar).</div>}
     </div>
@@ -4511,7 +4536,7 @@ function PreviaAppCartao({item,previa,numero,envelopes,onMudar,onDesvincular}){
 // dentro do componente do cartão arriscaria quebrar o que já funciona lá
 // só pra acomodar campos que ele nunca usa. Mesmo contrato de "nunca salva
 // sozinha" -- só grava quando Mesclar roda.
-function PreviaAppExtrato({n,previa,numero,envelopes,contas,onMudar,onDesvincular}){
+function PreviaAppExtrato({n,previa,numero,envelopes,contas,despesasFixas,onMudar,onDesvincular}){
   const cor=numero?PALETA_PARES[(numero-1)%PALETA_PARES.length]:{cor:C.blue,bg:"#EFF6FF"};
   return <div style={{width:"90%",marginLeft:"auto",marginBottom:6}}>
     <div style={{
@@ -4545,10 +4570,49 @@ function PreviaAppExtrato({n,previa,numero,envelopes,contas,onMudar,onDesvincula
           💳 Vai abater a fatura {previa.pagFatura} -- a fatura certa é achada pela data deste lançamento na hora de mesclar.
         </div>
       :<>
-        <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap",marginBottom:6}}>
-          {categoriasPorSinal(n.valor).map(c=><Pilula key={c} editavel ativa={previa.categoria===c} onClick={()=>onMudar({...previa,categoria:c})}>{rotuloCategoriaPill(c)}</Pilula>)}
+        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:6}}>
+          {categoriasPorSinal(n.valor).map(c=><Pilula key={c} grande editavel ativa={previa.categoria===c} onClick={()=>onMudar({...previa,categoria:c})}>{rotuloCategoriaPillGrande(c)}</Pilula>)}
         </div>
         {!previa.categoria&&<div style={{fontSize:9,color:C.red,marginBottom:6}}>Escolha uma categoria (obrigatório pra mesclar).</div>}
+        {/* [NOVO 03/09, pedido do Marcus -- caso real: PIX pra psicóloga que
+            já é recorrência cadastrada, só sem o alias bancário certo] Ao
+            marcar Despesa Fixa, oferece reconhecer isso como uma recorrência
+            JÁ CADASTRADA (aprende o nome bancário sozinho, nunca mais cai
+            aqui de novo) OU criar uma nova recorrência na hora, só perguntando
+            o que o OFX não entrega -- a periodicidade. */}
+        {previa.categoria==="DESPESA FIXA"&&<div style={{marginBottom:8,paddingTop:6,borderTop:"1px dashed "+cor.cor}}>
+          <div style={{fontSize:9,color:C.textMuted,fontWeight:700,marginBottom:4}}>É UMA DAS DESPESAS FIXAS JÁ CADASTRADAS?</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:6}}>
+            {despesasFixas.map(fx=>
+              <button key={fx.desc} type="button" onClick={()=>onMudar({...previa,despesaFixaVinculo:fx.desc,criarNova:false,apelido:fx.desc})}
+                style={{padding:"5px 10px",borderRadius:16,fontSize:11,fontWeight:700,border:"none",cursor:"pointer",
+                  background:previa.despesaFixaVinculo===fx.desc?C.accent:C.borderLight,
+                  color:previa.despesaFixaVinculo===fx.desc?"#fff":C.textMuted}}>
+                {fx.desc}
+              </button>)}
+            <button type="button" onClick={()=>onMudar({...previa,despesaFixaVinculo:"",criarNova:true})}
+              style={{padding:"5px 10px",borderRadius:16,fontSize:11,fontWeight:700,border:"1px dashed "+C.teal,cursor:"pointer",
+                background:previa.criarNova?C.teal:"#fff",
+                color:previa.criarNova?"#fff":C.teal}}>
+              + Nova despesa fixa
+            </button>
+          </div>
+          {previa.despesaFixaVinculo&&<div style={{fontSize:10,color:C.accent,background:C.accentLight,borderRadius:6,padding:"6px 8px"}}>
+            Vai aprender "{n.descricao.slice(0,40)}" como nome bancário de "{previa.despesaFixaVinculo}" — reconhece sozinho da próxima vez.
+          </div>}
+          {previa.criarNova&&<>
+            <div style={{fontSize:9,color:C.textMuted,fontWeight:700,marginBottom:4}}>COM QUE FREQUÊNCIA? (o OFX só dá a data desta vez)</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+              {[["mensal","Mensal"],["semanal","Semanal"],["trimestral","Trimestral"],["semestral","Semestral"],["anual","Anual"]].map(([id,label])=>
+                <button key={id} type="button" onClick={()=>onMudar({...previa,periodicidadeNova:id})}
+                  style={{padding:"5px 10px",borderRadius:16,fontSize:11,fontWeight:700,border:"none",cursor:"pointer",
+                    background:(previa.periodicidadeNova||"mensal")===id?C.accent:C.borderLight,
+                    color:(previa.periodicidadeNova||"mensal")===id?"#fff":C.textMuted}}>
+                  {label}
+                </button>)}
+            </div>
+          </>}
+        </div>}
         {envelopes.length>0&&<select value={previa.envelope} onChange={e=>onMudar({...previa,envelope:e.target.value})}
           style={{width:"100%",fontSize:10.5,padding:"4px 6px",borderRadius:5,border:"1px solid "+C.border,color:C.textSub,background:"#fff",fontFamily:"inherit",marginBottom:6,boxSizing:"border-box"}}>
           <option value="">Envelope: nenhum</option>
@@ -4597,8 +4661,8 @@ function LinhaAppIsoladaCartao({aguardando,numero,selecionado,onClickParear}){
   const cor=numero?PALETA_PARES[(numero-1)%PALETA_PARES.length]:null;
   return <div onClick={onClickParear} style={{
     display:"flex",alignItems:"center",gap:6,padding:"8px 10px",
-    background:cor?cor.bg:(selecionado?"#EFF6FF":C.surface),
-    border:"1px solid "+(cor?cor.cor:(selecionado?C.blue:C.border)),
+    background:cor?cor.bg:(selecionado?"#EFF6FF":C.redLight),
+    border:"1px solid "+(cor?cor.cor:(selecionado?C.blue:C.red)),
     borderRadius:8,width:"90%",marginLeft:"auto",boxSizing:"border-box",cursor:"pointer",
   }}>
     {numero&&<span style={{fontSize:10,fontWeight:800,color:"#fff",background:cor.cor,borderRadius:999,width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{numero}</span>}
@@ -4711,6 +4775,20 @@ function ConciliarExtratoTab({data,onUpdate}){
     setResultadoRaw(null); setCfgNovosRaw({});
     try{ localStorage.removeItem(LS_RESULTADO); localStorage.removeItem(LS_CFGNOVOS); }catch(e){}
   }
+  // [NOVO 03/09, pedido do Marcus] Despesas fixas já cadastradas com destino
+  // conta (data.recorr = linhas cruas de RECORRENCIAS, mesmo shape que
+  // SecaoRecorrencias já usa) -- oferecidas na prévia pra vincular em vez de
+  // criar um lançamento solto desconectado.
+  const despesasFixas=useMemo(()=>(data.recorr||[])
+    .filter(r=>{
+      const ativo=String(r[6]).toUpperCase()!=="N"&&r[6]!==false&&r[6]!==0;
+      const tipo=String(r[7]||"").toUpperCase();
+      const destino=String(r[9]||"FLUXO").toUpperCase();
+      return ativo&&tipo==="DESPESA FIXA"&&destino==="FLUXO";
+    })
+    .map(r=>({desc:String(r[0]),alias:String(r[11]||"")})),
+  [data.recorr]);
+
   const fileRef=useRef(null);
 
   // [NOVO 02/09 -- port da tela nova de conciliação do cartão] Mesmo
@@ -4732,6 +4810,7 @@ function ConciliarExtratoTab({data,onUpdate}){
       apelido:(n.sugestao&&n.sugestao.descricaoSugerida)||n.descricao.slice(0,60).toUpperCase(),
       categoria:n.valor<0?"EXTRAORDINARIA":"RECEITA",envelope:"",
       pagFatura:null,vincularRegra:false,criarEspelho:false,intencaoEspelho:null,contaEspelho:null,
+      despesaFixaVinculo:"",criarNova:false,periodicidadeNova:"mensal",
     }}));
     const num=proximoNumeroPar;
     setParesPorNumero(prev=>({...prev,[num]:{ofxId:idOfx,appId:idPreview}}));
@@ -4887,6 +4966,8 @@ function ConciliarExtratoTab({data,onUpdate}){
         if(!previa.intencaoEspelho){ alert("Escolha a finalidade da transferência em todas as prévias marcadas antes de mesclar."); return; }
         continue;
       }
+      if(previa.criarNova&&!previa.apelido.trim()){ alert("Preencha o nome da despesa fixa nova antes de mesclar."); return; }
+      if(previa.despesaFixaVinculo||previa.criarNova) continue; // valida achar/nome acima; categoria já é DESPESA FIXA
       if(!previa.apelido.trim()||!previa.categoria){ alert("Preencha nome e categoria em todas as prévias antes de mesclar."); return; }
     }
     mesclandoRef.current=true;
@@ -4909,6 +4990,48 @@ function ConciliarExtratoTab({data,onUpdate}){
             const destino=n.valor<0?previa.contaEspelho:(contaExtrato||"CONTA");
             onUpdate(await api({action:"lancarTransferenciaEspelhada",data:n.data,valor:Math.abs(Number(n.valor)),
               contaOrigem:origem,contaDestino:destino,intencao:previa.intencaoEspelho||"MOVIMENTACAO",apelido:previa.apelido||""}));
+          }else if(previa.despesaFixaVinculo){
+            // [NOVO 03/09, pedido do Marcus -- caso real da psicóloga]
+            // Reconhecida como uma despesa fixa JÁ CADASTRADA -- se já existe
+            // uma ocorrência dela esperando (aguardando), é o MESMO caminho
+            // do toque+toque manual (vincularAliasConciliacao já aprende o
+            // alias e propaga sozinho). Só cria um lançamento novo quando
+            // não existe nenhuma ocorrência pra vincular.
+            const nomeAlvo=previa.despesaFixaVinculo.toUpperCase();
+            const aguardandoAlvo=(resultado.aguardando||[]).find(a=>String(a.desc||"").toUpperCase()===nomeAlvo);
+            if(aguardandoAlvo){
+              rowsAppUsados.push(aguardandoAlvo.row);
+              onUpdate(await api({action:"vincularAliasConciliacao",row:aguardandoAlvo.row,descricaoExtrato:n.descricao,
+                identificador:n.identificador||null,dataExtrato:n.data,valorExtrato:n.valor}));
+            }else{
+              const fx=despesasFixas.find(f=>f.desc.toUpperCase()===nomeAlvo);
+              const aliasCombinado=fx&&fx.alias?(fx.alias+";"+n.descricao):n.descricao;
+              onUpdate(await api({action:"editarRecorrencia",descricao:previa.despesaFixaVinculo,campo:"ALIAS_CSV",valor:aliasCombinado,resumo:"",forcarAlias:true}));
+              itensLote.push({data:n.data,descricao:previa.despesaFixaVinculo,valor:Number(n.valor),tipo:"DESPESA FIXA",
+                categoria:"DESPESA FIXA",forma:contaExtrato||"CONTA",status:"EXECUTADO",
+                obs:n.identificador?JSON.stringify({extratoId:n.identificador}):""});
+            }
+          }else if(previa.criarNova){
+            // [NOVO 03/09, pedido do Marcus] Cria a recorrência nova (define
+            // o padrão pras próximas emissões) E lança a ocorrência de AGORA
+            // (essa transação já aconteceu, lancarRecorrencia só gera daqui
+            // pra frente) -- as duas coisas, sempre juntas.
+            const dObj=_dataLocalSegura(n.data);
+            const freqParams={
+              mensal:{dia_venc:dObj.getDate(),semanal:false,intervalo_meses:1},
+              semanal:{dia_venc:dObj.getDay(),semanal:true,intervalo_meses:1},
+              trimestral:{dia_venc:dObj.getDate(),semanal:false,intervalo_meses:3},
+              semestral:{dia_venc:dObj.getDate(),semanal:false,intervalo_meses:6},
+              anual:{dia_venc:dObj.getDate(),semanal:false,intervalo_meses:12},
+            };
+            const fp=freqParams[previa.periodicidadeNova||"mensal"];
+            onUpdate(await api({action:"lancarRecorrencia",descricao:previa.apelido,valor:Number(n.valor),
+              forma:contaExtrato||"CONTA",dia_venc:fp.dia_venc,semanal:fp.semanal,destino:"FLUXO",
+              parc_total:0,tipo:"DESPESA FIXA",intervalo_meses:fp.intervalo_meses,mes_ancora:dObj.getMonth()+1,
+              obs:"",alias_csv:n.descricao,dia_tipo:"FIXO",dia_n:1}));
+            itensLote.push({data:n.data,descricao:previa.apelido,valor:Number(n.valor),tipo:"DESPESA FIXA",
+              categoria:"DESPESA FIXA",forma:contaExtrato||"CONTA",status:"EXECUTADO",
+              obs:n.identificador?JSON.stringify({extratoId:n.identificador}):""});
           }else{
             let obsNovo={};
             if(n.identificador) obsNovo.extratoId=n.identificador;
@@ -5056,6 +5179,7 @@ function ConciliarExtratoTab({data,onUpdate}){
         <div style={{fontSize:11,fontWeight:700,color:C.textSub,padding:"6px 4px",letterSpacing:".05em"}}>
           {resultado.totalTransacoes} transação(ões) · {(resultado.confirmados||[]).length} já reconhecida(s) · {(resultado.paraBaixar||[]).length} pra confirmar baixa
           {(resultado.novos||[]).length>0&&` · ${resultado.novos.length} do banco sem par`}
+          {(resultado.aguardando||[]).length>0&&` · ${resultado.aguardando.length} do app sem par`}
         </div>
         {(resultado.novos||[]).length>0&&<div style={{fontSize:10,color:C.textMuted,padding:"0 4px 8px",lineHeight:1.4}}>
           Toca num 🏦 solto, depois num 📱 solto, pra parear. Ou toca "+" num 🏦 solto pra criar um lançamento novo já pareado com ele.
@@ -5083,6 +5207,7 @@ function ConciliarExtratoTab({data,onUpdate}){
                   numero={parIdParaNumero[idOfx]}
                   envelopes={parseEnvelopesCustom(data)}
                   contas={(data.contas||[]).filter(c=>c.ativa!==false&&c.id!==contaExtrato)}
+                  despesasFixas={despesasFixas}
                   onMudar={nova=>mudarPrevia(idOfx,nova)}
                   onDesvincular={()=>tocarPareamento("prev_"+idOfx,"app")}
                 />}
@@ -10472,7 +10597,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260903.1500 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260903.1610 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10559,7 +10684,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260903.1500
+      // HTML v3.20260903.1610
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
