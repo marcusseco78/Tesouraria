@@ -2697,8 +2697,6 @@ function FormModo({modo,onChange,onRemover,podeRemover,onLancarAvulso}){
 function FontesReceita({data,onUpdate}){
   const salvas=data.fontesReceita||[];
   const [fontes,setFontes]=useState(()=>salvas.length?salvas:[]);
-  const [load,setLoad]=useState(false);
-  const [loadRefresh,setLoadRefresh]=useState(false);
   const [loadFonte,setLoadFonte]=useState(null); // nome da fonte gerando individualmente agora
   const [msg,setMsg]=useState(null);
   // [NOVO 09/08] Conta de recebimento por fonte -- resolve o caso real de
@@ -2768,41 +2766,59 @@ function FontesReceita({data,onUpdate}){
     setMsg("Lançamento de "+fonteNome+" registrado no Fluxo.");
   }
 
-  async function salvar(){
-    setLoad(true); setMsg(null);
+  // [NOVO 03/09] Mesmo espírito da fusão Salvar/Regerar de Recorrências,
+  // adaptado pro caso extra que Receita tem e Recorrência não: valor
+  // calculado por plantão pode ter sido corrigido à mão pra um mês
+  // específico (editor de plantões, ou edição direta do valor no Fluxo) --
+  // essas correções não podem ser apagadas sem avisar.
+  function _numCampoModo(v){ return typeof v==="string" ? (numBR(v)||0) : (Number(v)||0); }
+  function _modoAfetaCalculo(antigo,novo){
+    if(!antigo) return false; // modo novo -- nunca gerou nada, nada "programado" pra perguntar sobre
+    const camposNum=["valorHora","horasPlantao","percDesconto","valorFixo","valorReferencia","diaPagamento","diaN"];
+    for(const c of camposNum){ if(_numCampoModo(antigo[c])!==_numCampoModo(novo[c])) return true; }
+    if(String(antigo.diaTipo||"FIXO")!==String(novo.diaTipo||"FIXO")) return true;
+    if(JSON.stringify(antigo.regras||[])!==JSON.stringify(novo.regras||[])) return true;
+    return false;
+  }
+  // Só lançamentos PROGRAMADO de modo REGULAR contam pra essa pergunta --
+  // Esporádica nunca gera sozinha, então nunca tem "programados" mesmo.
+  function _programadosRegularesDaFonte(fluxoArr,fonte){
+    const nomeNorm=String(fonte.nome||"").toUpperCase().replace(/[^A-Z0-9_ ]/g,"").replace(/ /g,"");
+    const idsRegulares=new Set((fonte.modos||[]).filter(m=>String(m.tipoRecorrencia||"REGULAR")==="REGULAR").map(m=>m.id));
+    return (fluxoArr||[]).filter(r=>{
+      if(r.status!=="PROGRAMADO") return false;
+      const m=String(r.obs||"").match(/FONTE_RECEITA:([A-Z0-9_]+):([A-Za-z0-9_]+):/);
+      return m&&m[1]===nomeNorm&&idsRegulares.has(m[2]);
+    });
+  }
+
+  async function salvarFonte(fi){
+    const fonte=fontes[fi];
+    const fonteAntiga=salvas.find(f=>String(f.nome||"").toUpperCase()===String(fonte.nome||"").toUpperCase());
+    setLoadFonte(fonte.nome); setMsg(null);
     try{
       const r=await persistir();
       onUpdate&&onUpdate(r);
-      setMsg((r.receitasGeradas||0)+" lançamento(s) novo(s) gerado(s)/atualizado(s) no Fluxo.");
-    }catch(e){alert(e.message);}
-    setLoad(false);
-  }
-  // "Recalcular TODAS": salva a tela, apaga TODOS os futuros gerados (de
-  // qualquer fonte/modo) e regera do zero com as regras/valores atuais.
-  async function recalcularTodas(){
-    if(!window.confirm("Recalcular TODAS as fontes? Isso apaga os lançamentos futuros ainda programados de modo Regular (de qualquer fonte) e regera do zero com os valores/regras atuais da tela. Esporádica nunca é tocada por aqui — nunca é gerada sozinha. Já executados nunca são tocados."))return;
-    setLoadRefresh(true); setMsg(null);
-    try{
-      await persistir();
-      await api({action:"apagarFuturosFonte",tipos:["REGULAR"]});
-      const r=await api({action:"gerarReceitasFontes"});
-      onUpdate&&onUpdate(r);
-      setMsg("Todas as fontes recalculadas: "+(r.itensAdicionados||0)+" lançamento(s) gerado(s).");
-    }catch(e){alert(e.message);}
-    setLoadRefresh(false);
-  }
-  // "Recalcular" UMA fonte (todos os modos dela juntos) -- mesma logica do
-  // botao "Todas", so que filtrada. E o botao que resolve "mudei valor-hora/
-  // aliquota/regra de algum modo, quero que os lancamentos futuros reflitam".
-  async function recalcularUmaFonte(nome){
-    if(!window.confirm("Recalcular \""+nome+"\"? Isso apaga os lançamentos futuros de modo Regular já gerados dessa fonte e regera do zero com os valores/regra atuais da tela. Esporádica nunca é tocada por aqui. Já executados nunca são tocados."))return;
-    setLoadFonte(nome); setMsg(null);
-    try{
-      await persistir();
-      await api({action:"apagarFuturosFonte",fonte:nome,tipos:["REGULAR"]});
-      const r=await api({action:"gerarReceitasFontes",fonte:nome});
-      onUpdate&&onUpdate(r);
-      setMsg(nome+": recalculado, "+(r.itensAdicionados||0)+" lançamento(s) gerado(s).");
+      let msgFinal=(r.receitasGeradas||0)+" lançamento(s) novo(s) gerado(s)/atualizado(s) no Fluxo.";
+
+      if(fonteAntiga){
+        const mudouCalculo=(fonte.modos||[]).some(m=>
+          String(m.tipoRecorrencia||"REGULAR")==="REGULAR"&&m.id&&
+          _modoAfetaCalculo((fonteAntiga.modos||[]).find(x=>x.id===m.id),m));
+        if(mudouCalculo){
+          const jaGeradas=_programadosRegularesDaFonte(r.fluxo||data.fluxo,fonteAntiga);
+          if(jaGeradas.length>0&&confirm('Isso muda o valor/regra de "'+fonte.nome+'". Aplicar também aos '+jaGeradas.length+' lançamento(s) já programado(s) — não só nas próximas emissões?')){
+            const manuais=jaGeradas.filter(x=>String(x.obs||"").indexOf(" MANUAL")!==-1);
+            const preservarManuais=manuais.length>0&&confirm(manuais.length+' desse(s) você editou manualmente. Preservar esse(s) valor(es) (recalcula só o resto)? Cancelar = sobrescreve todos, inclusive os editados à mão.');
+            const r2=await api({action:"apagarFuturosFonte",fonte:fonte.nome,tipos:["REGULAR"],preservarManuais});
+            onUpdate&&onUpdate(r2);
+            const r3=await api({action:"gerarReceitasFontes",fonte:fonte.nome});
+            onUpdate&&onUpdate(r3);
+            msgFinal=fonte.nome+": recalculado, "+(r3.itensAdicionados||0)+" lançamento(s) gerado(s)."+(preservarManuais?" ("+manuais.length+" editado(s) à mão preservado(s).)":"");
+          }
+        }
+      }
+      setMsg(msgFinal);
     }catch(e){alert(e.message);}
     setLoadFonte(null);
   }
@@ -2879,7 +2895,7 @@ function FontesReceita({data,onUpdate}){
       RECEITAS ESTRUTURADAS
     </div>
     <div style={{fontSize:11,color:C.textMuted,marginBottom:12,fontStyle:"italic"}}>
-      Cada fonte pode ter vários modos de pagamento (ex: HSI regular por plantão + um bônus esporádico). Cada modo calcula sozinho (por plantão), usa valor fixo, ou é lançado manualmente — e modos regulares já lançam a Receita programada nos próximos ~13 meses. Corrija a linha no Fluxo se algo mudar (feriado, plantão cancelado etc). Qualquer botão abaixo (💾, 🔄, 🗑) já salva as edições da tela primeiro, sozinho.
+      Cada fonte pode ter vários modos de pagamento (ex: HSI regular por plantão + um bônus esporádico). Cada modo calcula sozinho (por plantão), usa valor fixo, ou é lançado manualmente — e modos regulares já lançam a Receita programada nos próximos ~13 meses. Corrija a linha no Fluxo se algo mudar (feriado, plantão cancelado etc). Cada fonte tem seu próprio 💾 Salvar — se a mudança afeta lançamentos já programados, ele pergunta antes de tocar neles.
     </div>
 
     {(mesAtual.regular>0||mesAtual.esporadica>0||ultimos12.length>0)&&<div style={{background:C.tealLight,borderRadius:10,padding:"10px 12px",marginBottom:14}}>
@@ -2945,13 +2961,11 @@ function FontesReceita({data,onUpdate}){
             <span>{fmtD(r.data)}</span><span style={{fontWeight:700,color:C.green}}>{fmt(r.valor)}</span>
           </div>)}
         </>}
-        {jaSalva(f.nome)&&<div style={{marginTop:6}}>
-          <div style={{display:"flex",gap:6,marginBottom:6}}>
-            <button onClick={()=>recalcularUmaFonte(f.nome)} disabled={loadFonte===f.nome}
-              style={{background:"none",border:"1px dashed "+C.teal,borderRadius:6,color:C.teal,fontSize:10,fontWeight:600,padding:"4px 9px",cursor:"pointer"}}>
-              {loadFonte===f.nome?"Recalculando…":"🔄 Recalcular essa fonte"}
-            </button>
-          </div>
+        <button onClick={()=>salvarFonte(i)} disabled={loadFonte===f.nome||!f.nome.trim()}
+          style={{width:"100%",background:C.teal,color:"#fff",border:"none",borderRadius:8,padding:"9px",fontSize:12,fontWeight:700,cursor:"pointer",marginTop:6}}>
+          {loadFonte===f.nome?"Salvando…":"💾 Salvar \""+(f.nome||"esta fonte")+"\""}
+        </button>
+        {jaSalva(f.nome)&&<div style={{marginTop:8}}>
           <div style={{background:C.redLight,border:"1px dashed "+C.red,borderRadius:6,padding:8}}>
             <div style={{fontSize:9,color:C.red,fontWeight:700,marginBottom:5}}>🗑 APAGAR FUTUROS DESSA FONTE (sem regerar)</div>
             <div style={{display:"flex",gap:12,marginBottom:6}}>
@@ -2970,7 +2984,7 @@ function FontesReceita({data,onUpdate}){
             </button>
           </div>
           <div style={{fontSize:9,color:C.textMuted,marginTop:5,lineHeight:1.4}}>
-            <b>Recalcular</b>: mudou valor-hora, alíquota ou a regra de algum modo Regular? Refaz TODOS os meses futuros Regulares com o valor certo (Esporádica nunca é tocada — não tem fórmula pra reaplicar). <b>Apagar futuros</b>: só some com o que já estava programado, sem recriar — marque Regulares e/ou Esporádicas conforme o que quer limpar.
+            <b>Salvar</b>: grava as edições. Se mudou valor/alíquota/regra de algum modo Regular, pergunta se aplica também aos lançamentos já programados — e se algum deles foi editado à mão, pergunta se quer preservar. <b>Apagar futuros</b>: só some com o que já estava programado, sem recriar — marque Regulares e/ou Esporádicas conforme o que quer limpar.
           </div>
         </div>}
       </div>
@@ -2980,19 +2994,6 @@ function FontesReceita({data,onUpdate}){
       + Adicionar outra fonte
     </button>
 
-    {fontes.length>0&&<div style={{display:"flex",gap:8}}>
-      <button onClick={salvar} disabled={load}
-        style={{flex:1,background:C.teal,color:"#fff",border:"none",borderRadius:8,padding:"10px",fontSize:13,fontWeight:700,cursor:"pointer"}}>
-        {load?"Salvando…":"💾 Salvar"}
-      </button>
-      <button onClick={recalcularTodas} disabled={loadRefresh}
-        style={{background:C.borderLight,color:C.text,border:"none",borderRadius:8,padding:"10px 12px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
-        {loadRefresh?"…":"🔄 Recalcular todas"}
-      </button>
-    </div>}
-    {fontes.length>0&&<div style={{fontSize:9,color:C.textMuted,marginTop:5,lineHeight:1.4}}>
-      <b>Salvar</b>: grava suas edições e preenche os meses que ainda faltam — não mexe no que já existe. <b>Recalcular todas</b>: refaz TODOS os meses futuros de TODAS as fontes/modos com os valores atuais (equivale a clicar "Recalcular" em cada uma).
-    </div>}
     {msg&&<div style={{marginTop:8,fontSize:11,color:C.teal,textAlign:"center"}}>{msg}</div>}
   </div>;
 }
@@ -5438,7 +5439,13 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
   const [loadCategoria,setLoadCategoria]=useState(null);
   const [load,setLoad]=useState(false);
   const [novoPlantoes,setNovoPlantoes]=useState("");
+  const [novoValorHora,setNovoValorHora]=useState("");
+  const [novoPercDesconto,setNovoPercDesconto]=useState("");
   const [loadPlantoes,setLoadPlantoes]=useState(false);
+  // [NOVO 03/09, pedido do Marcus] fc calculado uma vez aqui em cima (era
+  // uma IIFE inline dentro do JSX) -- precisa estar disponível antes do
+  // render pros placeholders dos campos novos de valor-hora/alíquota.
+  const fc=fonteCalculadaDeItem(item,data);
   const [vincularRegraCategoria,setVincularRegraCategoria]=useState(false);
   const [ignorarDeficitDCP,setIgnorarDeficitDCP]=useState(false);
   const [loadPar,setLoadPar]=useState(false);
@@ -5551,7 +5558,14 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
     if(!novoPlantoes||!isFinite(n)||n<0){ alert("Informe um número de plantões válido."); return; }
     setLoadPlantoes(true);
     try{
-      const r=await api({action:"editarPlantoesReceita",row:item.row,plantoes:n});
+      // [NOVO 03/09, pedido do Marcus] valor-hora/alíquota só vão junto se
+      // o campo foi de fato preenchido -- vazio = usa o padrão da fonte,
+      // igual sempre fez (nunca manda string vazia, que o backend leria
+      // como 0 em vez de "não informado").
+      const payload={action:"editarPlantoesReceita",row:item.row,plantoes:n};
+      if(novoValorHora!==""){ const vh=numBR(novoValorHora); if(isFinite(vh)) payload.valorHora=vh; }
+      if(novoPercDesconto!==""){ const pd=Number(novoPercDesconto); if(isFinite(pd)) payload.percDesconto=pd; }
+      const r=await api(payload);
       onUpdate(r);
       onClose&&onClose();
     }catch(e){alert(e.message);}
@@ -5701,19 +5715,34 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
         Ciclo atípico — não propagar essa sobra/estouro pro próximo ciclo (fica registrado como perdoado, pra auditoria)
       </label>
     </div>}
-    {(()=>{const fc=fonteCalculadaDeItem(item,data); if(!fc) return null; return <div style={{background:"#fff",border:"1px dashed "+C.teal,borderRadius:6,padding:8,marginBottom:8}}>
-      <div style={{fontSize:10,color:C.teal,fontWeight:700,marginBottom:4}}>PLANTÕES DIFERENTES ESSE MÊS?</div>
-      <div style={{fontSize:10,color:C.textMuted,marginBottom:6}}>Valor/hora e alíquota continuam os mesmos da fonte — só a contagem muda.</div>
-      <div style={{display:"flex",gap:6}}>
-        <input type="number" min="0" step="1" placeholder={"Atual: "+(fc.plantoesAtual||"?")} value={novoPlantoes}
-          onChange={e=>setNovoPlantoes(e.target.value)}
-          style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit"}}/>
-        <button onClick={recalcularPlantoes} disabled={loadPlantoes||!novoPlantoes}
-          style={{background:C.teal,color:"#fff",border:"none",borderRadius:6,padding:"0 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
-          {loadPlantoes?"…":"Recalcular"}
-        </button>
+    {fc&&<div style={{background:"#fff",border:"1px dashed "+C.teal,borderRadius:6,padding:8,marginBottom:8}}>
+      <div style={{fontSize:10,color:C.teal,fontWeight:700,marginBottom:4}}>PLANTÕES/VALOR DIFERENTES ESSE MÊS?</div>
+      <div style={{fontSize:10,color:C.textMuted,marginBottom:6}}>Deixe valor/hora e alíquota em branco pra usar o padrão da fonte — preencha só o que for diferente neste mês específico.</div>
+      <div style={{display:"flex",gap:6,marginBottom:6}}>
+        <div style={{flex:1}}>
+          <label style={{fontSize:9,color:C.textMuted}}>PLANTÕES</label>
+          <input type="number" min="0" step="1" placeholder={"Atual: "+(fc.plantoesAtual||"?")} value={novoPlantoes}
+            onChange={e=>setNovoPlantoes(e.target.value)}
+            style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
+        </div>
+        <div style={{flex:1}}>
+          <label style={{fontSize:9,color:C.textMuted}}>VALOR/HORA</label>
+          <input type="text" inputMode="numeric" placeholder={"Padrão: "+formatarValorInicial(fc.fonte.valorHora||0)} value={novoValorHora}
+            onChange={e=>setNovoValorHora(formatarMoedaInput(e.target.value))}
+            style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
+        </div>
+        <div style={{flex:1}}>
+          <label style={{fontSize:9,color:C.textMuted}}>ALÍQUOTA %</label>
+          <input type="number" step="0.01" placeholder={"Padrão: "+(fc.fonte.percDesconto||0)} value={novoPercDesconto}
+            onChange={e=>setNovoPercDesconto(e.target.value)}
+            style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
+        </div>
       </div>
-    </div>;})()}
+      <button onClick={recalcularPlantoes} disabled={loadPlantoes||!novoPlantoes}
+        style={{width:"100%",background:C.teal,color:"#fff",border:"none",borderRadius:6,padding:"7px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+        {loadPlantoes?"…":"Recalcular"}
+      </button>
+    </div>}
     <div style={{display:"flex",gap:8,alignItems:"center"}}>
       <span style={{flex:1,fontSize:11,color:execMode?"#166534":"#92400E"}}>
         {item.status==="EXECUTADO"?"":execMode?"→ Vai para o Histórico":"→ Permanece no Fluxo com nova data"}
@@ -7339,23 +7368,33 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
       {isOpen&&<div style={{background:bg,padding:"12px 16px",borderBottom:"1px solid "+C.border}}>
         <div style={{marginBottom:10}}>
           <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Destino</div>
-          <select value={destinoEdit} onChange={e=>setDestinoEdit(e.target.value)}
-            style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",background:C.surface}}>
-            <option value="FLUXO">Conta</option>
-            <option value="CARTAO_PF">{nomeCartao("PF",data)}</option>
-            <option value="CARTAO_PJ">{nomeCartao("PJ",data)}</option>
-          </select>
+          {/* [NOVO 03/09, pedido do Marcus] Era select "Conta/Cartão PF/Cartão
+              PJ" +, só quando "Conta" selecionado, um SEGUNDO seletor de
+              pílulas pra escolher qual conta -- 2 seletores empilhados pra
+              uma coisa só. Agora é 1 seletor de pílulas só, com todas as
+              contas ativas E os 2 cartões lado a lado -- mesmo padrão que
+              FormNovaRecorr (cadastro) já usa internamente (destinoUI unificado),
+              só que em pílula em vez de dropdown. */}
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {contasAtivasRecEdit.map(c=>{
+              const ativo=destinoEdit==="FLUXO"&&formaEdit===c.id;
+              return <button key={"c_"+c.id} type="button" onClick={()=>{setDestinoEdit("FLUXO");setFormaEdit(c.id);}}
+                style={{padding:"7px 12px",borderRadius:16,fontSize:12,fontWeight:700,border:"none",cursor:"pointer",
+                  background:ativo?C.accent:C.borderLight,color:ativo?"#fff":C.textMuted}}>
+                {c.nome}
+              </button>;
+            })}
+            {[["CARTAO_PF","PF"],["CARTAO_PJ","PJ"]].map(([cid,tipoCartao])=>{
+              const ativo=destinoEdit===cid;
+              return <button key={cid} type="button" onClick={()=>setDestinoEdit(cid)}
+                style={{padding:"7px 12px",borderRadius:16,fontSize:12,fontWeight:700,border:"none",cursor:"pointer",
+                  background:ativo?C.accent:C.borderLight,color:ativo?"#fff":C.textMuted}}>
+                {nomeCartao(tipoCartao,data)}
+              </button>;
+            })}
+          </div>
           <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Muda só as próximas ocorrências geradas — o que já foi lançado num lado fica onde está.</div>
         </div>
-        {destinoEdit==="FLUXO"&&contasAtivasRecEdit.length>1&&<div style={{marginBottom:10}}>
-          <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Conta</div>
-          <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
-            {contasAtivasRecEdit.map(c=>
-              <button key={c.id} type="button" onClick={()=>setFormaEdit(c.id)}
-                style={{padding:"6px 10px",borderRadius:16,fontSize:12,fontWeight:700,border:"none",cursor:"pointer",
-                  background:formaEdit===c.id?C.accent:C.borderLight,color:formaEdit===c.id?"#fff":C.textMuted}}>{c.nome}</button>)}
-          </div>
-        </div>}
         <div style={{display:"flex",gap:10,marginBottom:10}}>
           <div style={{flex:1}}>
             <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Valor</div>
@@ -10433,7 +10472,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260903.1200 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260903.1500 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10520,7 +10559,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260903.1200
+      // HTML v3.20260903.1500
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
