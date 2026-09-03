@@ -4298,7 +4298,13 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
   async function toggleProtecao(){
     setSalvando(true);
     try{
-      const r=await api({action:protegido?"desconfirmarItemCartao":"confirmarItemCartao",aba,row});
+      // [NOVO 02/09] Extrato usa o mesmo cadeado, so que numa flag propria
+      // (obs.confirmadoExtrato em FLUXO) -- confirmarItemCartao/
+      // desconfirmarItemCartao continuam exclusivos de CARTAO_PF/PJ (o
+      // backend recusa qualquer outra aba de proposito).
+      const acaoConfirmar=tipo==="cartao"?"confirmarItemCartao":"confirmarItemExtrato";
+      const acaoDesconfirmar=tipo==="cartao"?"desconfirmarItemCartao":"desconfirmarItemExtrato";
+      const r=await api({action:protegido?acaoDesconfirmar:acaoConfirmar,aba,row});
       if(onUpdate) onUpdate(r);
       setProtegido(!protegido);
     }catch(e){ alert(e.message); }
@@ -4391,7 +4397,7 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
     </div>
 
     {/* envelope -- linha propria, so quando editando */}
-    {editando&&tipo==="cartao"&&envelopes.length>0&&<div style={{border:"1px solid "+C.blue,borderTop:"none",padding:"6px 10px",background:"#EFF6FF"}}>
+    {editando&&(tipo==="cartao"||tipo==="extrato")&&envelopes.length>0&&<div style={{border:"1px solid "+C.blue,borderTop:"none",padding:"6px 10px",background:"#EFF6FF"}}>
       <select value={envelopeEdit} onChange={e=>setEnvelopeEdit(e.target.value)}
         style={{width:"100%",fontSize:10.5,padding:"4px 6px",borderRadius:5,border:"1px solid "+C.border,color:C.textSub,background:"#fff",fontFamily:"inherit",boxSizing:"border-box"}}>
         <option value="">Envelope: nenhum</option>
@@ -4404,7 +4410,7 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
       <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
         {categoriasPorSinal(app.valor).map(c=><Pilula key={c} editavel ativa={categoriaEdit===c} onClick={()=>setCategoriaEdit(c)}>{rotuloCategoriaPill(c)}</Pilula>)}
         <div style={{flex:1}}/>
-        {ehMesclado&&tipo==="cartao"&&<button onClick={toggleProtecao} disabled={salvando} title={protegido
+        {ehMesclado&&(tipo==="cartao"||tipo==="extrato")&&<button onClick={toggleProtecao} disabled={salvando} title={protegido
           ?"Protegido -- a próxima conciliação sabe que isso já é essa mescla e não mexe"
           :"Desprotegido -- a próxima conciliação pode reavaliar este item do zero"} style={{
           width:24,height:24,borderRadius:7,border:"none",background:protegido?C.borderLight:C.orange,color:protegido?C.textSub:"#fff",cursor:"pointer",fontSize:11,flexShrink:0,
@@ -4491,6 +4497,93 @@ function PreviaAppCartao({item,previa,numero,envelopes,onMudar,onDesvincular}){
         {categoriasPorSinal(-Math.abs(item.amount)).map(c=><Pilula key={c} editavel ativa={previa.categoria===c} onClick={()=>onMudar({...previa,categoria:c})}>{rotuloCategoriaPill(c)}</Pilula>)}
       </div>
       {!previa.categoria&&<div style={{fontSize:9,color:C.red,marginTop:4}}>Escolha uma categoria (obrigatório pra mesclar).</div>}
+    </div>
+  </div>;
+}
+
+// [NOVO 02/09 -- port da conciliação nova pro extrato de conta, mesmo
+// espírito do PreviaAppCartao] Prévia de lançamento de CONTA que ainda não
+// existe -- nasce do "+" de um item solto do extrato, já pareada com ele.
+// Componente À PARTE (não generaliza PreviaAppCartao) porque extrato de
+// conta tem 2 conceitos que cartão nunca vai ter: pagamento de fatura
+// avulso e transferência espelhada entre contas próprias -- forçar os dois
+// dentro do componente do cartão arriscaria quebrar o que já funciona lá
+// só pra acomodar campos que ele nunca usa. Mesmo contrato de "nunca salva
+// sozinha" -- só grava quando Mesclar roda.
+function PreviaAppExtrato({n,previa,numero,envelopes,contas,onMudar,onDesvincular}){
+  const cor=numero?PALETA_PARES[(numero-1)%PALETA_PARES.length]:{cor:C.blue,bg:"#EFF6FF"};
+  return <div style={{width:"90%",marginLeft:"auto",marginBottom:6}}>
+    <div style={{
+      display:"flex",alignItems:"center",gap:6,padding:"8px 10px",
+      background:cor.bg,border:"1px solid "+cor.cor,borderRadius:"8px 8px 0 0",boxSizing:"border-box",
+    }}>
+      {numero&&<span style={{fontSize:10,fontWeight:800,color:"#fff",background:cor.cor,borderRadius:999,width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{numero}</span>}
+      <input value={previa.apelido} onChange={e=>onMudar({...previa,apelido:e.target.value})} placeholder="Nome pra esse lançamento" autoFocus
+        style={{flex:1,minWidth:0,fontSize:11,fontWeight:700,padding:"3px 6px",borderRadius:5,border:"1px solid "+(previa.apelido.trim()?C.border:C.red),textTransform:"uppercase",fontFamily:"inherit",boxSizing:"border-box"}}/>
+      <button onClick={onDesvincular} title="Desvincular -- apaga a prévia e desfaz o par" style={{
+        width:20,height:20,borderRadius:999,border:"none",background:C.redLight,color:C.red,fontSize:11,fontWeight:800,cursor:"pointer",flexShrink:0,
+      }}>✕</button>
+      <span style={{fontSize:13,flexShrink:0}}>📱</span>
+    </div>
+    <div style={{border:"1px solid "+cor.cor,borderTop:"none",borderRadius:"0 0 8px 8px",padding:"7px 10px",background:cor.bg}}>
+      <div style={{fontSize:9,color:C.textMuted,fontWeight:700,letterSpacing:".05em",marginBottom:4}}>ISSO É PAGAMENTO DE FATURA?</div>
+      <div style={{display:"flex",gap:6,marginBottom:8}}>
+        {[["","Não"],["PJ","Fatura PJ"],["PF","Fatura PF"]].map(([val,label])=>(
+          <button key={val} onClick={()=>onMudar({...previa,pagFatura:val||null})}
+            style={{flex:1,padding:"5px",borderRadius:6,fontSize:10,fontWeight:700,fontFamily:"inherit",cursor:"pointer",
+              border:"1px solid "+((previa.pagFatura||"")===val?C.accent:C.border),
+              background:(previa.pagFatura||"")===val?C.accentLight:"#fff",
+              color:(previa.pagFatura||"")===val?C.accent:C.textMuted}}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {previa.pagFatura?
+        <div style={{fontSize:10,color:C.accent,background:C.accentLight,borderRadius:6,padding:"6px 8px"}}>
+          💳 Vai abater a fatura {previa.pagFatura} -- a fatura certa é achada pela data deste lançamento na hora de mesclar.
+        </div>
+      :<>
+        <div style={{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap",marginBottom:6}}>
+          {categoriasPorSinal(n.valor).map(c=><Pilula key={c} editavel ativa={previa.categoria===c} onClick={()=>onMudar({...previa,categoria:c})}>{rotuloCategoriaPill(c)}</Pilula>)}
+        </div>
+        {!previa.categoria&&<div style={{fontSize:9,color:C.red,marginBottom:6}}>Escolha uma categoria (obrigatório pra mesclar).</div>}
+        {envelopes.length>0&&<select value={previa.envelope} onChange={e=>onMudar({...previa,envelope:e.target.value})}
+          style={{width:"100%",fontSize:10.5,padding:"4px 6px",borderRadius:5,border:"1px solid "+C.border,color:C.textSub,background:"#fff",fontFamily:"inherit",marginBottom:6,boxSizing:"border-box"}}>
+          <option value="">Envelope: nenhum</option>
+          {envelopes.map(e=><option key={e.id} value={e.id}>Envelope: {e.nome}</option>)}
+        </select>}
+        <label style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,fontSize:9,color:C.textMuted,cursor:"pointer"}}>
+          <input type="checkbox" checked={!!previa.vincularRegra} onChange={e=>onMudar({...previa,vincularRegra:e.target.checked})}/>
+          Lembrar esse nome pra sempre (reconhece sozinho da próxima vez)
+        </label>
+        {previa.categoria==="TRANSFERENCIA"&&contas.length>0&&<div style={{background:C.purpleLight,border:"1px solid "+C.purple,borderRadius:6,padding:"7px 8px"}}>
+          <label style={{display:"flex",alignItems:"center",gap:6,marginBottom:2,fontSize:9,color:C.text,cursor:"pointer",fontWeight:700}}>
+            <input type="checkbox" checked={!!previa.criarEspelho} onChange={e=>onMudar({...previa,criarEspelho:e.target.checked})}/>
+            Criar o lado espelhado na outra conta também
+          </label>
+          {previa.criarEspelho&&<>
+            <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:5,marginBottom:5}}>
+              {INTENCOES.map(i=>
+                <button key={i.id} onClick={()=>onMudar({...previa,intencaoEspelho:i.id})}
+                  style={{padding:"4px 8px",borderRadius:12,border:"1px solid "+(previa.intencaoEspelho===i.id?C.purple:C.border),
+                    background:previa.intencaoEspelho===i.id?C.purple:"#fff",color:previa.intencaoEspelho===i.id?"#fff":C.textMuted,
+                    fontSize:9,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                  {i.label}
+                </button>)}
+            </div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {contas.map(c2=>
+                <button key={c2.id} onClick={()=>onMudar({...previa,contaEspelho:c2.id})}
+                  style={{padding:"4px 9px",borderRadius:6,border:"1px solid "+(previa.contaEspelho===c2.id?C.purple:C.border),
+                    background:previa.contaEspelho===c2.id?C.purple:"#fff",color:previa.contaEspelho===c2.id?"#fff":C.text,
+                    fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                  {n.valor<0?"Entra em ":"Sai de "}{c2.nome||c2.id}
+                </button>)}
+            </div>
+          </>}
+        </div>}
+      </>}
     </div>
   </div>;
 }
@@ -4619,6 +4712,58 @@ function ConciliarExtratoTab({data,onUpdate}){
   }
   const fileRef=useRef(null);
 
+  // [NOVO 02/09 -- port da tela nova de conciliação do cartão] Mesmo
+  // mecanismo de pareamento por número/cor, mesmas 6 peças de estado --
+  // nada aqui é específico de cartão, então funciona igual sem adaptação.
+  // Ver mesclarParesCartao/tocarPareamento em ConciliarCartao pro par
+  // original -- comentários completos ficam lá, aqui só o que difere.
+  const [paresPorNumero,setParesPorNumero]=useState({});
+  const [parIdParaNumero,setParIdParaNumero]=useState({});
+  const [selecionadoPar,setSelecionadoPar]=useState(null);
+  const [proximoNumeroPar,setProximoNumeroPar]=useState(1);
+  const [mesclando,setMesclando]=useState(false);
+  const mesclandoRef=useRef(false);
+  // idOfx -> {apelido,categoria,envelope,pagFatura,vincularRegra,criarEspelho,intencaoEspelho,contaEspelho}
+  const [previasApp,setPreviasApp]=useState({});
+  function criarPrevia(n,idOfx){
+    const idPreview="prev_"+idOfx;
+    setPreviasApp(prev=>({...prev,[idOfx]:{
+      apelido:(n.sugestao&&n.sugestao.descricaoSugerida)||n.descricao.slice(0,60).toUpperCase(),
+      categoria:n.valor<0?"EXTRAORDINARIA":"RECEITA",envelope:"",
+      pagFatura:null,vincularRegra:false,criarEspelho:false,intencaoEspelho:null,contaEspelho:null,
+    }}));
+    const num=proximoNumeroPar;
+    setParesPorNumero(prev=>({...prev,[num]:{ofxId:idOfx,appId:idPreview}}));
+    setParIdParaNumero(prev=>({...prev,[idOfx]:num,[idPreview]:num}));
+    setProximoNumeroPar(num+1);
+  }
+  function mudarPrevia(idOfx,novaPrevia){
+    setPreviasApp(prev=>({...prev,[idOfx]:novaPrevia}));
+  }
+  function tocarPareamento(id,lado){
+    if(parIdParaNumero[id]){
+      const num=parIdParaNumero[id];
+      const grupo=paresPorNumero[num];
+      const novoParId={...parIdParaNumero}; delete novoParId[grupo.ofxId]; delete novoParId[grupo.appId];
+      const novoPorNumero={...paresPorNumero}; delete novoPorNumero[num];
+      setParIdParaNumero(novoParId); setParesPorNumero(novoPorNumero);
+      if(String(grupo.appId).indexOf("prev_")===0){
+        setPreviasApp(prev=>{const n={...prev}; delete n[grupo.ofxId]; return n;});
+      }
+      return;
+    }
+    if(!selecionadoPar){ setSelecionadoPar({id,lado}); return; }
+    if(selecionadoPar.id===id){ setSelecionadoPar(null); return; }
+    if(selecionadoPar.lado===lado){ setSelecionadoPar({id,lado}); return; }
+    const ofxId=lado==="ofx"?id:selecionadoPar.id;
+    const appId=lado==="app"?id:selecionadoPar.id;
+    const num=proximoNumeroPar;
+    setParesPorNumero(prev=>({...prev,[num]:{ofxId,appId}}));
+    setParIdParaNumero(prev=>({...prev,[ofxId]:num,[appId]:num}));
+    setProximoNumeroPar(num+1);
+    setSelecionadoPar(null);
+  }
+
   // [14/08] contaExtrato mudou de conta -- recarrega o rascunho salvo
   // DESSA conta especifica (ou null, se ela nunca teve conciliacao salva),
   // sem precisar trocar de aba e voltar pra "destravar" a leitura certa.
@@ -4706,190 +4851,106 @@ function ConciliarExtratoTab({data,onUpdate}){
       // silencioso permanente toda vez que a estimativa programada
       // diferisse um pouco do real. item.valorReal é o valor de verdade,
       // vindo direto do extrato (ver conciliarExtrato no backend).
-      const r=await api({action:"baixa",row:item.row,valorReal:item.valorReal,dataReal:item.dataReal});
+      // [NOVO 02/09] identificador junto -- baixa() agora grava obs.extratoId
+      // quando presente (mesmo campo que jaConfirmado usa), então essa
+      // baixa também fica protegida de reaparecer como "novo" numa próxima
+      // conciliação, igual qualquer outro item já resolvido.
+      const r=await api({action:"baixa",row:item.row,valorReal:item.valorReal,dataReal:item.dataReal,identificador:item.identificador||null});
       onUpdate(r);
       setResultado(res=>({...res,paraBaixar:res.paraBaixar.filter(x=>x.row!==item.row)}));
     }catch(e){ alert(e.message); }
     setLoad(false); setEmVoo(null);
   }
 
-  async function lancarNovo(n){
-    const cfg=cfgNovos[chaveNovo(n)];
-    if(!cfg) return;
-    if(cfg.criarEspelho&&!cfg.contaEspelho){ alert("Escolha a conta espelhada antes de lançar."); return; }
-    // [15/08, NOVO -- combinado com o Marcus] Transferência nova nunca cai
-    // num padrão sozinha -- precisa escolher a finalidade (Movimentação,
-    // Lucros, Empréstimo, Ressarcimento, Pró-labore...) antes de lançar.
-    if(cfg.criarEspelho&&!cfg.intencaoEspelho){ alert("Escolha a finalidade da transferência (Movimentação, Lucros, Empréstimo etc.) antes de lançar."); return; }
-    // [14/08, NOVO -- regra combinada com o Marcus] Sem correspondência no
-    // app, ninguém além do usuário sabe a categoria certa -- agora é
-    // obrigatória (antes, esquecer de marcar caía silencioso pra
-    // "DESPESA"/"GERAL" genérico no backend). Não vale pra pagamento de
-    // fatura nem pra espelho, que usam outros campos pra se classificar.
-    if(!cfg.pagFatura&&!cfg.criarEspelho&&!cfg.categoria){ alert("Escolha uma categoria antes de lançar."); return; }
-    setLoad(true); setEmVoo(chaveNovo(n));
-    try{
-      let r;
-      if(cfg.pagFatura){
-        const venc=vencimentoFaturaDoMes(n.data);
-        const row=acharFaturaRow(cfg.pagFatura,venc);
-        if(!row){ alert("Não achei a fatura "+cfg.pagFatura+" com vencimento "+fmtD(venc)+" no Fluxo -- confirme se esse ciclo já foi gerado."); setLoad(false); setEmVoo(null); return; }
-        r=await api({action:"pagarFaturaAvulso",row,valorPago:Math.abs(Number(n.valor)),data:n.data});
-      }else if(cfg.criarEspelho&&cfg.contaEspelho){
-        // [NOVO 09/08] Cria o PAR de uma vez -- o lado que estamos vendo no
-        // extrato (contaExtrato) mais o lado espelhado escolhido. Sinal do
-        // valor decide quem e origem e quem e destino.
-        const origem=n.valor<0?(contaExtrato||"CONTA"):cfg.contaEspelho;
-        const destino=n.valor<0?cfg.contaEspelho:(contaExtrato||"CONTA");
-        r=await api({action:"lancarTransferenciaEspelhada",data:n.data,valor:Math.abs(Number(n.valor)),
-          contaOrigem:origem,contaDestino:destino,intencao:cfg.intencaoEspelho||"MOVIMENTACAO",apelido:cfg.apelido||""});
-      }else{
-        let obsNovo={};
-        if(n.identificador) obsNovo.extratoId=n.identificador;
-        if(cfg.envelopeId) obsNovo.envelope=cfg.envelopeId;
-        r=await api({action:"lancar",data:n.data,descricao:cfg.descricao.toUpperCase(),
-          valor:Number(n.valor),tipo:cfg.categoria,categoria:cfg.categoria,forma:contaExtrato||"CONTA",
-          status:"EXECUTADO",obs:JSON.stringify(obsNovo),apelido:cfg.apelido||""});
-        // [NOVO 09/08] Ensina a regra permanente se marcado -- usa o texto
-        // CRU do banco (n.descricao, nao o apelido) como padrao de
-        // reconhecimento, igual ao mecanismo ja usado em outras telas.
-        if(cfg.vincularRegra){
-          r=await api({action:"vincularCategoriaRegra",descricao:n.descricao,categoria:cfg.categoria,apelido:cfg.apelido||""});
-        }
+  // [NOVO 02/09 -- port do mecanismo de Mesclar do cartão] Substitui
+  // lancarNovo/lancarTodosMarcados/dispensar/candidatosVinculo/
+  // vincularExistente (removidas) -- agora tudo passa pelo mesmo par
+  // toque+toque / "+" do cartão, processado numa única passada por
+  // "Mesclar". 3 casos por par, igual mesclarParesCartao só que com um
+  // terceiro e quarto desfecho que cartão não tem (pagamento de fatura,
+  // espelho):
+  //  - par real (banco + aguardando existente)  -> vincularAliasConciliacao
+  //  - par-prévia normal (banco + prévia local)  -> lancarLote (1 escrita só)
+  //  - par-prévia marcado "pagamento de fatura"  -> pagarFaturaAvulso
+  //  - par-prévia marcado "criar espelho"        -> lancarTransferenciaEspelhada
+  async function mesclarParesExtrato(){
+    if(mesclandoRef.current) return;
+    for(const num of Object.keys(paresPorNumero)){
+      const {ofxId,appId}=paresPorNumero[num];
+      if(String(appId).indexOf("prev_")!==0) continue;
+      const previa=previasApp[ofxId];
+      if(!previa){ alert("Prévia não encontrada -- desfaça e refaça esse par."); return; }
+      if(previa.pagFatura) continue; // resolvido na hora de mesclar, sem campo extra pra validar aqui
+      if(previa.criarEspelho){
+        if(!previa.contaEspelho){ alert("Escolha a conta espelhada em todas as prévias marcadas como transferência antes de mesclar."); return; }
+        if(!previa.intencaoEspelho){ alert("Escolha a finalidade da transferência em todas as prévias marcadas antes de mesclar."); return; }
+        continue;
       }
-      onUpdate(r);
-      setResultado(res=>({...res,novos:res.novos.filter(x=>chaveNovo(x)!==chaveNovo(n))}));
-    }catch(e){ alert(e.message); }
-    setLoad(false); setEmVoo(null);
-  }
-
-  // "Lancar todos os marcados" -- poupa tempo de clicar item por item.
-  // Itens normais vao numa UNICA escrita em lote (lancarLote); itens
-  // marcados como pagamento de fatura precisam ser processados um a um
-  // (pagarFaturaAvulso mexe na linha da fatura + cria a linha do pagamento,
-  // nao da pra combinar isso numa escrita em lote generica sem arriscar
-  // duas chamadas mirando a MESMA linha de fatura ao mesmo tempo).
-  async function lancarTodosMarcados(){
-    // [13/08, CORRIGIDO -- bug real do Marcus] Trava direta aqui dentro,
-    // nao so no atributo disabled do botao -- se o app travar por uma
-    // fracao de segundo (ex: escrita grande no localStorage rodando bem
-    // antes do toque), o disabled pode demorar a "pegar" visualmente, e um
-    // toque duplo passa. Isso aqui bloqueia na hora, sem depender do
-    // React ter tido tempo de re-renderizar o botao.
-    if(load) return;
-    const marcados=resultado.novos.filter(n=>cfgNovos[chaveNovo(n)]?.incluir);
-    if(!marcados.length) return;
-    // [14/08, CORRIGIDO] "Criar espelho" marcado sem escolher a conta ainda
-    // não é um espelho válido -- avisa antes de lançar em vez de deixar
-    // cair como lançamento comum sem querer.
-    const espelhoIncompleto=marcados.filter(n=>{const c=cfgNovos[chaveNovo(n)]; return c.criarEspelho&&!c.contaEspelho;});
-    if(espelhoIncompleto.length){
-      alert("Falta escolher a conta espelhada em "+espelhoIncompleto.length+" item(ns) marcado(s) com \"Criar o lado espelhado\" ativado.");
-      return;
+      if(!previa.apelido.trim()||!previa.categoria){ alert("Preencha nome e categoria em todas as prévias antes de mesclar."); return; }
     }
-    // [14/08, NOVO -- mesma regra do lançamento individual] Sem
-    // correspondência no app, categoria é obrigatória -- checa TODOS antes
-    // de lançar qualquer um, pra não lançar metade e travar no meio.
-    const semCategoria=marcados.filter(n=>{
-      const c=cfgNovos[chaveNovo(n)];
-      const ehEspelhoValido=c.criarEspelho&&c.contaEspelho;
-      return !c.pagFatura&&!ehEspelhoValido&&!c.categoria;
-    });
-    if(semCategoria.length){
-      alert("Falta escolher categoria em "+semCategoria.length+" item(ns) marcado(s) -- marca a categoria de cada um antes de lançar todos.");
-      return;
-    }
-    setLoad(true);
+    mesclandoRef.current=true;
+    setMesclando(true);
+    const itensUsados=[]; const rowsAppUsados=[]; const itensLote=[]; const regrasParaAprender=[];
     try{
-      // [14/08, CORRIGIDO -- bug real do Marcus] "Lançar todos" jogava
-      // QUALQUER item marcado (mesmo com "Criar o lado espelhado" ativado)
-      // dentro do lote comum (lancarLote), que so cria UM lado -- o espelho
-      // nunca era criado nesse caminho, só no botão individual. Agora
-      // espelho vira um terceiro grupo, processado um a um (igual
-      // pagamento de fatura já era), cada um com sua própria chamada de
-      // lancarTransferenciaEspelhada.
-      const espelhos=marcados.filter(n=>{const c=cfgNovos[chaveNovo(n)]; return !c.pagFatura&&c.criarEspelho&&c.contaEspelho;});
-      const normais=marcados.filter(n=>{const c=cfgNovos[chaveNovo(n)]; return !c.pagFatura&&!(c.criarEspelho&&c.contaEspelho);});
-      const pagamentos=marcados.filter(n=>cfgNovos[chaveNovo(n)].pagFatura);
-
-      if(normais.length){
-        const itens=normais.map(n=>{
-          const cfg=cfgNovos[chaveNovo(n)];
-          let obsNovo={};
-          if(n.identificador) obsNovo.extratoId=n.identificador;
-          if(cfg.envelopeId) obsNovo.envelope=cfg.envelopeId;
-          if(cfg.apelido) obsNovo.apelido=cfg.apelido.toUpperCase().trim();
-          return {data:n.data, descricao:cfg.descricao.toUpperCase(), valor:Number(n.valor), tipo:cfg.categoria,
-            categoria:cfg.categoria, forma:contaExtrato||"CONTA", status:"EXECUTADO",
-            obs:Object.keys(obsNovo).length?JSON.stringify(obsNovo):""};
-        });
-        onUpdate(await api({action:"lancarLote",itens}));
-        // [NOVO 09/08] Mesmo aprendizado de regra permanente do lancamento
-        // individual, so que aqui pra cada item do lote que marcou o
-        // checkbox -- um a um, ja que cada regra e um padrao diferente.
-        for(const n of normais){
-          const cfg=cfgNovos[chaveNovo(n)];
-          if(cfg.vincularRegra){
-            onUpdate(await api({action:"vincularCategoriaRegra",descricao:n.descricao,categoria:cfg.categoria,apelido:cfg.apelido||""}));
+      for(const num of Object.keys(paresPorNumero)){
+        const {ofxId,appId}=paresPorNumero[num];
+        const n=(resultado.novos||[]).find(x=>chaveNovo(x)===ofxId);
+        if(!n) continue;
+        if(String(appId).indexOf("prev_")===0){
+          const previa=previasApp[ofxId];
+          if(previa.pagFatura){
+            const venc=vencimentoFaturaDoMes(n.data);
+            const row=acharFaturaRow(previa.pagFatura,venc);
+            if(!row){ alert("Não achei a fatura "+previa.pagFatura+" com vencimento "+fmtD(venc)+" pra \""+n.descricao.slice(0,40)+"\" -- pulei esse, os outros continuam."); continue; }
+            onUpdate(await api({action:"pagarFaturaAvulso",row,valorPago:Math.abs(Number(n.valor)),data:n.data}));
+          }else if(previa.criarEspelho&&previa.contaEspelho){
+            const origem=n.valor<0?(contaExtrato||"CONTA"):previa.contaEspelho;
+            const destino=n.valor<0?previa.contaEspelho:(contaExtrato||"CONTA");
+            onUpdate(await api({action:"lancarTransferenciaEspelhada",data:n.data,valor:Math.abs(Number(n.valor)),
+              contaOrigem:origem,contaDestino:destino,intencao:previa.intencaoEspelho||"MOVIMENTACAO",apelido:previa.apelido||""}));
+          }else{
+            let obsNovo={};
+            if(n.identificador) obsNovo.extratoId=n.identificador;
+            if(previa.envelope) obsNovo.envelope=previa.envelope;
+            if(previa.apelido) obsNovo.apelido=previa.apelido.trim().toUpperCase();
+            itensLote.push({data:n.data,descricao:n.descricao,valor:Number(n.valor),tipo:previa.categoria,
+              categoria:previa.categoria,forma:contaExtrato||"CONTA",status:"EXECUTADO",
+              obs:Object.keys(obsNovo).length?JSON.stringify(obsNovo):""});
+            if(previa.vincularRegra) regrasParaAprender.push({descricao:n.descricao,categoria:previa.categoria,apelido:previa.apelido||""});
           }
+        }else{
+          const rowApp=Number(appId.replace("app_",""));
+          rowsAppUsados.push(rowApp);
+          onUpdate(await api({action:"vincularAliasConciliacao",row:rowApp,descricaoExtrato:n.descricao,
+            identificador:n.identificador||null,dataExtrato:n.data,valorExtrato:n.valor}));
         }
+        itensUsados.push(n);
       }
-      for(const n of espelhos){
-        const cfg=cfgNovos[chaveNovo(n)];
-        const origem=n.valor<0?(contaExtrato||"CONTA"):cfg.contaEspelho;
-        const destino=n.valor<0?cfg.contaEspelho:(contaExtrato||"CONTA");
-        onUpdate(await api({action:"lancarTransferenciaEspelhada",data:n.data,valor:Math.abs(Number(n.valor)),
-          contaOrigem:origem,contaDestino:destino,intencao:cfg.intencaoEspelho||"MOVIMENTACAO",apelido:cfg.apelido||""}));
+      if(itensLote.length) onUpdate(await api({action:"lancarLote",itens:itensLote}));
+      for(const regra of regrasParaAprender){
+        onUpdate(await api({action:"vincularCategoriaRegra",descricao:regra.descricao,categoria:regra.categoria,apelido:regra.apelido}));
       }
-      for(const n of pagamentos){
-        const cfg=cfgNovos[chaveNovo(n)];
-        const venc=vencimentoFaturaDoMes(n.data);
-        const row=acharFaturaRow(cfg.pagFatura,venc);
-        if(!row){ alert("Não achei a fatura "+cfg.pagFatura+" com vencimento "+fmtD(venc)+" pra \""+n.descricao.slice(0,40)+"\" -- pulei esse, os outros continuam."); continue; }
-        onUpdate(await api({action:"pagarFaturaAvulso",row,valorPago:Math.abs(Number(n.valor)),data:n.data}));
-      }
-
-      const chavesLancadas=new Set(marcados.map(chaveNovo));
-      setResultado(res=>({...res,novos:res.novos.filter(x=>!chavesLancadas.has(chaveNovo(x)))}));
+      setResultado(res=>res?{...res,
+        novos:(res.novos||[]).filter(x=>!itensUsados.some(u=>chaveNovo(u)===chaveNovo(x))),
+        aguardando:(res.aguardando||[]).filter(a=>!rowsAppUsados.includes(a.row))}:res);
+      setParesPorNumero({}); setParIdParaNumero({}); setPreviasApp({});
     }catch(e){ alert(e.message); }
-    setLoad(false);
+    mesclandoRef.current=false;
+    setMesclando(false);
   }
 
-  function dispensar(n){
-    setResultado(res=>({...res,novos:res.novos.filter(x=>chaveNovo(x)!==chaveNovo(n))}));
-  }
-
-  // [NOVO 25/07] Candidatos de vinculo: dentre o que ja esta lancado no
-  // Fluxo mas o extrato ainda nao reconheceu ("aguardando", ja calculado
-  // pelo mesmo conciliarExtrato), acha quem tem valor parecido com esse
-  // "novo" nao reconhecido -- so EXECUTADO entra aqui (PROGRAMADO segue o
-  // caminho normal de "Dar baixa", nao faz sentido so colar alias nele).
-  // [15/08, PORTADO -- pedido do Marcus] Sugestão agora vem pronta do
-  // backend (mesmo motor único que cartão usa: texto + valor, não só
-  // valor cru como antes) -- front só exibe, nunca mais recalcula com
-  // critério próprio.
-  function candidatosVinculo(n){
-    return n.candidatosVinculo || [];
-  }
-
-  async function vincularExistente(n,candidato){
-    setLoad(true); setEmVoo(candidato.row);
-    try{
-      const apelidoAtual=(cfgNovos[chaveNovo(n)]||{}).apelido||"";
-      // [14/08, NOVO -- regra de mescla combinada com o Marcus] Manda a
-      // data e o valor REAIS do extrato -- o backend agora atualiza a
-      // linha existente com esses dois (fonte de verdade sobre o que
-      // aconteceu), sem tocar em categoria/apelido/vinculo de recorrencia
-      // (que continuam do jeito que já estavam no app).
-      const r=await api({action:"vincularAliasConciliacao",row:candidato.row,descricaoExtrato:n.descricao,
-        identificador:n.identificador||null,apelido:apelidoAtual,dataExtrato:n.data,valorExtrato:n.valor});
-      onUpdate(r);
-      setResultado(res=>({...res,
-        novos:res.novos.filter(x=>chaveNovo(x)!==chaveNovo(n)),
-        aguardando:res.aguardando.filter(a=>a.row!==candidato.row)}));
-    }catch(e){ alert(e.message); }
-    setLoad(false); setEmVoo(null);
-  }
+  // [NOVO 02/09 -- pedido explícito do Marcus: "lista única, fundida por
+  // data, sem seção separada pra novos"] Substitui os 3 blocos antigos
+  // (🔴 NOVOS, 🟡 AGUARDANDO, ✅ JÁ DEBITOU) por uma sequência só, mesmo
+  // espírito do linhasCombinadas do cartão.
+  const linhasCombinadasExtrato=useMemo(()=>{
+    if(!resultado) return [];
+    const novosL=(resultado.novos||[]).map(n=>({__tipo:"ofx_solto",__data:_dataLocalSegura(n.data),n}));
+    const aguardL=(resultado.aguardando||[]).map(a=>({__tipo:"app_solto",__data:_dataLocalSegura(a.data),a}));
+    const baixarL=(resultado.paraBaixar||[]).map(pb=>({__tipo:"para_baixar",__data:_dataLocalSegura(pb.dataReal||pb.dataProgramada),pb}));
+    const confL=(resultado.confirmados||[]).map(c=>({__tipo:"confirmado",__data:_dataLocalSegura(c.dataBanco||c.data||""),c}));
+    return [...novosL,...aguardL,...baixarL,...confL].sort((a,b)=>b.__data-a.__data);
+  },[resultado]);
 
   return <div style={{padding:"12px 14px"}}>
     <div style={{fontSize:12,color:C.textMuted,marginBottom:12,lineHeight:1.5}}>
@@ -4960,28 +5021,6 @@ function ConciliarExtratoTab({data,onUpdate}){
         </>}
       </div>}
 
-      {resultado.paraBaixar.length>0&&<div style={{marginBottom:20}}>
-        <div style={{fontSize:11,fontWeight:700,color:C.accent,marginBottom:6,letterSpacing:".05em"}}>
-          ✅ JÁ DEBITOU — CONFIRMAR ({resultado.paraBaixar.length})
-        </div>
-        {resultado.paraBaixar.map(item=>{
-          const valorReal=item.valorReal??item.valor;
-          const forca=Math.abs(valorReal-item.valor)<=0.01?"exato":"forte";
-          return <div key={item.row}>
-            <div style={{fontSize:9,color:C.textMuted,marginBottom:2,marginLeft:2}}>{fmtD(item.dataReal)}</div>
-            <SeloPar
-              ofx={{desc:item.descBanco||item.desc, valor:valorReal}}
-              app={{desc:item.desc, valor:item.valor, categoria:item.categoria||""}}
-              forca={forca}
-              confirmando={emVoo===item.row}
-              onConfirmar={()=>confirmarBaixa(item)}
-              row={item.row}
-              onUpdate={onUpdate}
-              data={data}
-            />
-          </div>;
-        })}
-      </div>}
 
       {(()=>{
         const comAviso=(resultado.confirmados||[]).filter(c=>c.avisoClassificacao)
@@ -5006,175 +5045,107 @@ function ConciliarExtratoTab({data,onUpdate}){
         </div>;
       })()}
 
-      {resultado.novos.length>0&&<div style={{marginBottom:20}}>
-        <div style={{fontSize:11,fontWeight:700,color:"#C2410C",marginBottom:6,letterSpacing:".05em"}}>
-          🔴 NOVOS NO EXTRATO ({resultado.novos.length})
+      {/* [NOVO 02/09 -- pedido explícito do Marcus] Lista única e contínua,
+          fundida por data -- sem seção separada pra "novos". Mesmo espírito
+          do linhasCombinadas do cartão: OFX solto (🏦), app solto (📱,
+          "aguardando"), par pronto pra confirmar (SeloPar, paraBaixar) e
+          par já resolvido antes (SeloPar travado, confirmados) misturados
+          numa sequência só por data. */}
+      {linhasCombinadasExtrato.length>0&&<div style={{marginBottom:4}}>
+        <div style={{fontSize:11,fontWeight:700,color:C.textSub,padding:"6px 4px",letterSpacing:".05em"}}>
+          {resultado.totalTransacoes} transação(ões) · {(resultado.confirmados||[]).length} já reconhecida(s) · {(resultado.paraBaixar||[]).length} pra confirmar baixa
+          {(resultado.novos||[]).length>0&&` · ${resultado.novos.length} do banco sem par`}
         </div>
-        {(()=>{const nMarcados=resultado.novos.filter(n=>cfgNovos[chaveNovo(n)]?.incluir).length;return <button onClick={lancarTodosMarcados} disabled={load||!nMarcados}
-          style={{width:"100%",padding:"9px",borderRadius:8,background:nMarcados?"#C2410C":C.borderLight,color:nMarcados?"#fff":C.textMuted,fontSize:12,fontWeight:700,border:"none",cursor:nMarcados?"pointer":"default",fontFamily:"inherit",marginBottom:10}}>
-          Lançar todos os marcados ({nMarcados})
-        </button>;})()}
-        {resultado.novos.map(n=>{
-          const chave=chaveNovo(n);
-          const cfg=cfgNovos[chave]||{incluir:true,categoria:n.valor<0?"EXTRAORDINARIA":"RECEITA",descricao:"",pagFatura:null,envelopeId:envelopeRegraSugerido(n.descricao,data),vincularRegra:false};
-          const s=n.sugestao||{};
-          const vencAuto=vencimentoFaturaDoMes(n.data);
-          return <div key={chave} style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"10px 12px",marginBottom:6}}>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
-              <span style={{fontSize:11,color:C.textMuted}}>{fmtD(n.data)}</span>
-              <span style={{fontSize:13,fontWeight:700,color:n.valor<0?C.red:C.blue}}>{fmt(n.valor)}</span>
-            </div>
-            <div style={{fontSize:11,color:C.textSub,marginBottom:8,wordBreak:"break-word"}}>{n.descricao}</div>
-            {s.motivo&&<div style={{fontSize:10,color:"#92400E",background:"#FEF3C7",borderRadius:6,padding:"6px 8px",marginBottom:8}}>ℹ️ {s.motivo} — desmarcado por padrão, mas você pode lançar mesmo assim.</div>}
+        {(resultado.novos||[]).length>0&&<div style={{fontSize:10,color:C.textMuted,padding:"0 4px 8px",lineHeight:1.4}}>
+          Toca num 🏦 solto, depois num 📱 solto, pra parear. Ou toca "+" num 🏦 solto pra criar um lançamento novo já pareado com ele.
+        </div>}
+        {(()=>{
+          let dataAnterior=null;
+          return linhasCombinadasExtrato.map((linha,i)=>{
+            const dataStr=fmtD(linha.__data);
+            const novoDia=dataStr!==dataAnterior; dataAnterior=dataStr;
+            const cabecalhoData=novoDia?<div style={{fontSize:11,fontWeight:800,color:C.textMuted,margin:"12px 2px 6px",paddingBottom:4,borderBottom:"1px solid "+C.border}}>{dataStr}</div>:null;
 
-            {/* [25/07] "Isso já existe no Histórico, só com outro nome" --
-                candidatos por valor parecido, pra vincular em vez de
-                duplicar. Vincular cria um alias (termo alternativo) e
-                propaga pras próximas ocorrências da mesma recorrência. */}
-            {(()=>{const cands=candidatosVinculo(n);return cands.length>0&&<div style={{background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:6,padding:"8px 9px",marginBottom:8}}>
-              <div style={{fontSize:9,fontWeight:800,color:"#1D4ED8",letterSpacing:".04em",marginBottom:5}}>JÁ EXISTE NO HISTÓRICO, SÓ COM OUTRO NOME?</div>
-              {cands.map(c=><div key={c.row} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:6,padding:"3px 0"}}>
-                <span style={{fontSize:11,color:C.textSub,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                  {fmtD(c.data)} · {c.desc} · {fmt(c.valor)}
-                  {c.forca==="fraco"&&<span style={{color:"#D97706",fontWeight:700}}> · confiança baixa</span>}
-                </span>
-                <button onClick={()=>vincularExistente(n,c)} disabled={load}
-                  style={{flexShrink:0,background:"#1D4ED8",color:"#fff",border:"none",borderRadius:6,padding:"4px 9px",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                  {emVoo===c.row?"…":"Vincular"}
-                </button>
-              </div>)}
-            </div>;})()}
+            if(linha.__tipo==="ofx_solto"){
+              const n=linha.n, idOfx=chaveNovo(n);
+              const itemMapeado={date:n.data,title:n.descricao,amount:n.valor,parcela:null,identificador:n.identificador};
+              const previa=previasApp[idOfx];
+              return <React.Fragment key={idOfx}>
+                {cabecalhoData}
+                <LinhaOfxIsoladaCartao item={itemMapeado}
+                  numero={parIdParaNumero[idOfx]}
+                  selecionado={selecionadoPar&&selecionadoPar.id===idOfx}
+                  onClick={()=>tocarPareamento(idOfx,"ofx")}
+                  onCriarPrevia={()=>criarPrevia(n,idOfx)}
+                />
+                {previa&&<PreviaAppExtrato n={n} previa={previa}
+                  numero={parIdParaNumero[idOfx]}
+                  envelopes={parseEnvelopesCustom(data)}
+                  contas={(data.contas||[]).filter(c=>c.ativa!==false&&c.id!==contaExtrato)}
+                  onMudar={nova=>mudarPrevia(idOfx,nova)}
+                  onDesvincular={()=>tocarPareamento("prev_"+idOfx,"app")}
+                />}
+              </React.Fragment>;
+            }
 
-            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
-              <input type="checkbox" checked={cfg.incluir} onChange={e=>setCfgNovos({...cfgNovos,[chave]:{...cfg,incluir:e.target.checked}})}/>
-              <span style={{fontSize:11,color:C.textSub}}>Lançar este item</span>
-            </div>
-            <input value={cfg.descricao} onChange={e=>setCfgNovos({...cfgNovos,[chave]:{...cfg,descricao:e.target.value.toUpperCase()}})}
-              placeholder="Descrição"
-              style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",marginBottom:6,textTransform:"uppercase"}}/>
-            {/* [NOVO 25/07] Momento certo de pedir apelido -- e exatamente
-                agora que o nome cru do banco esta na tela (o campo acima),
-                em vez de pedir na criacao manual pelo "+" (quando ainda nem
-                se sabe como o banco vai chamar aquilo). Opcional. */}
-            <input value={cfg.apelido||""} onChange={e=>setCfgNovos({...cfgNovos,[chave]:{...cfg,apelido:e.target.value.toUpperCase()}})}
-              placeholder="Apelido pra esse nome (opcional)"
-              style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",marginBottom:6,textTransform:"uppercase"}}/>
+            if(linha.__tipo==="app_solto"){
+              const a=linha.a, idApp="app_"+a.row;
+              return <React.Fragment key={idApp}>
+                {cabecalhoData}
+                <LinhaAppIsoladaCartao aguardando={{row:a.row,desc:a.desc,valor:a.valor,categoria:a.categoria,parcela:null}}
+                  numero={parIdParaNumero[idApp]}
+                  selecionado={selecionadoPar&&selecionadoPar.id===idApp}
+                  onClickParear={()=>tocarPareamento(idApp,"app")}
+                />
+              </React.Fragment>;
+            }
 
-            <div style={{fontSize:9,color:C.textMuted,fontWeight:700,letterSpacing:".05em",marginBottom:4}}>ISSO É PAGAMENTO DE FATURA?</div>
-            <div style={{display:"flex",gap:6,marginBottom:8}}>
-              {[["","Não"],["PJ","Fatura PJ"],["PF","Fatura PF"]].map(([val,label])=>(
-                <button key={val} onClick={()=>setCfgNovos({...cfgNovos,[chave]:{...cfg,pagFatura:val||null}})}
-                  style={{flex:1,padding:"6px",borderRadius:6,fontSize:11,fontWeight:700,fontFamily:"inherit",cursor:"pointer",
-                    border:"1px solid "+((cfg.pagFatura||"")===val?C.accent:C.border),
-                    background:(cfg.pagFatura||"")===val?C.accentLight:C.surface,
-                    color:(cfg.pagFatura||"")===val?C.accent:C.textMuted}}>
-                  {label}
-                </button>
-              ))}
-            </div>
+            if(linha.__tipo==="para_baixar"){
+              const item=linha.pb;
+              const valorReal=item.valorReal??item.valor;
+              const forca=Math.abs(valorReal-item.valor)<=0.01?"exato":"forte";
+              return <React.Fragment key={"pb_"+item.row}>
+                {cabecalhoData}
+                <SeloPar
+                  ofx={{desc:item.descBanco||item.desc, valor:valorReal}}
+                  app={{desc:item.desc, valor:item.valor, categoria:item.categoria||""}}
+                  forca={forca}
+                  confirmando={emVoo===item.row}
+                  onConfirmar={()=>confirmarBaixa(item)}
+                  row={item.row} onUpdate={onUpdate} tipo="extrato"
+                  data={data}
+                />
+              </React.Fragment>;
+            }
 
-            {cfg.pagFatura
-              ? <div style={{fontSize:11,color:C.accent,background:C.accentLight,borderRadius:6,padding:"6px 8px",marginBottom:8}}>
-                  💳 Vai abater a fatura {cfg.pagFatura} vencendo em {fmtD(vencAuto)} (calculado pela data do pagamento).
-                </div>
-              : <PilulasCategoria categorias={categoriasPorSinal(n.valor)} valor={cfg.categoria} onChange={v=>setCfgNovos({...cfgNovos,[chave]:{...cfg,categoria:v}})}/>}
-
-            {!cfg.pagFatura&&parseEnvelopesCustom(data).length>0&&
-              <select value={cfg.envelopeId||""} onChange={e=>setCfgNovos({...cfgNovos,[chave]:{...cfg,envelopeId:e.target.value}})}
-                style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",background:C.surface,marginBottom:8}}>
-                <option value="">Envelope: nenhum</option>
-                {parseEnvelopesCustom(data).map(env=><option key={env.id} value={env.id}>Envelope: {env.nome}</option>)}
-              </select>}
-
-            {/* [NOVO 09/08, achado real com o Marcus] Antes o apelido digitado
-                aqui valia so pra ESSE lancamento -- nao existia jeito de
-                ensinar o app a reconhecer o mesmo texto do banco da proxima
-                vez (o checkbox equivalente so existe na tela de edicao do
-                Historico, nao aqui). Reaproveita vincularCategoriaRegra
-                (mesma acao que a outra tela usa), agora tambem aceitando
-                apelido. Desmarcado por padrao -- nem todo lancamento novo
-                merece virar regra permanente. */}
-            {!cfg.pagFatura&&<label style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,fontSize:10,color:C.textMuted,cursor:"pointer"}}>
-              <input type="checkbox" checked={!!cfg.vincularRegra} onChange={e=>setCfgNovos({...cfgNovos,[chave]:{...cfg,vincularRegra:e.target.checked}})}/>
-              Lembrar esse nome pra sempre (reconhece sozinho da próxima vez)
-            </label>}
-
-            {/* [NOVO 09/08] Se a pessoa classifica um item novo do extrato como
-                Movimentacao Entre Contas, oferece criar o PAR de uma vez (o
-                lado espelhado na outra conta) em vez de um lancamento solto
-                de um lado so -- ver MODELO_TRANSFERENCIA_ESPELHADA. So faz
-                sentido quando nao veio de "vincular a existente" (esse
-                caminho ja teria o outro lado, criado na hora do lancamento
-                original). */}
-            {!cfg.pagFatura&&cfg.categoria==="TRANSFERENCIA"&&(data.contas||[]).filter(c=>c.ativa!==false).length>1&&
-              <div style={{background:C.purpleLight||"#F5F3FF",border:"1px solid "+C.purple,borderRadius:6,padding:"8px 9px",marginBottom:8}}>
-                <label style={{display:"flex",alignItems:"center",gap:6,marginBottom:2,fontSize:10,color:C.text,cursor:"pointer",fontWeight:700}}>
-                  <input type="checkbox" checked={!!cfg.criarEspelho} onChange={e=>setCfgNovos({...cfgNovos,[chave]:{...cfg,criarEspelho:e.target.checked}})}/>
-                  Criar o lado espelhado na outra conta também
-                </label>
-                {cfg.criarEspelho&&<>
-                <div style={{fontSize:9,color:C.textMuted,marginBottom:6}}>
-                  A escolha abaixo é do movimento inteiro (as duas pontas) — o sistema decide sozinho qual texto vai em cada lado.
-                </div>
-                <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:6}}>
-                  {INTENCOES.map(i=>
-                    <button key={i.id} onClick={()=>setCfgNovos({...cfgNovos,[chave]:{...cfg,intencaoEspelho:i.id}})}
-                      style={{padding:"4px 8px",borderRadius:12,border:"1px solid "+(cfg.intencaoEspelho===i.id?C.purple:C.border),
-                        background:cfg.intencaoEspelho===i.id?C.purple:"#fff",color:cfg.intencaoEspelho===i.id?"#fff":C.textMuted,
-                        fontSize:9,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                      {i.label}
-                    </button>)}
-                </div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:cfg.contaEspelho?6:0}}>
-                  {(data.contas||[]).filter(c=>c.ativa!==false&&c.id!==contaExtrato).map(c=>
-                    <button key={c.id} onClick={()=>setCfgNovos({...cfgNovos,[chave]:{...cfg,contaEspelho:c.id}})}
-                      style={{padding:"4px 9px",borderRadius:6,border:"1px solid "+(cfg.contaEspelho===c.id?C.purple:C.border),
-                        background:cfg.contaEspelho===c.id?C.purple:"#fff",color:cfg.contaEspelho===c.id?"#fff":C.text,
-                        fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                      {n.valor<0?"Entra em ":"Sai de "}{c.nome||c.id}
-                    </button>)}
-                </div>
-                {cfg.contaEspelho&&cfg.intencaoEspelho&&(()=>{
-                  const ehOrigemAqui=n.valor<0; // aqui = a conta sendo conciliada; negativo = ela debita (é origem)
-                  const textoAqui=cfg.apelido?cfg.apelido.toUpperCase():textoLadoIntencao(cfg.intencaoEspelho,ehOrigemAqui);
-                  const textoLa=cfg.apelido?cfg.apelido.toUpperCase():textoLadoIntencao(cfg.intencaoEspelho,!ehOrigemAqui);
-                  const nomeLa=(data.contas||[]).find(c=>c.id===cfg.contaEspelho);
-                  return <div style={{fontSize:9,color:C.textMuted,background:"#fff",borderRadius:5,padding:"6px 8px",lineHeight:1.5}}>
-                    <b>Aqui ({contaExtrato}):</b> {textoAqui} ({fmt(n.valor)})<br/>
-                    <b>Lá ({nomeLa?.nome||cfg.contaEspelho}):</b> {textoLa} ({fmt(-n.valor)})
-                  </div>;
-                })()}
-                </>}
-              </div>}
-
-            <div style={{display:"flex",gap:6}}>
-              <button onClick={()=>lancarNovo(n)} disabled={load||!cfg.incluir}
-                style={{flex:1,padding:"7px",borderRadius:6,background:cfg.incluir?"#EA580C":C.borderLight,color:cfg.incluir?"#fff":C.textMuted,fontSize:11,fontWeight:700,border:"none",cursor:cfg.incluir?"pointer":"default",fontFamily:"inherit"}}>
-                {emVoo===chaveNovo(n)?"…":"Lançar"}
-              </button>
-              <button onClick={()=>dispensar(n)}
-                style={{padding:"7px 12px",borderRadius:6,background:"transparent",color:C.textMuted,fontSize:11,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
-                Dispensar
-              </button>
-            </div>
-          </div>;
-        })}
+            // confirmado -- já resolvido antes, mostra travado (sem onConfirmar)
+            const c=linha.c;
+            return <React.Fragment key={"cf_"+c.row}>
+              {cabecalhoData}
+              <SeloPar
+                ofx={{desc:c.descBanco||c.desc, valor:c.valorBanco??c.valor}}
+                app={{desc:c.desc, valor:c.valor, categoria:c.categoria||""}}
+                forca="exato"
+                confirmando={false}
+                onConfirmar={null}
+                row={c.row} onUpdate={onUpdate} tipo="extrato"
+                data={data}
+              />
+            </React.Fragment>;
+          });
+        })()}
       </div>}
 
-      {resultado.aguardando.length>0&&<div>
-        <div style={{fontSize:11,fontWeight:700,color:C.textMuted,marginBottom:6,letterSpacing:".05em"}}>
-          🟡 AINDA NÃO APARECEU NO EXTRATO ({resultado.aguardando.length})
-        </div>
-        {resultado.aguardando.map(item=><div key={item.row} style={{display:"flex",justifyContent:"space-between",padding:"6px 4px",fontSize:12,borderBottom:"1px solid "+C.borderLight}}>
-          <span style={{color:C.textSub}}>{fmtD(item.data)} · {item.desc}</span>
-          <span style={{fontWeight:600,color:C.textMuted}}>{fmt(item.valor)}</span>
-        </div>)}
-      </div>}
-
-      {!resultado.paraBaixar.length&&!resultado.novos.length&&!resultado.aguardando.length&&
+      {!linhasCombinadasExtrato.length&&
         <div style={{textAlign:"center",color:C.green,fontSize:13,padding:"20px 0",fontWeight:600}}>
           ✓ Tudo conciliado — nada pendente nesse período.
         </div>}
+
+      {Object.keys(paresPorNumero).length>0&&<button onClick={mesclarParesExtrato} disabled={mesclando}
+        style={{width:"100%",marginTop:12,padding:"11px",borderRadius:10,background:C.accent,color:"#fff",
+          fontSize:13,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit",position:"sticky",bottom:8}}>
+        {mesclando?"Mesclando...":`Mesclar (${Object.keys(paresPorNumero).length} par${Object.keys(paresPorNumero).length>1?"es":""})`}
+      </button>}
     </>}
   </div>;
 }
@@ -10462,7 +10433,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260902.2330 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260903.1015 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10549,7 +10520,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260902.2330
+      // HTML v3.20260903.1015
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
