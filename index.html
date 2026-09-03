@@ -6922,8 +6922,9 @@ Editar em lote por data exata: {"acao":"editarLote","criterio":{"campo":"DATA","
 Editar em lote por DIA do mês (todos os meses): {"acao":"editarLote","criterio":{"campo":"DIA","valor":"16"},"alteracao":{"campo":"DIA","valor":"17"},"resumo":"texto"}
 Editar recorrência (atualiza RECORRÊNCIAS + futuros no FLUXO): {"acao":"editarRecorrencia","descricao":"ROSE","campo":"DIA_VENC","valor":"2","resumo":"texto"}
   campos: VALOR | DIA_VENC | FORMA | ATIVO
-Adicionar recorrente em conta: {"acao":"lancarRecorrencia","descricao":"PSICÓLOGO","valor":-500,"forma":"CONTA","dia_venc":10,"semanal":false,"destino":"FLUXO","parc_total":0,"tipo":"DESPESA FIXA","obs":"","resumo":"texto"}
+Adicionar recorrente em conta: {"acao":"lancarRecorrencia","descricao":"PSICÓLOGO","valor":-500,"forma":"CONTA","dia_venc":10,"semanal":false,"destino":"FLUXO","parc_total":0,"tipo":"DESPESA FIXA","obs":"","alias_csv":"NOME COMO APARECE NO EXTRATO","resumo":"texto"}
   destino: "FLUXO" (padrão) | "CARTAO_PF" | "CARTAO_PJ". semanal: true SÓ quando destino=FLUXO e dia_venc é 2 (toda terça) ou 6 (todo sábado) — NUNCA marque semanal:true para destino CARTAO_PF/CARTAO_PJ, mesmo que dia_venc seja 2 ou 6 (nesses casos 2/6 é sempre dia do mês, cartão não tem recorrência semanal). parc_total=0 é infinito.
+  alias_csv é OBRIGATÓRIO (backend recusa sem isso) — é o nome como o banco/loja realmente escreve na fatura/extrato, pode ser diferente do nome de exibição. Se a pessoa não disse esse nome, NÃO monte o JSON ainda — pergunte antes, em texto simples, algo como "Como esse gasto aparece no extrato/fatura do banco?". Só monte lancarRecorrencia depois de ter essa resposta.
 Apagar recorrência (soft-delete, para de gerar novas ocorrências, não apaga o que já foi lançado): {"acao":"deletarRecorrencia","descricao":"PSICÓLOGO","resumo":"texto"}
 Lançar no cartão (parcelado ou à vista): {"acao":"lancarCartao","cartao":"PF","descricao":"TV SAMSUNG","valor":-1800,"parcelas":6,"categoria":"CASA","dcp":"N","data_compra":"YYYY-MM-DD","resumo":"texto"}
 
@@ -7625,8 +7626,19 @@ function Recorrencias({data,onUpdate}){
     if(novaTolerancia!=null&&novaTolerancia!==Number(item.tolerancia))
       ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"TOLERANCIA_DIAS",valor:String(novaTolerancia),resumo:""});
     const novoAlias=alias.trim().toUpperCase();
-    if(novoAlias!==String(item.alias||"").trim().toUpperCase())
-      ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"ALIAS_CSV",valor:novoAlias,resumo:""});
+    if(novoAlias!==String(item.alias||"").trim().toUpperCase()){
+      // [NOVO 02/09] O backend só pergunta quando alguma ocorrência futura
+      // já tem um nome bancário DIFERENTE gravado (não vazio) — nesse caso
+      // devolve _precisaConfirmarAlias em vez de já ter escrito. Ocorrência
+      // com alias vazio sempre atualiza direto, sem cair aqui.
+      let rAlias=await api({action:"editarRecorrencia",descricao:item.desc,campo:"ALIAS_CSV",valor:novoAlias,resumo:""});
+      if(rAlias&&rAlias._precisaConfirmarAlias){
+        const info=rAlias._precisaConfirmarAlias;
+        if(confirm("Já existem "+info.quantidade+" lançamento(s) futuro(s) de \""+info.descricao+"\" com um nome bancário diferente gravado. Atualizar todos pro nome novo?"))
+          rAlias=await api({action:"editarRecorrencia",descricao:item.desc,campo:"ALIAS_CSV",valor:novoAlias,resumo:"",forcarAlias:true});
+      }
+      ultimoResultado=rAlias;
+    }
     if(envelopePadrao!==String(item.envelopePadrao||""))
       ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"ENVELOPE_PADRAO",valor:envelopePadrao,resumo:""});
     return ultimoResultado;
@@ -7872,7 +7884,7 @@ function FormNovaRecorr({onSalvo,onClose,data}){
   const isWeekly=freq.indexOf("semanal")===0&&!ehCartao;
 
   async function salvar(){
-    if(!desc.trim()||!valor)return;
+    if(!desc.trim()||!valor||!alias.trim())return;
     setLoad(true);
     try{
       const f=freqMap[freq]||freqMap.mensal;
@@ -7903,11 +7915,12 @@ function FormNovaRecorr({onSalvo,onClose,data}){
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       <div><label style={lbl}>Nome de exibição</label>
         <input value={desc} onChange={e=>setDesc(e.target.value.toUpperCase())} placeholder="Ex: PSICÓLOGO" style={inp}/></div>
-      <div><label style={lbl}>Nome no extrato/conciliação (opcional)</label>
+      <div><label style={lbl}>Nome no extrato/conciliação *</label>
         <input value={alias} onChange={e=>setAlias(e.target.value.toUpperCase())}
           placeholder={ehContaPJ?"ex: TRANSFERENCIA PIX ENVIADA; TRANSFERENCIA RECEBIDA INTENSIVA":"ex: ZELT; IMOBILIARIA"}
-          style={inp}/>
-        <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Separe vários com ";". Ajuda a Conciliação a reconhecer esse gasto quando o banco usa um nome diferente — nunca muda o nome de exibição.
+          style={{...inp,...(!alias.trim()?{border:"1px solid "+C.red}:{})}}/>
+        <div style={{fontSize:10,color:alias.trim()?C.textMuted:C.red,marginTop:3}}>
+          {alias.trim()?"Separe vários com \";\".":"Obrigatório —"} sem isso a Conciliação não reconhece essa cobrança quando o banco usa um nome diferente do cadastrado, e ela sempre vai aparecer como \"novo\". Nunca muda o nome de exibição.
           {ehContaPJ&&" Como você paga isso via Pix entre suas próprias contas, o extrato da PJ mostra a transferência, não o nome do imposto — vale cadastrar os dois termos."}
         </div>
       </div>
@@ -7969,7 +7982,7 @@ function FormNovaRecorr({onSalvo,onClose,data}){
           })()}
         </div>
       </div>}
-      <button onClick={salvar} disabled={load||!desc.trim()||!valor}
+      <button onClick={salvar} disabled={load||!desc.trim()||!valor||!alias.trim()}
         style={{background:C.accent,color:"#fff",borderRadius:8,padding:"10px",
           fontSize:14,fontWeight:700,border:"none",cursor:"pointer",width:"100%"}}>
         {load?"Salvando...":"Adicionar recorrencia"}
@@ -10426,7 +10439,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260828.0500 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260902.2020 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10513,7 +10526,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260828.0500
+      // HTML v3.20260902.2020
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
