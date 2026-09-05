@@ -4466,15 +4466,26 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
 // prévia e desfazer o par vivem no PreviaAppCartao, logo abaixo.
 function LinhaOfxIsoladaCartao({item,numero,selecionado,onClick,onCriarPrevia}){
   const cor=numero?PALETA_PARES[(numero-1)%PALETA_PARES.length]:null;
+  // [NOVO 05/09, pedido do Marcus] Nome truncado com "..." não dá pra ler
+  // qual é o lançamento antes de decidir parear ou não. Toque só no texto
+  // (stopPropagation -- não conta como toque de parear) expande pra
+  // quebrar linha e mostrar inteiro; resto da linha (pilula/valor/número)
+  // desce pra debaixo quando expandido.
+  const [expandido,setExpandido]=useState(false);
   return <div style={{width:"90%",marginRight:"auto",marginBottom:6}}>
     <div onClick={onClick} style={{
-      display:"flex",alignItems:"center",gap:6,padding:"8px 10px",
+      display:"flex",alignItems:"center",gap:6,padding:"8px 10px",flexWrap:expandido?"wrap":"nowrap",
       background:cor?cor.bg:(selecionado?"#EFF6FF":C.redLight),
       border:"1px solid "+(cor?cor.cor:(selecionado?C.blue:C.red)),
       borderRadius:8,boxSizing:"border-box",cursor:"pointer",
     }}>
       <span style={{fontSize:13,flexShrink:0}}>🏦</span>
-      <span style={{width:"36%",minWidth:0,fontSize:12,fontWeight:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.title}</span>
+      <span onClick={e=>{e.stopPropagation();setExpandido(!expandido);}}
+        style={expandido
+          ?{width:"100%",order:1,fontSize:12,fontWeight:600,color:C.text,whiteSpace:"normal",wordBreak:"break-word",marginTop:2}
+          :{width:"36%",minWidth:0,fontSize:12,fontWeight:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+        {item.title}
+      </span>
       <span style={{width:"22%",display:"flex",justifyContent:"center",flexShrink:0}}><Pilula>OFX</Pilula></span>
       <span style={{flex:1,display:"flex",alignItems:"center",justifyContent:"flex-end",gap:3}}>
         {parcelaBadge(item.parcela)}
@@ -4536,7 +4547,7 @@ function PreviaAppCartao({item,previa,numero,envelopes,onMudar,onDesvincular}){
 // dentro do componente do cartão arriscaria quebrar o que já funciona lá
 // só pra acomodar campos que ele nunca usa. Mesmo contrato de "nunca salva
 // sozinha" -- só grava quando Mesclar roda.
-function PreviaAppExtrato({n,previa,numero,envelopes,contas,despesasFixas,onMudar,onDesvincular}){
+function PreviaAppExtrato({n,previa,numero,envelopes,contas,despesasFixas,ocorrenciasProgramadasDe,onMudar,onDesvincular}){
   const cor=numero?PALETA_PARES[(numero-1)%PALETA_PARES.length]:{cor:C.blue,bg:"#EFF6FF"};
   return <div style={{width:"90%",marginLeft:"auto",marginBottom:6}}>
     <div style={{
@@ -4584,7 +4595,7 @@ function PreviaAppExtrato({n,previa,numero,envelopes,contas,despesasFixas,onMuda
           <div style={{fontSize:9,color:C.textMuted,fontWeight:700,marginBottom:4}}>É UMA DAS DESPESAS FIXAS JÁ CADASTRADAS?</div>
           <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:6}}>
             {despesasFixas.map(fx=>
-              <button key={fx.desc} type="button" onClick={()=>onMudar({...previa,despesaFixaVinculo:fx.desc,criarNova:false,apelido:fx.desc})}
+              <button key={fx.desc} type="button" onClick={()=>onMudar({...previa,despesaFixaVinculo:fx.desc,criarNova:false,apelido:fx.desc,ocorrenciaEscolhida:null})}
                 style={{padding:"5px 10px",borderRadius:16,fontSize:11,fontWeight:700,border:"none",cursor:"pointer",
                   background:previa.despesaFixaVinculo===fx.desc?C.accent:C.borderLight,
                   color:previa.despesaFixaVinculo===fx.desc?"#fff":C.textMuted}}>
@@ -4597,9 +4608,33 @@ function PreviaAppExtrato({n,previa,numero,envelopes,contas,despesasFixas,onMuda
               + Nova despesa fixa
             </button>
           </div>
-          {previa.despesaFixaVinculo&&<div style={{fontSize:10,color:C.accent,background:C.accentLight,borderRadius:6,padding:"6px 8px"}}>
-            Vai aprender "{n.descricao.slice(0,40)}" como nome bancário de "{previa.despesaFixaVinculo}" — reconhece sozinho da próxima vez.
-          </div>}
+          {previa.despesaFixaVinculo&&(()=>{
+            const ocorrencias=ocorrenciasProgramadasDe(previa.despesaFixaVinculo);
+            return <div style={{marginBottom:6}}>
+              <div style={{fontSize:9,color:C.textMuted,fontWeight:700,marginBottom:4}}>
+                {ocorrencias.length>0?"QUAL DESSAS JÁ PROGRAMADAS É ESSA?":"NENHUMA OCORRÊNCIA PROGRAMADA ACHADA"}
+              </div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:6}}>
+                {ocorrencias.map(o=>
+                  <button key={o.row} type="button" onClick={()=>onMudar({...previa,ocorrenciaEscolhida:o.row})}
+                    style={{padding:"5px 10px",borderRadius:16,fontSize:11,fontWeight:700,border:"none",cursor:"pointer",
+                      background:previa.ocorrenciaEscolhida===o.row?C.accent:C.borderLight,
+                      color:previa.ocorrenciaEscolhida===o.row?"#fff":C.textMuted}}>
+                    {fmtD(o.data)} · {fmt(o.valor)}
+                  </button>)}
+                <button type="button" onClick={()=>onMudar({...previa,ocorrenciaEscolhida:"novo"})}
+                  style={{padding:"5px 10px",borderRadius:16,fontSize:11,fontWeight:700,border:"1px dashed "+C.teal,cursor:"pointer",
+                    background:previa.ocorrenciaEscolhida==="novo"?C.teal:"#fff",
+                    color:previa.ocorrenciaEscolhida==="novo"?"#fff":C.teal}}>
+                  {ocorrencias.length>0?"Nenhuma — criar lançamento novo":"Criar lançamento novo"}
+                </button>
+              </div>
+              {!previa.ocorrenciaEscolhida&&<div style={{fontSize:9,color:C.red}}>Escolha uma opção acima (obrigatório pra mesclar).</div>}
+              {previa.ocorrenciaEscolhida&&<div style={{fontSize:10,color:C.accent,background:C.accentLight,borderRadius:6,padding:"6px 8px"}}>
+                Vai aprender "{n.descricao.slice(0,40)}" como nome bancário de "{previa.despesaFixaVinculo}" — reconhece sozinho da próxima vez.
+              </div>}
+            </div>;
+          })()}
           {previa.criarNova&&<>
             <div style={{fontSize:9,color:C.textMuted,fontWeight:700,marginBottom:4}}>COM QUE FREQUÊNCIA? (o OFX só dá a data desta vez)</div>
             <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
@@ -4657,10 +4692,12 @@ function PreviaAppExtrato({n,previa,numero,envelopes,contas,despesasFixas,onMuda
 // toca pra selecionar/parear com um OFX solto (mesmo mecanismo do lado
 // banco). Edicao de apelido/categoria desses itens continua pelo caminho
 // normal (⋮) -- fora de escopo aqui, que resolve so o pareamento.
-function LinhaAppIsoladaCartao({aguardando,numero,selecionado,onClickParear}){
+function LinhaAppIsoladaCartao({aguardando,numero,selecionado,onClickParear,onExcluir}){
   const cor=numero?PALETA_PARES[(numero-1)%PALETA_PARES.length]:null;
+  // [NOVO 05/09, mesma ideia do lado OFX] Toque só no texto expande.
+  const [expandido,setExpandido]=useState(false);
   return <div onClick={onClickParear} style={{
-    display:"flex",alignItems:"center",gap:6,padding:"8px 10px",
+    display:"flex",alignItems:"center",gap:6,padding:"8px 10px",flexWrap:expandido?"wrap":"nowrap",
     background:cor?cor.bg:(selecionado?"#EFF6FF":C.redLight),
     border:"1px solid "+(cor?cor.cor:(selecionado?C.blue:C.red)),
     borderRadius:8,width:"90%",marginLeft:"auto",boxSizing:"border-box",cursor:"pointer",
@@ -4671,8 +4708,21 @@ function LinhaAppIsoladaCartao({aguardando,numero,selecionado,onClickParear}){
       <span style={{fontSize:12,fontWeight:700,color:C.text}}>{fmt(aguardando.valor)}</span>
     </span>
     <span style={{width:"22%",display:"flex",justifyContent:"center",flexShrink:0}}><Pilula>{rotuloCategoriaPill(aguardando.categoria)}</Pilula></span>
-    <span style={{width:"42%",minWidth:0,fontSize:12,fontWeight:600,color:C.text,textAlign:"right",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{aguardando.desc}</span>
+    <span onClick={e=>{e.stopPropagation();setExpandido(!expandido);}}
+      style={expandido
+        ?{width:"100%",order:1,fontSize:12,fontWeight:600,color:C.text,whiteSpace:"normal",wordBreak:"break-word",marginTop:2,textAlign:"right"}
+        :{width:"42%",minWidth:0,fontSize:12,fontWeight:600,color:C.text,textAlign:"right",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+      {aguardando.desc}
+    </span>
     <span style={{fontSize:13,flexShrink:0}}>📱</span>
+    {/* [NOVO 03/09, pedido do Marcus] Excluir direto daqui -- pra casos
+        tipo duplicata ou lançamento errado que não vale a pena parear,
+        sem precisar sair pro Histórico. stopPropagation pra não disparar
+        o toque de pareamento (onClickParear) do card por baixo. */}
+    {onExcluir&&<button onClick={e=>{e.stopPropagation();onExcluir();}} title="Excluir esse lançamento" style={{
+      width:18,height:18,borderRadius:999,border:"none",background:"#fff",color:C.red,fontSize:10,
+      fontWeight:800,cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
+    }}>🗑</button>}
   </div>;
 }
 
@@ -4788,6 +4838,32 @@ function ConciliarExtratoTab({data,onUpdate}){
     })
     .map(r=>({desc:String(r[0]),alias:String(r[11]||"")})),
   [data.recorr]);
+
+  // [NOVO 05/09, corrigido -- bug real achado com o Marcus] A tentativa
+  // anterior procurava a ocorrência já existente só em resultado.aguardando
+  // (que só cobre o período do OFX e exige o texto batendo exato) -- um
+  // acento ou espaço diferente e ela some, e o código caía direto pra
+  // "criar novo" sem avisar, gerando uma duplicata real (existente +
+  // criada). Agora busca direto em data.fluxo (todas as linhas, sem
+  // filtro de data) e MOSTRA o que achou pro Marcus escolher -- nunca mais
+  // decide sozinho.
+  function ocorrenciasProgramadasDe(nomeRecorrencia){
+    const nome=String(nomeRecorrencia||"").toUpperCase().trim();
+    return (data.fluxo||[])
+      .filter(f=>f.status==="PROGRAMADO"&&String(f.descricao||"").toUpperCase().trim()===nome)
+      .sort((a,b)=>_dataLocalSegura(a.data)-_dataLocalSegura(b.data));
+  }
+
+  // [NOVO 03/09, pedido do Marcus] Excluir direto um item "aguardando" (📱
+  // solto) na tela de conciliação -- pra duplicata ou lançamento errado que
+  // não vale a pena parear, sem precisar sair pro Histórico.
+  async function excluirAguardando(a){
+    if(!confirm("Excluir \""+a.desc+"\" ("+fmt(a.valor)+", "+fmtD(a.data)+")? Isso apaga o lançamento de vez -- não dá pra desfazer."))return;
+    try{
+      onUpdate(await api({action:"deletar",aba:"FLUXO",row:a.row}));
+      setResultado(res=>res?{...res,aguardando:(res.aguardando||[]).filter(x=>x.row!==a.row)}:res);
+    }catch(e){alert(e.message);}
+  }
 
   const fileRef=useRef(null);
 
@@ -4967,6 +5043,7 @@ function ConciliarExtratoTab({data,onUpdate}){
         continue;
       }
       if(previa.criarNova&&!previa.apelido.trim()){ alert("Preencha o nome da despesa fixa nova antes de mesclar."); return; }
+      if(previa.despesaFixaVinculo&&!previa.ocorrenciaEscolhida){ alert("Escolha qual ocorrência é essa (ou 'criar novo') em todas as prévias vinculadas a uma despesa fixa antes de mesclar."); return; }
       if(previa.despesaFixaVinculo||previa.criarNova) continue; // valida achar/nome acima; categoria já é DESPESA FIXA
       if(!previa.apelido.trim()||!previa.categoria){ alert("Preencha nome e categoria em todas as prévias antes de mesclar."); return; }
     }
@@ -4991,17 +5068,16 @@ function ConciliarExtratoTab({data,onUpdate}){
             onUpdate(await api({action:"lancarTransferenciaEspelhada",data:n.data,valor:Math.abs(Number(n.valor)),
               contaOrigem:origem,contaDestino:destino,intencao:previa.intencaoEspelho||"MOVIMENTACAO",apelido:previa.apelido||""}));
           }else if(previa.despesaFixaVinculo){
-            // [NOVO 03/09, pedido do Marcus -- caso real da psicóloga]
-            // Reconhecida como uma despesa fixa JÁ CADASTRADA -- se já existe
-            // uma ocorrência dela esperando (aguardando), é o MESMO caminho
-            // do toque+toque manual (vincularAliasConciliacao já aprende o
-            // alias e propaga sozinho). Só cria um lançamento novo quando
-            // não existe nenhuma ocorrência pra vincular.
+            // [CORRIGIDO 05/09, bug real achado com o Marcus] Antes procurava
+            // sozinho em resultado.aguardando por texto exato -- um acento ou
+            // espaço diferente e não achava, caindo direto pra "criar novo"
+            // mesmo já existindo uma ocorrência, gerando duplicata real.
+            // Agora usa a escolha explícita que o Marcus fez na tela (ver
+            // ocorrenciasProgramadasDe) -- nunca mais adivinha.
             const nomeAlvo=previa.despesaFixaVinculo.toUpperCase();
-            const aguardandoAlvo=(resultado.aguardando||[]).find(a=>String(a.desc||"").toUpperCase()===nomeAlvo);
-            if(aguardandoAlvo){
-              rowsAppUsados.push(aguardandoAlvo.row);
-              onUpdate(await api({action:"vincularAliasConciliacao",row:aguardandoAlvo.row,descricaoExtrato:n.descricao,
+            if(previa.ocorrenciaEscolhida&&previa.ocorrenciaEscolhida!=="novo"){
+              rowsAppUsados.push(previa.ocorrenciaEscolhida);
+              onUpdate(await api({action:"vincularAliasConciliacao",row:previa.ocorrenciaEscolhida,descricaoExtrato:n.descricao,
                 identificador:n.identificador||null,dataExtrato:n.data,valorExtrato:n.valor}));
             }else{
               const fx=despesasFixas.find(f=>f.desc.toUpperCase()===nomeAlvo);
@@ -5208,6 +5284,7 @@ function ConciliarExtratoTab({data,onUpdate}){
                   envelopes={parseEnvelopesCustom(data)}
                   contas={(data.contas||[]).filter(c=>c.ativa!==false&&c.id!==contaExtrato)}
                   despesasFixas={despesasFixas}
+                  ocorrenciasProgramadasDe={ocorrenciasProgramadasDe}
                   onMudar={nova=>mudarPrevia(idOfx,nova)}
                   onDesvincular={()=>tocarPareamento("prev_"+idOfx,"app")}
                 />}
@@ -5218,10 +5295,11 @@ function ConciliarExtratoTab({data,onUpdate}){
               const a=linha.a, idApp="app_"+a.row;
               return <React.Fragment key={idApp}>
                 {cabecalhoData}
-                <LinhaAppIsoladaCartao aguardando={{row:a.row,desc:a.desc,valor:a.valor,categoria:a.categoria,parcela:null}}
+                <LinhaAppIsoladaCartao aguardando={{row:a.row,desc:a.desc,valor:a.valor,categoria:a.categoria,parcela:null,data:a.data}}
                   numero={parIdParaNumero[idApp]}
                   selecionado={selecionadoPar&&selecionadoPar.id===idApp}
                   onClickParear={()=>tocarPareamento(idApp,"app")}
+                  onExcluir={()=>excluirAguardando(a)}
                 />
               </React.Fragment>;
             }
@@ -5639,6 +5717,18 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
     catch(e){ alert(e.message); }
     setLoadCategoria(null);
   }
+  // [NOVO 03/09, pedido do Marcus] Mudar a conta de UM lançamento específico
+  // direto no ⋮ -- sem precisar apagar e relançar na conta certa. Só faz
+  // sentido pra lançamento de conta normal (fatura de cartão nunca muda de
+  // conta por aqui, e transferência espelhada tem 2 lados de propósito --
+  // mudar só um lado quebraria o espelho, então fica de fora também).
+  const [loadConta,setLoadConta]=useState(false);
+  async function salvarConta(novaConta){
+    setLoadConta(true);
+    try{ onUpdate(await api({action:"editar",row:item.row,campo:"FORMA",valor:novaConta})); }
+    catch(e){ alert(e.message); }
+    setLoadConta(false);
+  }
   async function confirmar(){
     setLoad(true);
     try{
@@ -5916,6 +6006,23 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
         </label>}
       </div>;
     })()}
+    {!ehFatura&&!parInfo&&(data.contas||[]).filter(c=>c.ativa!==false).length>1&&<div style={{marginTop:8,marginBottom:8}}>
+      <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CONTA</span>
+      <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:5}}>
+        {(data.contas||[]).filter(c=>c.ativa!==false).map(c=>{
+          const ehAtual=(item.forma||"CONTA")===c.id;
+          return <button key={c.id} disabled={ehAtual||loadConta}
+            onClick={()=>salvarConta(c.id)}
+            style={{padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap",
+              cursor:ehAtual?"default":"pointer",
+              border:"1px solid "+(ehAtual?C.accent:C.border),
+              background:ehAtual?C.accentLight:"#fff",
+              color:ehAtual?C.accent:C.textSub}}>
+            {loadConta&&!ehAtual?"…":c.nome}
+          </button>;
+        })}
+      </div>
+    </div>}
     {item.tipo==="RECEITA"&&<div style={{marginTop:8,marginBottom:8}}>
       <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA
         <span style={{marginLeft:6,fontSize:8,background:"#fff",color:C.textMuted,padding:"1px 6px",borderRadius:8,fontWeight:700,letterSpacing:0}}>travada</span>
@@ -5994,6 +6101,22 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
             :bucket==="PAGAMENTO_EMPRESTIMO"?'Parcela de cronograma — gerencie esse empréstimo na aba própria.'
             :'Nasceu de recorrência — use "Apagar TODOS" ou "Gerenciar recorrência" abaixo.'}
         </div>
+        {/* [NOVO 05/09] Achou 2 lançamentos idênticos da mesma recorrência
+            (duplicata real, causada por um bug que já corrigimos) e não
+            tinha como apagar nenhum dos dois, só "Apagar TODOS" (que
+            apagaria os meses futuros legítimos junto). Saída específica só
+            pra esse caso -- Despesa Fixa com recorrência ativa -- com
+            confirmação mais séria, já que é a exceção à trava de
+            propósito. Fatura/Empréstimo/Fonte de Receita continuam sem
+            escape, porque apagar um pedaço deles quebra outra coisa (saldo
+            de fatura, cronograma, marcador de idempotência), não é só
+            questão de "avisar mais forte". */}
+        {bucket==="DESPESA FIXA"&&temRecorrenciaAtiva&&<button onClick={()=>{
+            if(confirm('"'+item.descricao+'" ('+fmt(item.valor)+', '+fmtD(item.data)+') é mesmo uma duplicata? Isso apaga só ESTA ocorrência, sem mexer nas outras nem na recorrência -- não dá pra desfazer.')) apagar();
+          }} disabled={!!load}
+          style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:10,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
+          🗑 É uma duplicata? Apagar só esta ocorrência
+        </button>}
       </div>;
       return <button onClick={apagar} disabled={!!load}
         style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:11,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
@@ -10597,7 +10720,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260903.1610 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260905.0230 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10684,7 +10807,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260903.1610
+      // HTML v3.20260905.0230
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
