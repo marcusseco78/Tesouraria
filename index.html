@@ -2486,7 +2486,7 @@ function RegraPlantaoRow({regra,onChange,onRemover}){
   </div>;
 }
 
-function FormModo({modo,onChange,onRemover,podeRemover,onLancarAvulso}){
+function FormModo({modo,onChange,onRemover,podeRemover,onLancarAvulso,contas,contaFonte}){
   function upd(campo,valor){ onChange({...modo,[campo]:valor}); }
   function addRegra(){ upd("regras",[...(modo.regras||[]),{dow:1,modo:"toda",ordinais:[],qtd:1}]); }
   function updRegra(i,nova){ upd("regras",(modo.regras||[]).map((r,idx)=>idx===i?nova:r)); }
@@ -2515,6 +2515,12 @@ function FormModo({modo,onChange,onRemover,podeRemover,onLancarAvulso}){
   const dispValorHora=typeof modo.valorHora==="string"?modo.valorHora:formatarValorInicial(modo.valorHora);
   const dispValorFixo=typeof modo.valorFixo==="string"?modo.valorFixo:formatarValorInicial(modo.valorFixo);
   const dispValorReferencia=typeof modo.valorReferencia==="string"?modo.valorReferencia:formatarValorInicial(modo.valorReferencia);
+
+  // [NOVO 05/09-2] Transferencia automatica vinculada a este modo -- so
+  // guarda a configuracao nesta etapa, nenhum lancamento sai daqui ainda.
+  const tv=modo.transfVinculada||{ativo:false,percentual:0,contaDestino:"",intencao:"LUCROS"};
+  function updTv(campo,valor){ upd("transfVinculada",{...tv,[campo]:valor}); }
+  const contasDestinoPossiveis=(contas||[]).filter(c=>c.id!==(contaFonte||"CONTA"));
 
   // [NOVO 14/07] Lancamento avulso direto daqui, sem precisar navegar ate o
   // "+" -- pedido do Marcus depois de se confundir achando que "Salvar" (o
@@ -2686,10 +2692,55 @@ function FormModo({modo,onChange,onRemover,podeRemover,onLancarAvulso}){
         Líquido de referência: {fmt(liquidoReferenciaPreview)}{ehEsporadica?" — editável em cada lançamento, isso aqui é só um valor de partida.":""}
       </div>
     </>}
-    <div>
+    <div style={{marginBottom:8}}>
       <label style={{fontSize:9,color:C.textMuted}}>OBS (livre)</label>
       <input type="text" value={modo.obs||""} onChange={e=>upd("obs",e.target.value.toUpperCase())} placeholder="Anotação livre sobre esse modo"
         style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,boxSizing:"border-box",fontFamily:"inherit"}}/>
+    </div>
+
+    {/* [NOVO 05/09-2] Transferencia automatica vinculada a este modo --
+        vale igual pra Regular e Esporadica. Nesta etapa so guarda a
+        configuracao, ainda nao dispara nenhum lancamento sozinho. */}
+    <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:8,padding:"8px 10px"}}>
+      <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.textSub,cursor:"pointer",marginBottom:tv.ativo?8:0}}>
+        <input type="checkbox" checked={!!tv.ativo} onChange={e=>updTv("ativo",e.target.checked)}/>
+        Enviar automaticamente parte desse dinheiro pra outra conta
+      </label>
+      {tv.ativo&&<>
+        <div style={{display:"flex",gap:6,marginBottom:8}}>
+          <div style={{width:70,flexShrink:0}}>
+            <label style={{fontSize:9,color:C.textMuted}}>% A ENVIAR</label>
+            <input type="number" min="0" max="100" value={tv.percentual} onChange={e=>updTv("percentual",Number(e.target.value)||0)}
+              style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit"}}/>
+          </div>
+        </div>
+        <div style={{marginBottom:8}}>
+          <label style={{fontSize:9,color:C.textMuted}}>PRA QUAL CONTA</label>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:2}}>
+            {contasDestinoPossiveis.map(c=>{
+              const ativoC=tv.contaDestino===c.id;
+              return <button key={c.id} onClick={()=>updTv("contaDestino",c.id)}
+                style={{padding:"5px 10px",borderRadius:8,border:"1px solid "+(ativoC?C.teal:C.border),
+                  background:ativoC?C.teal:"#fff",color:ativoC?"#fff":C.text,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                {c.nome||c.id}
+              </button>;
+            })}
+          </div>
+        </div>
+        <div>
+          <label style={{fontSize:9,color:C.textMuted}}>FINALIDADE</label>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:2}}>
+            {INTENCOES.map(o=>{
+              const ativoI=(tv.intencao||"LUCROS")===o.id;
+              return <button key={o.id} onClick={()=>updTv("intencao",o.id)}
+                style={{padding:"5px 10px",borderRadius:8,border:"1px solid "+(ativoI?C.teal:C.border),
+                  background:ativoI?C.teal:"#fff",color:ativoI?"#fff":C.text,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
+                {o.label}
+              </button>;
+            })}
+          </div>
+        </div>
+      </>}
     </div>
   </div>;
 }
@@ -2719,7 +2770,8 @@ function FontesReceita({data,onUpdate}){
 
   function novoModoVazio(){
     return {id:"", tipoValor:"VARIAVEL", calculada:false, tipoRecorrencia:"REGULAR",
-      diaPagamento:1, diaTipo:"FIXO", diaN:1, ativo:true, obs:"", valorHora:0, horasPlantao:12, percDesconto:0, regras:[]};
+      diaPagamento:1, diaTipo:"FIXO", diaN:1, ativo:true, obs:"", valorHora:0, horasPlantao:12, percDesconto:0, regras:[],
+      transfVinculada:{ativo:false,percentual:0,contaDestino:"",intencao:"LUCROS"}};
   }
   function atualizarNomeFonte(i,novoNome){ setFontes(fs=>fs.map((f,idx)=>idx===i?{...f,nome:novoNome}:f)); }
   // [NOVO 17/07] Termos alternativos de identificacao (de onde o dinheiro
@@ -2729,7 +2781,20 @@ function FontesReceita({data,onUpdate}){
   function atualizarAliasFonte(i,novoAlias){ setFontes(fs=>fs.map((f,idx)=>idx===i?{...f,alias:novoAlias}:f)); }
   function removerFonte(i){ setFontes(fs=>fs.filter((_,idx)=>idx!==i)); }
   function addFonte(){ setFontes(fs=>[...fs,{nome:"",modos:[novoModoVazio()]}]); }
-  function addModo(fi){ setFontes(fs=>fs.map((f,idx)=>idx===fi?{...f,modos:[...(f.modos||[]),novoModoVazio()]}:f)); }
+  // [NOVO 05/09-2] Modo novo dentro de uma fonte que ja tem a transferencia
+  // vinculada configurada em outro modo herda a mesma config (percentual,
+  // conta, finalidade) -- so pra nao repetir o preenchimento toda hora.
+  // Se nenhum modo da fonte tiver isso ligado ainda, nasce desligado, igual
+  // sempre foi.
+  function addModo(fi){
+    setFontes(fs=>fs.map((f,idx)=>{
+      if(idx!==fi) return f;
+      const modoComTransf=(f.modos||[]).find(m=>m.transfVinculada&&m.transfVinculada.ativo);
+      const novo=novoModoVazio();
+      if(modoComTransf) novo.transfVinculada={...modoComTransf.transfVinculada};
+      return {...f,modos:[...(f.modos||[]),novo]};
+    }));
+  }
   function atualizarModo(fi,mi,novoModo){ setFontes(fs=>fs.map((f,idx)=>idx===fi?{...f,modos:f.modos.map((m,midx)=>midx===mi?novoModo:m)}:f)); }
   function removerModo(fi,mi){ setFontes(fs=>fs.map((f,idx)=>idx===fi?{...f,modos:f.modos.filter((_,midx)=>midx!==mi)}:f)); }
   function carregarPadrao(){ setFontes(FONTES_PADRAO.map(f=>({...f,modos:(f.modos||[]).map(m=>({...m,regras:m.regras?m.regras.map(r=>({...r})):undefined}))}))); }
@@ -2947,6 +3012,7 @@ function FontesReceita({data,onUpdate}){
       </div>}
 
       {(f.modos||[]).map((m,mi)=><FormModo key={mi} modo={m} podeRemover={(f.modos||[]).length>1}
+        contas={contasAtivasRec} contaFonte={f.conta||"CONTA"}
         onChange={novo=>atualizarModo(i,mi,novo)} onRemover={()=>removerModo(i,mi)}
         onLancarAvulso={info=>lancarAvulsoModo(f.nome,m,info)}/>)}
 
@@ -10720,7 +10786,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260905.0230 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260905.2000 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10807,7 +10873,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260905.0230
+      // HTML v3.20260905.2000
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
