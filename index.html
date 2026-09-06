@@ -2821,14 +2821,34 @@ function FontesReceita({data,onUpdate}){
   // motor de geracao automatica usa (FONTE_RECEITA:NOME:MODOID:DATA), so
   // que aqui SEMPRE via acao "lancar" simples, nunca "gerarReceitasFontes"
   // (que so atua sobre modos REGULAR).
-  async function lancarAvulsoModo(fonteNome,modo,{valor,data}){
+  // [NOVO 05/09-3] contaFonte adicionado como parametro -- antes o
+  // lancamento avulso sempre caia em "CONTA" fixo, ignorando a conta
+  // configurada pra fonte (bug pequeno, corrigido de passagem porque a
+  // transferencia vinculada abaixo precisa saber de qual conta a receita
+  // realmente saiu). Depois do lancamento da receita, se o modo tem
+  // transferencia vinculada ativa, lanca o par espelhado tambem -- mesmo
+  // mecanismo/tela que "Movimentação Entre Contas" ja usa, so chamado
+  // automaticamente aqui em vez do Marcus abrir a tela e preencher a mao.
+  async function lancarAvulsoModo(fonteNome,contaFonte,modo,{valor,data}){
     const nomeNorm=String(fonteNome).toUpperCase().replace(/[^A-Z0-9_ ]/g,"").replace(/ /g,"");
     const obsMarcador="FONTE_RECEITA:"+nomeNorm+":"+modo.id+":"+data;
+    const contaOrigem=contaFonte||"CONTA";
     const r=await api({action:"lancar",data,descricao:(fonteNome+" (ESPORÁDICA)").toUpperCase(),
-      valor,tipo:"RECEITA",categoria:"RECEITA",forma:"CONTA",
+      valor,tipo:"RECEITA",categoria:"RECEITA",forma:contaOrigem,
       status:data<=hoje()?"EXECUTADO":"PROGRAMADO",obs:obsMarcador});
     onUpdate&&onUpdate(r);
-    setMsg("Lançamento de "+fonteNome+" registrado no Fluxo.");
+    let msgFinal="Lançamento de "+fonteNome+" registrado no Fluxo.";
+    const tv=modo.transfVinculada;
+    if(tv&&tv.ativo&&Number(tv.percentual)>0&&tv.contaDestino&&tv.contaDestino!==contaOrigem){
+      const valorTransf=Math.round(valor*(Number(tv.percentual)/100)*100)/100;
+      if(valorTransf>0){
+        const r2=await api({action:"lancarTransferenciaEspelhada",data,valor:valorTransf,
+          contaOrigem,contaDestino:tv.contaDestino,intencao:tv.intencao||"LUCROS"});
+        onUpdate&&onUpdate(r2);
+        msgFinal+=" Transferência vinculada de "+fmt(valorTransf)+" também lançada.";
+      }
+    }
+    setMsg(msgFinal);
   }
 
   // [NOVO 03/09] Mesmo espírito da fusão Salvar/Regerar de Recorrências,
@@ -2843,6 +2863,18 @@ function FontesReceita({data,onUpdate}){
     for(const c of camposNum){ if(_numCampoModo(antigo[c])!==_numCampoModo(novo[c])) return true; }
     if(String(antigo.diaTipo||"FIXO")!==String(novo.diaTipo||"FIXO")) return true;
     if(JSON.stringify(antigo.regras||[])!==JSON.stringify(novo.regras||[])) return true;
+    // [NOVO 05/09-3] Mudar a transferencia vinculada de um modo que JA
+    // estava ativa (percentual, conta ou finalidade diferentes, ou
+    // desligar) tambem entra nessa pergunta -- pode haver meses ja
+    // programados com a transferencia no valor/config antigo, que
+    // precisam ser apagados+regerados pra refletir a mudanca. LIGAR pela
+    // PRIMEIRA vez (tvAntigo nao estava ativo) nao entra aqui -- os meses
+    // ja programados que nunca tiveram transferencia nenhuma ja sao
+    // preenchidos silenciosamente por _sincronizarTransferenciasReceitas,
+    // sem precisar apagar/regerar nada.
+    const tvAntigo=antigo.transfVinculada||{ativo:false,percentual:0,contaDestino:"",intencao:"LUCROS"};
+    const tvNovo=novo.transfVinculada||{ativo:false,percentual:0,contaDestino:"",intencao:"LUCROS"};
+    if(tvAntigo.ativo&&JSON.stringify(tvAntigo)!==JSON.stringify(tvNovo)) return true;
     return false;
   }
   // Só lançamentos PROGRAMADO de modo REGULAR contam pra essa pergunta --
@@ -2864,7 +2896,8 @@ function FontesReceita({data,onUpdate}){
     try{
       const r=await persistir();
       onUpdate&&onUpdate(r);
-      let msgFinal=(r.receitasGeradas||0)+" lançamento(s) novo(s) gerado(s)/atualizado(s) no Fluxo.";
+      let msgFinal=(r.receitasGeradas||0)+" lançamento(s) novo(s) gerado(s)/atualizado(s) no Fluxo."
+        +((r.transferenciasVinculadasGeradas||0)>0?" "+r.transferenciasVinculadasGeradas+" transferência(s) vinculada(s) criada(s).":"");
 
       if(fonteAntiga){
         const mudouCalculo=(fonte.modos||[]).some(m=>
@@ -3014,7 +3047,7 @@ function FontesReceita({data,onUpdate}){
       {(f.modos||[]).map((m,mi)=><FormModo key={mi} modo={m} podeRemover={(f.modos||[]).length>1}
         contas={contasAtivasRec} contaFonte={f.conta||"CONTA"}
         onChange={novo=>atualizarModo(i,mi,novo)} onRemover={()=>removerModo(i,mi)}
-        onLancarAvulso={info=>lancarAvulsoModo(f.nome,m,info)}/>)}
+        onLancarAvulso={info=>lancarAvulsoModo(f.nome,f.conta,m,info)}/>)}
 
       <button onClick={()=>addModo(i)} style={{width:"100%",background:"none",border:"1px dashed "+C.border,borderRadius:8,color:C.teal,fontSize:11,fontWeight:600,padding:"7px",cursor:"pointer",marginBottom:8}}>
         + Adicionar modo de pagamento
@@ -8610,10 +8643,23 @@ function BotaoLancar({data,onUpdate,onIrPara}){
       try{
         const nomeNorm=String(fonteEspSelecionada.fonteNome).toUpperCase().replace(/[^A-Z0-9_ ]/g,"").replace(/ /g,"");
         const obsMarcador="FONTE_RECEITA:"+nomeNorm+":"+fonteEspSelecionada.modo.id+":"+data_;
+        const contaOrigemEsp=contaLancamento||"CONTA";
         const r=await api({action:"lancar",data:data_,descricao:(fonteEspSelecionada.fonteNome+" (ESPORÁDICA)").toUpperCase(),
-          valor:liquidoPreview,tipo:"RECEITA",categoria:"RECEITA",forma:contaLancamento||"CONTA",
+          valor:liquidoPreview,tipo:"RECEITA",categoria:"RECEITA",forma:contaOrigemEsp,
           status:data_<=hoje()?"EXECUTADO":"PROGRAMADO",obs:obsMarcador});
-        onUpdate(r);fecharTudo();
+        onUpdate(r);
+        // [NOVO 05/09-3] Transferencia automatica vinculada ao modo, igual
+        // ao lancamento avulso de dentro de Receitas Estruturadas.
+        const tvEsp=fonteEspSelecionada.modo.transfVinculada;
+        if(tvEsp&&tvEsp.ativo&&Number(tvEsp.percentual)>0&&tvEsp.contaDestino&&tvEsp.contaDestino!==contaOrigemEsp){
+          const valorTransfEsp=Math.round(liquidoPreview*(Number(tvEsp.percentual)/100)*100)/100;
+          if(valorTransfEsp>0){
+            const r2=await api({action:"lancarTransferenciaEspelhada",data:data_,valor:valorTransfEsp,
+              contaOrigem:contaOrigemEsp,contaDestino:tvEsp.contaDestino,intencao:tvEsp.intencao||"LUCROS"});
+            onUpdate(r2);
+          }
+        }
+        fecharTudo();
       }catch(e){alert(e.message);}
       setLoad(false);
       return;
@@ -10786,7 +10832,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260905.2000 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260906.0100 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10873,7 +10919,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260905.2000
+      // HTML v3.20260906.0100
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
