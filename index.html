@@ -275,6 +275,22 @@ function infoTransferencia(item,data){
     label: saindo?(minhaSigla+" → "+outraSigla):(outraSigla+" → "+minhaSigla)
   };
 }
+// [NOVO 05/09-3] Pilula extra so pra transferencia vinculada a uma receita
+// (obs.origemReceita, formato "NOME:MODOID:DATA") -- mostra de qual fonte
+// e' o percentual, ex "(HSA) (85%)", pra diferenciar de uma Movimentacao
+// Entre Contas comum sem abrir o item. Le o percentual do cadastro atual
+// (CONFIG.FONTES_RECEITA_JSON via data.fontesReceita), nao de dentro do
+// obs -- se o Marcus mudar o percentual depois, o rotulo acompanha.
+function infoTransfReceita(item,data){
+  let o={};try{o=JSON.parse(item.obs||"{}");}catch(e){}
+  if(!o.origemReceita) return null;
+  const partes=String(o.origemReceita).split(":");
+  const nomeChave=partes[0], modoId=partes[1];
+  const fonte=(data.fontesReceita||[]).find(f=>String(f.nome||"").toUpperCase().replace(/[^A-Z0-9_ ]/g,"").replace(/ /g,"")===nomeChave);
+  const modo=fonte&&(fonte.modos||[]).find(m=>m.id===modoId);
+  const perc=modo&&modo.transfVinculada?Number(modo.transfVinculada.percentual)||0:null;
+  return { fonteNome: fonte?fonte.nome:nomeChave, percentual:perc };
+}
 const DOW_PT=["DOM","SEG","TER","QUA","QUI","SEX","SAB"];
 const diaSemana=s=>{const m=String(s||"").match(/^(\d{4})-(\d{2})-(\d{2})/);if(!m)return"";const d=new Date(Number(m[1]),Number(m[2])-1,Number(m[3]),12,0,0);return DOW_PT[d.getDay()];};
 // Nome de exibicao: linha de provisao "DCP N" aparece como "Saldo Despesas
@@ -1119,7 +1135,16 @@ function corDoItem(item, hj){
   // falha silenciosamente pra essa string e cai no catch, entao usa o OBS
   // cru mesmo) ganha destaque azul clarinho + texto azul na descricao.
   const ehFonteReceita=/FONTE_RECEITA:/.test(String(item.obs||""));
-  const bgCat = cat==="DCP_PROVISAO" ? C.orangeLight : (cat==="DCP" ? C.yellowLight : (ehFonteReceita?C.blueLight:null));
+  // [NOVO 05/09-3] Transferencia vinculada a receita (obs.origemReceita)
+  // ganha sombreado proprio -- azul (tom diferente do azul de Receita, pra
+  // nao confundir os dois) do lado que RECEBE, vermelho bem fraco do lado
+  // que MANDA. So essa transferencia especifica (nunca a Movimentacao
+  // Entre Contas comum), pedido do Marcus pra diferenciar visualmente sem
+  // precisar abrir o item.
+  const ehTransfReceita=!!obs.origemReceita;
+  const bgCat = cat==="DCP_PROVISAO" ? C.orangeLight : (cat==="DCP" ? C.yellowLight
+    : (ehFonteReceita?C.blueLight
+    : (ehTransfReceita?(item.valor>0?C.accentLight:"rgba(220,38,38,0.05)"):null)));
   const descCor = ehFonteReceita ? C.blue : null;
 
   if(ehFatura){
@@ -6480,6 +6505,10 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
                     background:it.temPar?C.purpleLight:"#FEF3C7",color:it.temPar?C.purple:"#92400E"}}>
                     {it.label}{!it.temPar&&" ⚠"}
                   </span>;})()}
+                {(()=>{const itr=infoTransfReceita(item,data); return itr&&
+                  <span style={{fontSize:9,fontWeight:800,padding:"1px 6px",borderRadius:8,background:C.accentLight,color:C.accent}}>
+                    ({itr.fonteNome}){itr.percentual!=null?" ("+itr.percentual+"%)":""}
+                  </span>;})()}
                 {selo&&<span style={{fontSize:9,fontWeight:700,color:corItem}}>{selo}</span>}
                 {confirmadoExtrato&&<span style={{fontSize:9,background:C.greenLight,color:C.green,padding:"1px 6px",borderRadius:8,fontWeight:700}}>✅ Extrato</span>}
                 <TagEnvelopeDCP envelope={item.categoria!=="DCP_PROVISAO"?item.dcpEnvelope:null} futuro={item.status==="PROGRAMADO"}/>
@@ -6643,6 +6672,10 @@ function Historico({data,onUpdate,destaque,onIrPara}){
                     <span style={{fontSize:9,fontWeight:800,padding:"1px 6px",borderRadius:8,
                       background:it.temPar?C.purpleLight:"#FEF3C7",color:it.temPar?C.purple:"#92400E"}}>
                       {it.label}{!it.temPar&&" ⚠"}
+                    </span>;})()}
+                  {(()=>{const itr=infoTransfReceita(item,data); return itr&&
+                    <span style={{fontSize:9,fontWeight:800,padding:"1px 6px",borderRadius:8,background:C.accentLight,color:C.accent}}>
+                      ({itr.fonteNome}){itr.percentual!=null?" ("+itr.percentual+"%)":""}
                     </span>;})()}
                   {selo&&<span style={{fontSize:9,fontWeight:700,color:corItem}}>{selo}</span>}
                   {confirmadoExtrato&&<span style={{fontSize:9,background:C.greenLight,color:C.green,padding:"1px 6px",borderRadius:8,fontWeight:700}}>✅ Extrato</span>}
@@ -10832,7 +10865,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260906.0100 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260906.0330 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10919,7 +10952,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260906.0100
+      // HTML v3.20260906.0330
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
