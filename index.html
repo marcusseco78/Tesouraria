@@ -42,7 +42,7 @@ const C={bg:"#F3F1EA",surface:"#FFF",border:"#E5E7EB",borderLight:"#F3F4F6",
   accent:"#1E3A8A",accentLight:"#DBEAFE",
   red:"#DC2626",redLight:"#FEF2F2",orange:"#EA580C",orangeLight:"#FFF7ED",
   yellow:"#CA8A04",yellowLight:"#FEFCE8",purple:"#7C3AED",purpleLight:"#F5F3FF",
-  blue:"#2563EB",blueLight:"#EFF6FF",green:"#16A34A",greenLight:"#F0FDF4",
+  blue:"#2563EB",blueLight:"#EFF6FF",blueFaint:"#F6FAFF",green:"#16A34A",greenLight:"#F0FDF4",
   teal:"#0D9488",tealLight:"#F0FDFA",dark:"#111827"};
 // BASAIS agora e calculado dinamicamente (ver Dashboard) a partir das
 // recorrencias DESPESA FIXA ativas + orcamento do DCP -- nao mais um numero
@@ -1144,7 +1144,7 @@ function corDoItem(item, hj){
   const ehTransfReceita=!!obs.origemReceita;
   const bgCat = cat==="DCP_PROVISAO" ? C.orangeLight : (cat==="DCP" ? C.yellowLight
     : (ehFonteReceita?C.blueLight
-    : (ehTransfReceita?(item.valor>0?C.accentLight:"rgba(220,38,38,0.05)"):null)));
+    : (ehTransfReceita?(item.valor>0?C.blueFaint:"rgba(220,38,38,0.05)"):null)));
   const descCor = ehFonteReceita ? C.blue : null;
 
   if(ehFatura){
@@ -6506,9 +6506,10 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
                     {it.label}{!it.temPar&&" ⚠"}
                   </span>;})()}
                 {(()=>{const itr=infoTransfReceita(item,data); return itr&&
-                  <span style={{fontSize:9,fontWeight:800,padding:"1px 6px",borderRadius:8,background:C.accentLight,color:C.accent}}>
-                    ({itr.fonteNome}){itr.percentual!=null?" ("+itr.percentual+"%)":""}
-                  </span>;})()}
+                  <>
+                    <span style={{fontSize:9,fontWeight:800,padding:"1px 6px",borderRadius:8,background:C.blueFaint,color:C.blue}}>{itr.fonteNome}</span>
+                    {itr.percentual!=null&&<span style={{fontSize:9,fontWeight:800,padding:"1px 6px",borderRadius:8,background:C.blueFaint,color:C.blue}}>{itr.percentual}%</span>}
+                  </>;})()}
                 {selo&&<span style={{fontSize:9,fontWeight:700,color:corItem}}>{selo}</span>}
                 {confirmadoExtrato&&<span style={{fontSize:9,background:C.greenLight,color:C.green,padding:"1px 6px",borderRadius:8,fontWeight:700}}>✅ Extrato</span>}
                 <TagEnvelopeDCP envelope={item.categoria!=="DCP_PROVISAO"?item.dcpEnvelope:null} futuro={item.status==="PROGRAMADO"}/>
@@ -6674,9 +6675,10 @@ function Historico({data,onUpdate,destaque,onIrPara}){
                       {it.label}{!it.temPar&&" ⚠"}
                     </span>;})()}
                   {(()=>{const itr=infoTransfReceita(item,data); return itr&&
-                    <span style={{fontSize:9,fontWeight:800,padding:"1px 6px",borderRadius:8,background:C.accentLight,color:C.accent}}>
-                      ({itr.fonteNome}){itr.percentual!=null?" ("+itr.percentual+"%)":""}
-                    </span>;})()}
+                    <>
+                      <span style={{fontSize:9,fontWeight:800,padding:"1px 6px",borderRadius:8,background:C.blueFaint,color:C.blue}}>{itr.fonteNome}</span>
+                      {itr.percentual!=null&&<span style={{fontSize:9,fontWeight:800,padding:"1px 6px",borderRadius:8,background:C.blueFaint,color:C.blue}}>{itr.percentual}%</span>}
+                    </>;})()}
                   {selo&&<span style={{fontSize:9,fontWeight:700,color:corItem}}>{selo}</span>}
                   {confirmadoExtrato&&<span style={{fontSize:9,background:C.greenLight,color:C.green,padding:"1px 6px",borderRadius:8,fontWeight:700}}>✅ Extrato</span>}
                   <TagEnvelopeDCP envelope={item.categoria!=="DCP_PROVISAO"?item.dcpEnvelope:null} futuro={false}/>
@@ -10865,7 +10867,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260906.0330 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260906.0345 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -10952,7 +10954,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260906.0330
+      // HTML v3.20260906.0345
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
