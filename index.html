@@ -1005,6 +1005,17 @@ function parseOFXExtrato(texto){
   const balM=String(texto||"").match(/<LEDGERBAL>[\s\S]*?<BALAMT>([-\d.]+)<\/BALAMT>[\s\S]*?<DTASOF>(\d{8})/);
   const saldoFinal=balM?parseFloat(balM[1]):null;
   const dataSaldoFinal=balM?(balM[2].slice(0,4)+"-"+balM[2].slice(4,6)+"-"+balM[2].slice(6,8)):null;
+  // [NOVO 07/09] "RENDIMENTO LIQUIDO" -- o Nubank rende a conta corrente
+  // como um CDB automaticamente, e reporta isso no OFX como um saldo
+  // INFORMATIVO (dentro de BALLIST), nunca como uma linha STMTTRN de
+  // verdade -- por isso a conciliacao normal nunca vai enxergar isso
+  // sozinha, precisa de um caminho proprio. Achado real com o Marcus:
+  // diferenca de R$0,12 no saldo que nao vinha de nenhuma transacao
+  // faltando, e sim exatamente disso.
+  const rendM=String(texto||"").match(/<NAME>RENDIMENTO LIQUIDO<\/NAME>[\s\S]*?<VALUE>([-\d.]+)<\/VALUE>/);
+  const rendimento=rendM?parseFloat(rendM[1]):null;
+  const dtStartM=String(texto||"").match(/<DTSTART>(\d{8})/);
+  const dataInicioPeriodo=dtStartM?(dtStartM[1].slice(0,4)+"-"+dtStartM[1].slice(4,6)+"-"+dtStartM[1].slice(6,8)):null;
   const txns=[];
   const re=/<STMTTRN>([\s\S]*?)<\/STMTTRN>/g;
   let m;
@@ -1019,7 +1030,7 @@ function parseOFXExtrato(texto){
     const dataISO=dt.slice(0,4)+"-"+dt.slice(4,6)+"-"+dt.slice(6,8);
     txns.push({data:dataISO, valor:parseFloat(amtM[1]), identificador:fitM?fitM[1].trim():null, descricao:memoM?memoM[1].trim():""});
   }
-  return {acctid, txns, saldoFinal, dataSaldoFinal};
+  return {acctid, txns, saldoFinal, dataSaldoFinal, rendimento, dataInicioPeriodo};
 }
 // Lê um arquivo de EXTRATO (.csv ou .ofx) e devolve sempre {transacoes, acctid, nome}.
 function lerArquivoExtrato(file){
@@ -1029,10 +1040,10 @@ function lerArquivoExtrato(file){
       const texto=e.target.result;
       const ehOFX=/\.ofx$/i.test(file.name)||/<OFX>/i.test(String(texto).slice(0,200));
       if(ehOFX){
-        const {acctid,txns,saldoFinal,dataSaldoFinal}=parseOFXExtrato(texto);
-        resolve({transacoes:txns, acctid, saldoFinal, dataSaldoFinal, nome:file.name});
+        const {acctid,txns,saldoFinal,dataSaldoFinal,rendimento,dataInicioPeriodo}=parseOFXExtrato(texto);
+        resolve({transacoes:txns, acctid, saldoFinal, dataSaldoFinal, rendimento, dataInicioPeriodo, nome:file.name});
       }else{
-        resolve({transacoes:parseCSVExtrato(texto), acctid:null, saldoFinal:null, dataSaldoFinal:null, nome:file.name});
+        resolve({transacoes:parseCSVExtrato(texto), acctid:null, saldoFinal:null, dataSaldoFinal:null, rendimento:null, dataInicioPeriodo:null, nome:file.name});
       }
     };
     r.onerror=()=>reject(new Error("Falha lendo "+file.name));
@@ -5238,7 +5249,11 @@ function ConciliarExtratoTab({data,onUpdate}){
       if(!lido.transacoes.length){ alert("Não encontrei transações nesse arquivo."); setLoad(false); return; }
       const r=await api({action:"conciliarExtrato",transacoes:lido.transacoes,acctid:lido.acctid||"",
         saldoBanco:lido.saldoFinal,dataSaldoBanco:lido.dataSaldoFinal,conta:contaExtrato});
-      setResultado(r);
+      // [NOVO 07/09] Rendimento do período (ver parseOFXExtrato) -- puramente
+      // client-side, não passa pelo backend na leitura (só quando lançar de
+      // verdade). Guardado junto do resultado pra sobreviver a troca de aba.
+      setResultado({...r, rendimentoDetectado:(lido.rendimento&&lido.rendimento>0)?{
+        valor:lido.rendimento, dataInicio:lido.dataInicioPeriodo, dataFim:lido.dataSaldoFinal}:null});
       const pre={};
       r.novos.forEach(n=>{
         const s=n.sugestao||{};
@@ -5247,6 +5262,32 @@ function ConciliarExtratoTab({data,onUpdate}){
       setCfgNovos(pre);
     }catch(e){ alert(e.message); }
     setLoad(false);
+  }
+  // [NOVO 07/09] Marcador de idempotência pro rendimento -- mesmo padrão
+  // "FONTE_RECEITA:" já usado em Receitas, só que aqui por conta+período.
+  // Evita lançar de novo se o Marcus subir o mesmo OFX (ou um com período
+  // sobreposto) outra vez.
+  function _rendimentoMarcador(dataFim){
+    return "RENDIMENTO_CONTA:"+String(contaExtrato||"CONTA").toUpperCase()+":"+dataFim;
+  }
+  function rendimentoJaLancado(dataFim){
+    const marcador=_rendimentoMarcador(dataFim);
+    return (data.fluxo||[]).some(f=>String(f.obs||"").indexOf(marcador)===0);
+  }
+  const [lancandoRendimento,setLancandoRendimento]=useState(false);
+  async function lancarRendimento(){
+    if(!resultado||!resultado.rendimentoDetectado) return;
+    const {valor,dataFim}=resultado.rendimentoDetectado;
+    setLancandoRendimento(true);
+    try{
+      const r=await api({action:"lancar",data:dataFim,
+        descricao:"RENDIMENTO CONTA",valor:Math.abs(Number(valor)),
+        tipo:"DEPOSITO_AVULSO",categoria:"DEPOSITO_AVULSO",forma:contaExtrato||"CONTA",
+        status:"EXECUTADO",obs:_rendimentoMarcador(dataFim)});
+      onUpdate(r);
+      setResultado(res=>res?{...res,rendimentoDetectado:{...res.rendimentoDetectado,lancadoAgora:true}}:res);
+    }catch(e){ alert(e.message); }
+    setLancandoRendimento(false);
   }
 
   async function criarAjuste(){
@@ -5485,6 +5526,29 @@ function ConciliarExtratoTab({data,onUpdate}){
         </>}
       </div>}
 
+      {/* [NOVO 07/09] Rendimento do período (RENDIMENTO LIQUIDO do OFX) --
+          nunca é uma transação de verdade, então não tem "par" do lado do
+          banco pra mostrar -- é só um valor informativo do próprio arquivo.
+          Lança direto, sem nenhuma tela de pareamento. */}
+      {resultado.rendimentoDetectado&&(()=>{
+        const {valor,dataInicio,dataFim,lancadoAgora}=resultado.rendimentoDetectado;
+        const jaLancado=lancadoAgora||rendimentoJaLancado(dataFim);
+        return <div style={{marginBottom:18,padding:"12px 14px",borderRadius:10,
+          background:jaLancado?C.greenLight:C.tealLight,border:"1px solid "+(jaLancado?C.green:C.teal)}}>
+          <div style={{fontSize:13,fontWeight:700,color:jaLancado?C.green:C.teal,marginBottom:jaLancado?0:4}}>
+            {jaLancado?"✓ Rendimento já lançado":"💰 Rendimento do período"}{": "+fmt(valor)}
+          </div>
+          {!jaLancado&&<>
+            <div style={{fontSize:11,color:C.textSub,marginBottom:8}}>
+              {dataInicio?fmtD(dataInicio)+" a ":""}{fmtD(dataFim)} · rendimento automático da conta (Nubank), informado no OFX mas nunca vem como transação -- lançar como Depósito Avulso.
+            </div>
+            <button onClick={lancarRendimento} disabled={lancandoRendimento}
+              style={{width:"100%",padding:"8px",borderRadius:6,background:C.teal,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+              {lancandoRendimento?"…":"Lançar rendimento ("+fmt(valor)+")"}
+            </button>
+          </>}
+        </div>;
+      })()}
 
       {(()=>{
         const comAviso=(resultado.confirmados||[]).filter(c=>c.avisoClassificacao)
@@ -11095,7 +11159,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260906.0900 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260907.1600 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -11182,7 +11246,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260906.0900
+      // HTML v3.20260907.1600
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
