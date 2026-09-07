@@ -4430,13 +4430,21 @@ function fmtCentro(v){ return fmt(v); }
  *   deve reprocessar (mesmo mecanismo de confirmadoOfx/beneficio da duvida
  *   que ja existe no motor). Desprotegido = volta a ser reavaliado do zero.
  */
-function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,data,envelopeAtual}){
+function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,data,envelopeAtual,despesasFixas,dataItem,formaConta}){
   const [editando,setEditando]=useState(false);
   const [apelidoEdit,setApelidoEdit]=useState(app.desc);
   const [categoriaEdit,setCategoriaEdit]=useState(app.categoria);
   const [envelopeEdit,setEnvelopeEdit]=useState(envelopeAtual||"");
   const [protegido,setProtegido]=useState(true);
   const [salvando,setSalvando]=useState(false);
+  // [NOVO 06/09] Mesmo recurso de vínculo com despesa fixa que a prévia de
+  // item novo já tinha -- aqui a linha JÁ EXISTE (row conhecido), então é
+  // mais simples: não precisa perguntar "qual ocorrência é essa", só
+  // aprender o alias (ou criar a recorrência nova) em cima da linha que já
+  // está sendo editada.
+  const [despesaFixaEdit,setDespesaFixaEdit]=useState("");
+  const [criarNovaEdit,setCriarNovaEdit]=useState(false);
+  const [periodicidadeNovaEdit,setPeriodicidadeNovaEdit]=useState("mensal");
   const ehMesclado=!onConfirmar; // ja confirmado ha tempo, sem toque pendente
   const abaReal=aba||"FLUXO";
   const label=forca==="exato"?"confirmado":forca==="forte"?"confirmado (forte)":forca==="semclass"?"sem classificação":"mesclado";
@@ -4484,7 +4492,36 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
         }
         if(r&&onUpdate) onUpdate(r);
       }
+      // [NOVO 06/09] Vínculo com despesa fixa/criar nova -- aprende o alias
+      // (ou cadastra a recorrência nova) além do que já foi salvo acima.
+      // Roda independente de "mudou" porque o alias em si não é campo desta
+      // linha, é da recorrência.
+      if(despesaFixaEdit){
+        const nomeAlvo=despesaFixaEdit.toUpperCase();
+        const fx=(despesasFixas||[]).find(f=>f.desc.toUpperCase()===nomeAlvo);
+        const aliasCombinado=fx&&fx.alias?(fx.alias+";"+ofx.desc):ofx.desc;
+        r=await api({action:"editarRecorrencia",descricao:despesaFixaEdit,campo:"ALIAS_CSV",valor:aliasCombinado,resumo:"",forcarAlias:true});
+        if(onUpdate) onUpdate(r);
+      }else if(criarNovaEdit){
+        const dObj=_dataLocalSegura(dataItem||new Date().toISOString().slice(0,10));
+        const freqParams={
+          mensal:{intervalo_meses:1,dia_venc:dObj.getDate()},
+          semanal:{intervalo_meses:1,dia_venc:dObj.getDay()},
+          trimestral:{intervalo_meses:3,dia_venc:dObj.getDate()},
+          semestral:{intervalo_meses:6,dia_venc:dObj.getDate()},
+          anual:{intervalo_meses:12,dia_venc:dObj.getDate()},
+        };
+        const fp=freqParams[periodicidadeNovaEdit]||freqParams.mensal;
+        const destinoNovo=tipo==="cartao"?String(aba||"").toUpperCase():"FLUXO";
+        r=await api({action:"lancarRecorrencia",descricao:apelidoEdit.trim(),valor:Number(app.valor),
+          forma:tipo==="cartao"?String(aba||"").replace(/^CARTAO_/,""):(formaConta||"CONTA"),
+          dia_venc:fp.dia_venc,semanal:periodicidadeNovaEdit==="semanal"&&tipo!=="cartao",
+          destino:destinoNovo,parc_total:0,tipo:"DESPESA FIXA",intervalo_meses:fp.intervalo_meses,
+          mes_ancora:dObj.getMonth()+1,obs:"",alias_csv:ofx.desc,dia_tipo:"FIXO",dia_n:1});
+        if(onUpdate) onUpdate(r);
+      }
       setEditando(false);
+      setDespesaFixaEdit(""); setCriarNovaEdit(false);
       if(onConfirmar) onConfirmar();
     }catch(e){ alert(e.message); }
     setSalvando(false);
@@ -4492,7 +4529,7 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
 
   return <div>
     <div onClick={()=>{
-        if(editando){ setApelidoEdit(app.desc); setCategoriaEdit(app.categoria); setEnvelopeEdit(envelopeAtual||""); setEditando(false); }
+        if(editando){ setApelidoEdit(app.desc); setCategoriaEdit(app.categoria); setEnvelopeEdit(envelopeAtual||""); setDespesaFixaEdit(""); setCriarNovaEdit(false); setEditando(false); }
         else if(row){ setEditando(true); }
       }} style={{
       display:"flex",alignItems:"center",gap:6,padding:"9px 12px",
@@ -4570,6 +4607,49 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
           padding:onConfirmar?"5px 12px":"0",width:onConfirmar?"auto":24,height:onConfirmar?"auto":24,
         }}>{confirmando||salvando?"…":onConfirmar?(mudou?"Salvar e confirmar":"Confirmar baixa"):"💾"}</button>
       </div>
+      {/* [NOVO 06/09] Mesmo bloco de vínculo com despesa fixa da prévia de
+          item novo -- aqui a linha já existe, então não precisa perguntar
+          "qual ocorrência", só aprender o alias (ou criar a recorrência). */}
+      {categoriaEdit==="DESPESA FIXA"&&despesasFixas&&<div style={{marginTop:8,paddingTop:6,borderTop:"1px dashed "+C.blue}}>
+        <div style={{fontSize:9,color:C.textMuted,fontWeight:700,marginBottom:4}}>É UMA DAS DESPESAS FIXAS JÁ CADASTRADAS?</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:6}}>
+          {despesasFixas.map(fx=>
+            <button key={fx.desc} type="button" onClick={()=>{setDespesaFixaEdit(fx.desc);setCriarNovaEdit(false);setApelidoEdit(fx.desc);}}
+              style={{padding:"5px 10px",borderRadius:16,fontSize:11,fontWeight:700,border:"none",cursor:"pointer",
+                background:despesaFixaEdit===fx.desc?C.accent:C.borderLight,
+                color:despesaFixaEdit===fx.desc?"#fff":C.textMuted}}>
+              {fx.desc}
+            </button>)}
+          <button type="button" onClick={()=>{setDespesaFixaEdit("");setCriarNovaEdit(true);}}
+            style={{padding:"5px 10px",borderRadius:16,fontSize:11,fontWeight:700,border:"1px dashed "+C.teal,cursor:"pointer",
+              background:criarNovaEdit?C.teal:"#fff",
+              color:criarNovaEdit?"#fff":C.teal}}>
+            + Nova despesa fixa
+          </button>
+          {(despesaFixaEdit||criarNovaEdit)&&<button type="button" onClick={()=>{setDespesaFixaEdit("");setCriarNovaEdit(false);}}
+            style={{padding:"5px 10px",borderRadius:16,fontSize:11,fontWeight:700,border:"1px solid "+C.border,cursor:"pointer",background:"#fff",color:C.textMuted}}>
+            Nenhuma, é lançamento avulso
+          </button>}
+        </div>
+        {despesaFixaEdit&&<div style={{fontSize:10,color:C.accent,background:C.accentLight,borderRadius:6,padding:"6px 8px",marginBottom:6}}>
+          Vai aprender "{ofx.desc.slice(0,40)}" como nome bancário de "{despesaFixaEdit}" — reconhece sozinho da próxima vez.
+        </div>}
+        {criarNovaEdit&&<>
+          <div style={{fontSize:9,color:C.textMuted,fontWeight:700,marginBottom:4}}>COM QUE FREQUÊNCIA?</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+            {(tipo==="cartao"
+              ?[["mensal","Mensal"],["trimestral","Trimestral"],["semestral","Semestral"],["anual","Anual"]]
+              :[["mensal","Mensal"],["semanal","Semanal"],["trimestral","Trimestral"],["semestral","Semestral"],["anual","Anual"]]
+            ).map(([id,label])=>
+              <button key={id} type="button" onClick={()=>setPeriodicidadeNovaEdit(id)}
+                style={{padding:"5px 10px",borderRadius:16,fontSize:11,fontWeight:700,border:"none",cursor:"pointer",
+                  background:periodicidadeNovaEdit===id?C.accent:C.borderLight,
+                  color:periodicidadeNovaEdit===id?"#fff":C.textMuted}}>
+                {label}
+              </button>)}
+          </div>
+        </>}
+      </div>}
     </div>}
     {!editando&&onConfirmar&&<button onClick={onConfirmar} disabled={confirmando}
       style={{width:"100%",padding:"7px",borderRadius:"0 0 10px 10px",background:cor,color:"#fff",fontSize:11,fontWeight:700,border:"none",borderTop:"none",cursor:"pointer",fontFamily:"inherit"}}>
@@ -5501,7 +5581,7 @@ function ConciliarExtratoTab({data,onUpdate}){
                   confirmando={emVoo===item.row}
                   onConfirmar={()=>confirmarBaixa(item)}
                   row={item.row} onUpdate={onUpdate} tipo="extrato"
-                  data={data}
+                  data={data} despesasFixas={despesasFixas} dataItem={item.dataReal||item.dataProgramada} formaConta={contaExtrato}
                 />
               </React.Fragment>;
             }
@@ -5517,7 +5597,7 @@ function ConciliarExtratoTab({data,onUpdate}){
                 confirmando={false}
                 onConfirmar={null}
                 row={c.row} onUpdate={onUpdate} tipo="extrato"
-                data={data}
+                data={data} despesasFixas={despesasFixas} dataItem={c.dataBanco||c.data} formaConta={contaExtrato}
               />
             </React.Fragment>;
           });
@@ -10625,6 +10705,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
                   onConfirmar={divergencia?()=>usarDadosDoCSV(divergencia):null}
                   row={linhaR} onUpdate={onUpdate} tipo="cartao" aba={abaCartao}
                   data={data} envelopeAtual={_obsEnvelopeId(_obsCartaoRaw(r))}
+                  despesasFixas={despesasFixasCartao} dataItem={r[0]}
                 />
               </div>
             </React.Fragment>;
@@ -11014,7 +11095,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260906.0700 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260906.0900 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -11101,7 +11182,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260906.0700
+      // HTML v3.20260906.0900
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
