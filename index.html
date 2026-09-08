@@ -5274,13 +5274,19 @@ function ConciliarExtratoTab({data,onUpdate}){
   // [NOVO 07/09] Marcador de idempotência pro rendimento -- mesmo padrão
   // "FONTE_RECEITA:" já usado em Receitas, só que aqui por conta+período.
   // Evita lançar de novo se o Marcus subir o mesmo OFX (ou um com período
-  // sobreposto) outra vez.
-  function _rendimentoMarcador(dataFim){
-    return "RENDIMENTO_CONTA:"+String(contaExtrato||"CONTA").toUpperCase()+":"+dataFim;
-  }
-  function rendimentoJaLancado(dataFim){
-    const marcador=_rendimentoMarcador(dataFim);
-    return (data.fluxo||[]).some(f=>String(f.obs||"").indexOf(marcador)===0);
+  // sobreposto) outra vez. [ATUALIZADO 07/09] Virou OBS em JSON (era texto
+  // puro) -- precisa achar não só "já existe" mas também "existe com QUE
+  // valor", pra decidir entre não fazer nada / lançar novo / atualizar.
+  // Também já nasce com confirmadoExtrato:true -- é dado que só existe do
+  // lado do banco (o OFX), então já entra "confirmado" desse lado, mesmo
+  // cadeado/selo que qualquer outro item reconciliado ganha.
+  function _rendimentoRowExistente(dataFim){
+    const contaAlvo=String(contaExtrato||"CONTA").toUpperCase();
+    for(const f of (data.fluxo||[])){
+      let o={}; try{o=JSON.parse(f.obs||"{}");}catch(e){continue;}
+      if(o.tipo==="RENDIMENTO_CONTA"&&o.conta===contaAlvo&&o.dataFim===dataFim) return f;
+    }
+    return null;
   }
   const [lancandoRendimento,setLancandoRendimento]=useState(false);
   async function lancarRendimento(){
@@ -5288,12 +5294,24 @@ function ConciliarExtratoTab({data,onUpdate}){
     const {valor,dataFim}=resultado.rendimentoDetectado;
     setLancandoRendimento(true);
     try{
+      const obsJson=JSON.stringify({tipo:"RENDIMENTO_CONTA",conta:String(contaExtrato||"CONTA").toUpperCase(),dataFim,confirmadoExtrato:true});
       const r=await api({action:"lancar",data:dataFim,
         descricao:"RENDIMENTO CONTA",valor:Math.abs(Number(valor)),
         tipo:"DEPOSITO_AVULSO",categoria:"DEPOSITO_AVULSO",forma:contaExtrato||"CONTA",
-        status:"EXECUTADO",obs:_rendimentoMarcador(dataFim)});
+        status:"EXECUTADO",obs:obsJson});
       onUpdate(r);
-      setResultado(res=>res?{...res,rendimentoDetectado:{...res.rendimentoDetectado,lancadoAgora:true}}:res);
+    }catch(e){ alert(e.message); }
+    setLancandoRendimento(false);
+  }
+  // [NOVO 07/09] O mesmo período pode aparecer de novo com um valor
+  // DIFERENTE (Nubank recalculou, ou o Marcus subiu um OFX mais completo do
+  // mesmo intervalo) -- nesse caso não lança um segundo, corrige o mesmo
+  // lançamento. Preserva tudo (data, descrição, marcador) e só troca VALOR.
+  async function atualizarRendimento(rowExistente,valorNovo){
+    setLancandoRendimento(true);
+    try{
+      const r=await api({action:"editar",row:rowExistente.row,campo:"VALOR",valor:Math.abs(Number(valorNovo))});
+      onUpdate(r);
     }catch(e){ alert(e.message); }
     setLancandoRendimento(false);
   }
@@ -5539,20 +5557,28 @@ function ConciliarExtratoTab({data,onUpdate}){
           banco pra mostrar -- é só um valor informativo do próprio arquivo.
           Lança direto, sem nenhuma tela de pareamento. */}
       {resultado.rendimentoDetectado&&(()=>{
-        const {valor,dataInicio,dataFim,lancadoAgora}=resultado.rendimentoDetectado;
-        const jaLancado=lancadoAgora||rendimentoJaLancado(dataFim);
-        return <div style={{marginBottom:18,padding:"12px 14px",borderRadius:10,
-          background:jaLancado?C.greenLight:C.tealLight,border:"1px solid "+(jaLancado?C.green:C.teal)}}>
-          <div style={{fontSize:13,fontWeight:700,color:jaLancado?C.green:C.teal,marginBottom:jaLancado?0:4}}>
-            {jaLancado?"✓ Rendimento já lançado":"💰 Rendimento do período"}{": "+fmt(valor)}
+        const {valor,dataInicio,dataFim}=resultado.rendimentoDetectado;
+        const existente=_rendimentoRowExistente(dataFim);
+        const valorBate=existente&&Math.abs(Math.abs(existente.valor)-Math.abs(valor))<=0.01;
+        const precisaAtualizar=existente&&!valorBate;
+        const jaLancado=existente&&valorBate;
+        const cor=jaLancado?C.green:(precisaAtualizar?C.orange:C.teal);
+        const bg=jaLancado?C.greenLight:(precisaAtualizar?C.orangeLight:C.tealLight);
+        return <div style={{marginBottom:18,padding:"12px 14px",borderRadius:10,background:bg,border:"1px solid "+cor}}>
+          <div style={{fontSize:13,fontWeight:700,color:cor,marginBottom:jaLancado?0:4}}>
+            {jaLancado?"✓ Rendimento já lançado":precisaAtualizar?"⚠ Rendimento mudou de valor":"💰 Rendimento do período"}
+            {!precisaAtualizar&&(": "+fmt(valor))}
           </div>
+          {precisaAtualizar&&<div style={{fontSize:11,color:C.textSub,marginBottom:8}}>
+            Já lançado como {fmt(existente.valor)} · o OFX agora traz {fmt(valor)} pro mesmo período ({fmtD(dataFim)}).
+          </div>}
           {!jaLancado&&<>
-            <div style={{fontSize:11,color:C.textSub,marginBottom:8}}>
+            {!precisaAtualizar&&<div style={{fontSize:11,color:C.textSub,marginBottom:8}}>
               {dataInicio?fmtD(dataInicio)+" a ":""}{fmtD(dataFim)} · rendimento automático da conta (Nubank), informado no OFX mas nunca vem como transação -- lançar como Depósito Avulso.
-            </div>
-            <button onClick={lancarRendimento} disabled={lancandoRendimento}
-              style={{width:"100%",padding:"8px",borderRadius:6,background:C.teal,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-              {lancandoRendimento?"…":"Lançar rendimento ("+fmt(valor)+")"}
+            </div>}
+            <button onClick={precisaAtualizar?(()=>atualizarRendimento(existente,valor)):lancarRendimento} disabled={lancandoRendimento}
+              style={{width:"100%",padding:"8px",borderRadius:6,background:cor,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+              {lancandoRendimento?"…":precisaAtualizar?("Atualizar valor lançado para "+fmt(valor)):("Lançar rendimento ("+fmt(valor)+")")}
             </button>
           </>}
         </div>;
@@ -11180,7 +11206,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260907.2100 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260907.2300 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -11267,7 +11293,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260907.2100
+      // HTML v3.20260907.2300
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
