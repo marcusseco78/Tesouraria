@@ -4456,6 +4456,10 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
   const [despesaFixaEdit,setDespesaFixaEdit]=useState("");
   const [criarNovaEdit,setCriarNovaEdit]=useState(false);
   const [periodicidadeNovaEdit,setPeriodicidadeNovaEdit]=useState("mensal");
+  // [NOVO 08/09, "a cada X semanas"] Só usado quando a periodicidade
+  // escolhida aqui é semanal.
+  const [intervaloSemanasNovaEdit,setIntervaloSemanasNovaEdit]=useState("1");
+  const [dataAncoraSemanaNovaEdit,setDataAncoraSemanaNovaEdit]=useState("");
   const ehMesclado=!onConfirmar; // ja confirmado ha tempo, sem toque pendente
   const abaReal=aba||"FLUXO";
   const label=forca==="exato"?"confirmado":forca==="forte"?"confirmado (forte)":forca==="semclass"?"sem classificação":forca==="fraco"?"⚠ sugestão fraca -- confira":"mesclado";
@@ -4524,11 +4528,13 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
         };
         const fp=freqParams[periodicidadeNovaEdit]||freqParams.mensal;
         const destinoNovo=tipo==="cartao"?String(aba||"").toUpperCase():"FLUXO";
+        const intSemanasNova=periodicidadeNovaEdit==="semanal"?Math.max(1,parseInt(intervaloSemanasNovaEdit)||1):1;
         r=await api({action:"lancarRecorrencia",descricao:apelidoEdit.trim(),valor:Number(app.valor),
           forma:tipo==="cartao"?String(aba||"").replace(/^CARTAO_/,""):(formaConta||"CONTA"),
           dia_venc:fp.dia_venc,semanal:periodicidadeNovaEdit==="semanal"&&tipo!=="cartao",
           destino:destinoNovo,parc_total:0,tipo:"DESPESA FIXA",intervalo_meses:fp.intervalo_meses,
-          mes_ancora:dObj.getMonth()+1,obs:"",alias_csv:ofx.desc,dia_tipo:"FIXO",dia_n:1});
+          mes_ancora:dObj.getMonth()+1,obs:"",alias_csv:ofx.desc,dia_tipo:"FIXO",dia_n:1,
+          intervalo_semanas:intSemanasNova,data_ancora_semana:intSemanasNova>1?dataAncoraSemanaNovaEdit:""});
         if(onUpdate) onUpdate(r);
       }
       setEditando(false);
@@ -4555,8 +4561,10 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
       ):(
         <div style={{flex:1,minWidth:0,fontSize:12.5,fontWeight:700,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{app.desc}</div>
       )}
-      <Pilula>{rotuloCategoriaPill(app.categoria)}</Pilula>
+      {/* [NOVO 07/09, pedido do Marcus] Parcela logo depois do nome, fonte
+          menor -- antes ficava espremida entre a categoria e o valor. */}
       {parcelaBadge(app.parcela)}
+      <Pilula>{rotuloCategoriaPill(app.categoria)}</Pilula>
       <span style={{fontSize:12.5,fontWeight:700,color:C.text,flexShrink:0}}>{fmtCentro(app.valor)}</span>
     </div>
     {!editando&&<div style={{fontSize:9,fontWeight:700,color:cor,background:bg,padding:"1px 5px 1px 12px",display:"block"}}>
@@ -4659,6 +4667,15 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
                 {label}
               </button>)}
           </div>
+          {periodicidadeNovaEdit==="semanal"&&<div style={{marginTop:6}}>
+            <div style={{fontSize:9,color:C.textMuted,fontWeight:700,marginBottom:4}}>A CADA QUANTAS SEMANAS</div>
+            <div style={{display:"flex",gap:6,alignItems:"flex-end"}}>
+              <input type="number" min="1" value={intervaloSemanasNovaEdit} onChange={e=>setIntervaloSemanasNovaEdit(e.target.value)}
+                style={{width:60,padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"center",fontFamily:"inherit"}}/>
+              {parseInt(intervaloSemanasNovaEdit)>1&&<input type="date" value={dataAncoraSemanaNovaEdit} onChange={e=>setDataAncoraSemanaNovaEdit(e.target.value)}
+                style={{flex:1,padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit"}}/>}
+            </div>
+          </div>}
         </>}
       </div>}
     </div>}
@@ -4687,6 +4704,11 @@ function LinhaOfxIsoladaCartao({item,numero,selecionado,onClick,onCriarPrevia}){
   // quebrar linha e mostrar inteiro; resto da linha (pilula/valor/número)
   // desce pra debaixo quando expandido.
   const [expandido,setExpandido]=useState(false);
+  // [NOVO 07/09, pedido do Marcus] Ordem reorganizada -- nome, valor,
+  // parcela, categoria (antes: nome, categoria, parcela+valor). Valor
+  // ocupa a posição que a categoria tinha, pra ficar visualmente no
+  // mesmo lugar (espelhado) que o valor do lado app -- categoria(pílula
+  // "OFX", já que ainda não foi classificado) agora fecha a linha.
   return <div style={{width:"90%",marginRight:"auto",marginBottom:6}}>
     <div onClick={onClick} style={{
       display:"flex",alignItems:"center",gap:6,padding:"8px 10px",flexWrap:expandido?"wrap":"nowrap",
@@ -4698,14 +4720,12 @@ function LinhaOfxIsoladaCartao({item,numero,selecionado,onClick,onCriarPrevia}){
       <span onClick={e=>{e.stopPropagation();setExpandido(!expandido);}}
         style={expandido
           ?{width:"100%",order:1,fontSize:12,fontWeight:600,color:C.text,whiteSpace:"normal",wordBreak:"break-word",marginTop:2}
-          :{width:"36%",minWidth:0,fontSize:12,fontWeight:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+          :{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
         {item.title}
       </span>
-      <span style={{width:"22%",display:"flex",justifyContent:"center",flexShrink:0}}><Pilula>OFX</Pilula></span>
-      <span style={{flex:1,display:"flex",alignItems:"center",justifyContent:"flex-end",gap:3}}>
-        {parcelaBadge(item.parcela)}
-        <span style={{fontSize:12,fontWeight:700,color:C.text}}>{fmt(item.amount)}</span>
-      </span>
+      <span style={{fontSize:12,fontWeight:700,color:C.text,flexShrink:0,width:70,textAlign:"right"}}>{fmt(item.amount)}</span>
+      {parcelaBadge(item.parcela)}
+      <span style={{flexShrink:0}}><Pilula>OFX</Pilula></span>
       {numero?
         <span style={{fontSize:10,fontWeight:800,color:"#fff",background:cor.cor,borderRadius:999,width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginLeft:4}}>{numero}</span>
       :<button onClick={e=>{e.stopPropagation();onCriarPrevia();}} title="Criar uma prévia (mãe ainda não existe) e já parear com este item" style={{
@@ -4921,6 +4941,16 @@ function PreviaAppExtrato({n,previa,numero,envelopes,contas,despesasFixas,ocorre
                   {label}
                 </button>)}
             </div>
+            {/* [NOVO 08/09, "a cada X semanas"] */}
+            {previa.periodicidadeNova==="semanal"&&<div style={{marginTop:6}}>
+              <div style={{fontSize:9,color:C.textMuted,fontWeight:700,marginBottom:4}}>A CADA QUANTAS SEMANAS</div>
+              <div style={{display:"flex",gap:6,alignItems:"flex-end"}}>
+                <input type="number" min="1" value={previa.intervaloSemanasNova||"1"} onChange={e=>onMudar({...previa,intervaloSemanasNova:e.target.value})}
+                  style={{width:60,padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"center",fontFamily:"inherit"}}/>
+                {parseInt(previa.intervaloSemanasNova)>1&&<input type="date" value={previa.dataAncoraSemanaNova||""} onChange={e=>onMudar({...previa,dataAncoraSemanaNova:e.target.value})}
+                  style={{flex:1,padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit"}}/>}
+              </div>
+            </div>}
           </>}
         </div>}
         {envelopes.length>0&&<select value={previa.envelope} onChange={e=>onMudar({...previa,envelope:e.target.value})}
@@ -4977,6 +5007,9 @@ function LinhaAppIsoladaCartao({aguardando,numero,selecionado,onClickParear,onEx
   // pé de igualdade visual com um item qualquer; agora entram no mesmo
   // "lado direito" da conciliação (cinza, pontilhada, sem clique) -- pra
   // ficar visualmente pronta esperando o par assim que o OFX chegar.
+  // [NOVO 07/09] Ordem espelhada da linha do banco -- categoria, parcela,
+  // valor, nome (antes: parcela+valor, categoria, nome). Valor no mesmo
+  // lugar/largura do lado banco, pra alinhar visualmente entre as duas.
   return <div onClick={futuro?undefined:onClickParear} style={{
     display:"flex",alignItems:"center",gap:6,padding:"8px 10px",flexWrap:expandido?"wrap":"nowrap",
     background:futuro?C.borderLight:(cor?cor.bg:(selecionado?"#EFF6FF":C.redLight)),
@@ -4985,15 +5018,13 @@ function LinhaAppIsoladaCartao({aguardando,numero,selecionado,onClickParear,onEx
     opacity:futuro?0.8:1,
   }}>
     {numero&&<span style={{fontSize:10,fontWeight:800,color:"#fff",background:cor.cor,borderRadius:999,width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{numero}</span>}
-    <span style={{flex:1,display:"flex",alignItems:"center",gap:3}}>
-      {parcelaBadge(aguardando.parcela)}
-      <span style={{fontSize:12,fontWeight:700,color:futuro?C.textSub:C.text}}>{fmt(aguardando.valor)}</span>
-    </span>
-    <span style={{width:"22%",display:"flex",justifyContent:"center",flexShrink:0}}><Pilula>{rotuloCategoriaPill(aguardando.categoria)}</Pilula></span>
+    <span style={{flexShrink:0}}><Pilula>{rotuloCategoriaPill(aguardando.categoria)}</Pilula></span>
+    {parcelaBadge(aguardando.parcela)}
+    <span style={{fontSize:12,fontWeight:700,color:futuro?C.textSub:C.text,flexShrink:0,width:70,textAlign:"right"}}>{fmt(aguardando.valor)}</span>
     <span onClick={futuro?undefined:(e=>{e.stopPropagation();setExpandido(!expandido);})}
       style={expandido
         ?{width:"100%",order:1,fontSize:12,fontWeight:600,color:futuro?C.textSub:C.text,whiteSpace:"normal",wordBreak:"break-word",marginTop:2,textAlign:"right"}
-        :{width:"42%",minWidth:0,fontSize:12,fontWeight:600,color:futuro?C.textSub:C.text,textAlign:"right",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+        :{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:futuro?C.textSub:C.text,textAlign:"right",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
       {aguardando.desc}
     </span>
     {futuro?<span style={{fontSize:9,color:C.textMuted,padding:"2px 6px",borderRadius:10,border:"1px dashed "+C.border,flexShrink:0,fontWeight:600}}>PREVISTO</span>
@@ -5432,10 +5463,12 @@ function ConciliarExtratoTab({data,onUpdate}){
               anual:{dia_venc:dObj.getDate(),semanal:false,intervalo_meses:12},
             };
             const fp=freqParams[previa.periodicidadeNova||"mensal"];
+            const intSemanasNova2=fp.semanal?Math.max(1,parseInt(previa.intervaloSemanasNova)||1):1;
             onUpdate(await api({action:"lancarRecorrencia",descricao:previa.apelido,valor:Number(n.valor),
               forma:contaExtrato||"CONTA",dia_venc:fp.dia_venc,semanal:fp.semanal,destino:"FLUXO",
               parc_total:0,tipo:"DESPESA FIXA",intervalo_meses:fp.intervalo_meses,mes_ancora:dObj.getMonth()+1,
-              obs:"",alias_csv:n.descricao,dia_tipo:"FIXO",dia_n:1}));
+              obs:"",alias_csv:n.descricao,dia_tipo:"FIXO",dia_n:1,
+              intervalo_semanas:intSemanasNova2,data_ancora_semana:intSemanasNova2>1?previa.dataAncoraSemanaNova:""}));
             itensLote.push({data:n.data,descricao:previa.apelido,valor:Number(n.valor),tipo:"DESPESA FIXA",
               categoria:"DESPESA FIXA",forma:contaExtrato||"CONTA",status:"EXECUTADO",
               obs:n.identificador?JSON.stringify({extratoId:n.identificador}):""});
@@ -7913,7 +7946,7 @@ function Conversar({data,onUpdate,initTxt,onInitDone,msgs,setMsgs}){
 
 
 // ── RECORRÊNCIAS ──────────────────────────────────────────────────────────────
-function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCartao,neg,setNeg,val,setVal,dia,setDia,diaTipoEdit,setDiaTipoEdit,diaNEdit,setDiaNEdit,tolerancia,setTolerancia,alias,setAlias,envelopePadrao,setEnvelopePadrao,destinoEdit,setDestinoEdit,regerar,load,salvar,apagar,data,formaEdit,setFormaEdit}){
+function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCartao,neg,setNeg,val,setVal,dia,setDia,diaTipoEdit,setDiaTipoEdit,diaNEdit,setDiaNEdit,tolerancia,setTolerancia,alias,setAlias,envelopePadrao,setEnvelopePadrao,destinoEdit,setDestinoEdit,regerar,load,salvar,apagar,data,formaEdit,setFormaEdit,intervaloSemanasEdit,setIntervaloSemanasEdit,dataAncoraSemanaEdit,setDataAncoraSemanaEdit}){
   // [CORRIGIDO 11/08] Faltava esta linha -- SecaoRecorrencias usava
   // contasAtivasRecEdit (pra montar o seletor de conta no painel de edicao)
   // sem nunca declarar nem receber como prop. So disparava quando havia
@@ -8030,7 +8063,7 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
           </div>
           <div style={{flex:1}}>
             <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Vencimento</div>
-            {!ehCartao(item)&&itemEhSemanal(item)?
+            {!ehCartao(item)&&itemEhSemanal(item)?<>
               <select value={dia} onChange={e=>setDia(e.target.value)}
                 style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,
                   fontSize:13,fontFamily:"inherit",background:C.surface}}>
@@ -8038,6 +8071,19 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
                   <option key={i} value={String(i)}>{(i===0||i===6?"Todo ":"Toda ")+nome.toLowerCase()+(i===0||i===6?"":"-feira")}</option>
                 )}
               </select>
+              {/* [NOVO 08/09, "a cada X semanas"] Só aparece pra recorrência
+                  semanal de conta -- cartão nunca tem recorrência semanal. */}
+              <div style={{marginTop:8}}>
+                <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>A cada quantas semanas</div>
+                <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+                  <input type="number" min="1" value={intervaloSemanasEdit} onChange={e=>setIntervaloSemanasEdit(e.target.value)}
+                    style={{width:70,padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,textAlign:"center",fontFamily:"inherit"}}/>
+                  {parseInt(intervaloSemanasEdit)>1&&<input type="date" value={dataAncoraSemanaEdit} onChange={e=>setDataAncoraSemanaEdit(e.target.value)}
+                    style={{flex:1,padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit"}}/>}
+                </div>
+                {parseInt(intervaloSemanasEdit)>1&&<div style={{fontSize:9,color:C.textMuted,marginTop:3}}>Data = próxima ocorrência real. Mudar isso sempre pede pra regerar os futuros.</div>}
+              </div>
+            </>
             :<>
               <div style={{display:"flex",gap:4,marginBottom:6}}>
                 {[["FIXO","Fixo"],["N_UTIL","Nº útil"],["ULTIMO_UTIL","Último útil"]].map(([id,label])=>
@@ -8117,6 +8163,10 @@ function Recorrencias({data,onUpdate}){
   const [destinoEdit,setDestinoEdit]=useState("FLUXO");
   // [NOVO 01/08] Fase 5 -- qual conta (so faz sentido quando destino=FLUXO).
   const [formaEdit,setFormaEdit]=useState("CONTA");
+  // [NOVO 08/09, "a cada X semanas"] Só usado quando a recorrência aberta
+  // é semanal.
+  const [intervaloSemanasEdit,setIntervaloSemanasEdit]=useState("1");
+  const [dataAncoraSemanaEdit,setDataAncoraSemanaEdit]=useState("");
   const contasAtivasRecEdit=(data.contas||[]).filter(c=>c.ativa!==false);
   const [load,setLoad]=useState(false);
   const [showForm,setShowForm]=useState(false);
@@ -8125,13 +8175,21 @@ function Recorrencias({data,onUpdate}){
   const [rascunho,setRascunho]=useState({});
   const [loadTodas,setLoadTodas]=useState(false);
 
-  const items=(data.recorr||[]).map((r,i)=>({
+  const items=(data.recorr||[]).map((r,i)=>{
+    // [NOVO 08/09, "a cada X semanas"] intervaloSemanas/ancoraSemana vivem
+    // dentro do OBS (json) -- mesmo lugar que freq (SEMANAL/MENSAL) já usa.
+    let obsParsedRec={}; try{obsParsedRec=JSON.parse(r[8]||"{}");}catch(e){}
+    const ehSemanalItem=obsParsedRec.freq==="SEMANAL"||(obsParsedRec.freq!=="MENSAL"&&(Number(r[3])===2||Number(r[3])===6));
+    return {
     idx:i,desc:r[0],valor:Number(r[1]),forma:r[2],
     diaVenc:r[3],parcAtual:r[4],parcTotal:r[5],
     ativo:r[6],tipo:r[7],obs:r[8],destino:r[9],tolerancia:r[10],alias:r[11],envelopePadrao:r[12],
     diaTipo:["N_UTIL","ULTIMO_UTIL"].indexOf(String(r[13]||"").toUpperCase())!==-1?String(r[13]).toUpperCase():"FIXO",
-    diaN:parseInt(r[14])||1
-  })).filter(r=>String(r.ativo).toUpperCase()!=="N"&&r.ativo!==false&&r.ativo!==0);
+    diaN:parseInt(r[14])||1,
+    ehSemanal:ehSemanalItem,
+    intervaloSemanas:Math.max(1,parseInt(obsParsedRec.intervaloSemanas)||1),
+    ancoraSemana:obsParsedRec.ancoraSemana||""
+  };}).filter(r=>String(r.ativo).toUpperCase()!=="N"&&r.ativo!==false&&r.ativo!==0);
 
   // Emprestimos/passivos: qualquer recorrencia do FLUXO com numero de
   // parcelas definido (parcTotal>0) -- diferente de conta recorrente sem
@@ -8221,6 +8279,8 @@ function Recorrencias({data,onUpdate}){
     setEnvelopePadrao(item.envelopePadrao||"");
     setDestinoEdit(String(item.destino||"FLUXO").toUpperCase().replace(/[^A-Z0-9_]/g,""));
     setFormaEdit(item.forma||"CONTA");
+    setIntervaloSemanasEdit(String(item.intervaloSemanas||1));
+    setDataAncoraSemanaEdit(item.ancoraSemana||"");
   }
 
   // [11/08, CORRIGIDO -- bug real do Marcus] Extraido de dentro de salvar()
@@ -8277,6 +8337,16 @@ function Recorrencias({data,onUpdate}){
     }
     if(envelopePadrao!==String(item.envelopePadrao||""))
       _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"ENVELOPE_PADRAO",valor:envelopePadrao,resumo:""}));
+    // [NOVO 08/09, "a cada X semanas"] Só existe pra recorrência semanal.
+    // Mesma regra de sempre: nunca cascateia sozinho, o backend devolve
+    // _precisaRegenerar (guardado junto com os outros acima).
+    if(item.ehSemanal){
+      const novoIntervalo=Math.max(1,parseInt(intervaloSemanasEdit)||1);
+      if(novoIntervalo!==item.intervaloSemanas)
+        _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"INTERVALO_SEMANAS",valor:String(novoIntervalo),resumo:""}));
+      if(novoIntervalo>1&&dataAncoraSemanaEdit!==item.ancoraSemana)
+        _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"ANCORA_SEMANA",valor:dataAncoraSemanaEdit,resumo:""}));
+    }
     if(precisaRegenerarAcumulado&&ultimoResultado) ultimoResultado._precisaRegenerar=precisaRegenerarAcumulado;
     return ultimoResultado;
   }
@@ -8423,7 +8493,9 @@ function Recorrencias({data,onUpdate}){
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
-      load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
+      load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}
+      intervaloSemanasEdit={intervaloSemanasEdit} setIntervaloSemanasEdit={setIntervaloSemanasEdit}
+      dataAncoraSemanaEdit={dataAncoraSemanaEdit} setDataAncoraSemanaEdit={setDataAncoraSemanaEdit}/>
     <SecaoRecorrencias titulo="Recorrentes por conta" lista={debitosMensais} cor={C.red} bg={C.redLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
@@ -8500,6 +8572,13 @@ function FormNovaRecorr({onSalvo,onClose,data}){
   // qualquer mes de referencia (ex: Trimestral ancorado em Setembro ->
   // dispara Set/Dez/Mar/Jun, nao importa em que mes voce cria a regra).
   const [mesAncora,setMesAncora]=useState(String(new Date().getMonth()+1));
+  // [NOVO 08/09, "a cada X semanas" -- caso da psicóloga, sessão a cada 4
+  // semanas] Só aparece quando a frequência escolhida é semanal.
+  // intervaloSemanas="1" (padrão, toda semana) não pede âncora nenhuma --
+  // só quando >1 é que a data da próxima ocorrência real importa, pra
+  // saber a partir de quando contar.
+  const [intervaloSemanas,setIntervaloSemanas]=useState("1");
+  const [dataAncoraSemana,setDataAncoraSemana]=useState("");
 
   const ehCartao=destinoUI==="CARTAO_PF"||destinoUI==="CARTAO_PJ";
   const destino=ehCartao?destinoUI:"FLUXO";
@@ -8538,6 +8617,8 @@ function FormNovaRecorr({onSalvo,onClose,data}){
 
   async function salvar(){
     if(!desc.trim()||!valor||!alias.trim())return;
+    const intSemanas=isWeekly?Math.max(1,parseInt(intervaloSemanas)||1):1;
+    if(isWeekly&&intSemanas>1&&!dataAncoraSemana){alert("Informe a data da próxima ocorrência real -- é a partir dela que o intervalo é contado.");return;}
     setLoad(true);
     try{
       const f=freqMap[freq]||freqMap.mensal;
@@ -8547,7 +8628,8 @@ function FormNovaRecorr({onSalvo,onClose,data}){
         descricao:desc,valor:Math.abs(numBR(valor))*sinal,
         forma,dia_venc:dv,semanal:isWeekly,destino,parc_total:parseInt(parc)||0,
         tipo,intervalo_meses:f.m,mes_ancora:parseInt(mesAncora),obs:"",alias_csv:alias.trim().toUpperCase(),
-        dia_tipo:isWeekly?"FIXO":diaTipo,dia_n:parseInt(diaN)||1});
+        dia_tipo:isWeekly?"FIXO":diaTipo,dia_n:parseInt(diaN)||1,
+        intervalo_semanas:intSemanas,data_ancora_semana:intSemanas>1?dataAncoraSemana:""});
       onSalvo();
     }catch(e){alert(e.message);}
     setLoad(false);
@@ -8600,6 +8682,15 @@ function FormNovaRecorr({onSalvo,onClose,data}){
         <select value={freq} onChange={e=>setFreq(e.target.value)} style={sel}>
           {Object.entries(freqMap).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
         </select></div>
+      {isWeekly&&<div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+        <div style={{width:110}}><label style={lbl}>A cada quantas semanas</label>
+          <input type="number" min="1" value={intervaloSemanas} onChange={e=>setIntervaloSemanas(e.target.value)} style={{...inp,textAlign:"center"}}/></div>
+        {parseInt(intervaloSemanas)>1&&<div style={{flex:1}}><label style={lbl}>Próxima ocorrência real</label>
+          <input type="date" value={dataAncoraSemana} onChange={e=>setDataAncoraSemana(e.target.value)} style={inp}/></div>}
+      </div>}
+      {isWeekly&&parseInt(intervaloSemanas)>1&&<div style={{fontSize:10,color:C.textMuted,marginTop:-4}}>
+        As próximas contam {intervaloSemanas} em {intervaloSemanas} semanas a partir dessa data.
+      </div>}
       {!isWeekly&&<div>
         <label style={lbl}>Quando no mês</label>
         <div style={{display:"flex",gap:6,marginBottom:8}}>
@@ -9814,6 +9905,15 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
   function mudarPrevia(idOfx,novaPrevia){
     setPreviasApp(prev=>({...prev,[idOfx]:novaPrevia}));
   }
+  // [NOVO 07/09, pedido do Marcus] Mesmo botão de excluir que o extrato já
+  // tinha (03/09) -- pra item PENDENTE aguardando sem par (duplicata,
+  // lançamento errado) sem precisar sair pro Histórico/Cartões.
+  async function excluirAguardandoCartao(a){
+    if(!confirm("Excluir \""+a.desc+"\" ("+fmt(a.valor)+")? Isso apaga o lançamento de vez -- não dá pra desfazer.")) return;
+    try{
+      onUpdate(await api({action:"deletar",aba:abaCartao,row:a.row}));
+    }catch(e){ alert(e.message); }
+  }
   function tocarPareamento(id,lado){
     if(parIdParaNumero[id]){
       const num=parIdParaNumero[id];
@@ -10778,6 +10878,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
                 numero={parIdParaNumero[idApp]}
                 selecionado={selecionadoPar&&selecionadoPar.id===idApp}
                 onClickParear={()=>tocarPareamento(idApp,"app")}
+                onExcluir={()=>excluirAguardandoCartao({row:linhaR,desc:apelidoAtual||r[1],valor:r[2]})}
                 cartao={cartao} onUpdate={onUpdate} data={data}
               />
             </React.Fragment>;
@@ -11206,7 +11307,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260907.2300 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260908.0100 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -11293,7 +11394,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260907.2300
+      // HTML v3.20260908.0100
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
