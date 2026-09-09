@@ -10219,6 +10219,14 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     catch(e){ alert(e.message); }
     setLoadDestravaFatura(false);
   }
+  const [loadTravaFatura,setLoadTravaFatura]=useState(false);
+  async function travarFaturaAtual(){
+    if(!confirm("Travar a fatura "+cartao+" de vencimento "+fmtD(faturaAtual.venc)+"? Ela fica protegida -- nenhuma conciliação ou reconstrução mexe nela até você destravar de novo."))return;
+    setLoadTravaFatura(true);
+    try{ onUpdate(await api({action:"travarFatura",cartao,vencimento:faturaAtual.venc})); }
+    catch(e){ alert(e.message); }
+    setLoadTravaFatura(false);
+  }
 
   // [NOVO 18/08] "Ajuste não-OFX" -- pra ajustes que o próprio banco aplica
   // sem nunca gerar transação real datada em CSV/OFX (ex: excedente de
@@ -10688,6 +10696,20 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
               {loadAjuste?"…":"Lançar ajuste"}
             </button>
           </div>}
+        </div>}
+        {/* [NOVO 09/09, pedido do Marcus] Travar manualmente -- antes só
+            existia travar automático (quando a conciliação fecha sem
+            sobrar nada) e destravar manual. Faltava o caminho contrário:
+            uma fatura que você já confere e sabe que está certa (mesmo
+            sem ter passado pela conciliação inteira, ou paga parcial com
+            reagendamento já OK) precisa poder ser protegida ANTES de
+            rodar "Reconstruir do zero" em outra fatura -- travada nunca é
+            tocada por essa ação. */}
+        {!faturaTravada(cartao,faturaAtual.venc,data)&&<div style={{marginTop:6}}>
+          <button onClick={travarFaturaAtual} disabled={loadTravaFatura}
+            style={{padding:"5px 10px",borderRadius:6,background:"transparent",color:"#1E40AF",fontSize:11,fontWeight:700,border:"1px solid #1E40AF",cursor:"pointer",fontFamily:"inherit"}}>
+            {loadTravaFatura?"…":"🔒 Travar esta fatura"}
+          </button>
         </div>}
       </div>
       {navBtn(1,idxInicial+fatIdx>=faturas.length-1)}
@@ -11307,7 +11329,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260908.0130 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260909.0100 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -11394,7 +11416,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260908.0130
+      // HTML v3.20260909.0100
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
