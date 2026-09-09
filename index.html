@@ -8419,7 +8419,7 @@ function Recorrencias({data,onUpdate}){
     const querApagarFuturos=confirm("Apagar também os lançamentos futuros já gerados (ainda programados/pendentes) para \""+item.desc+"\"? Executados/pagos nunca são tocados.");
     setLoad(true);
     try{
-      let r=await api({action:"deletarRecorrencia",descricao:item.desc});
+      let r=await api({action:"deletarRecorrencia",descricao:item.desc,row:item.idx+4});
       if(querApagarFuturos){
         const destNorm=String(item.destino||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
         const aba=destNorm==="CARTAOPJ"?"CARTAO_PJ":destNorm==="CARTAOPF"?"CARTAO_PF":"FLUXO";
@@ -11307,7 +11307,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260908.0100 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260908.0130 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -11394,7 +11394,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260908.0100
+      // HTML v3.20260908.0130
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
