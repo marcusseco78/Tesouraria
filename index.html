@@ -4420,6 +4420,29 @@ const CAT_LABEL_GRANDE={
 function rotuloCategoriaPillGrande(cat){
   return CAT_LABEL_GRANDE[cat]||CAT_SIGLA[cat]||cat;
 }
+// [NOVO 09/09, pedido do Marcus: "pílulas maiores no lançamento fechado,
+// uma cor por categoria pra identificar rápido"] Antes o selo compacto do
+// SeloPar era sempre cinza neutro, mesmo tamanho pra qualquer categoria --
+// difícil bater o olho e saber o que é o quê numa lista longa.
+const COR_CATEGORIA={
+  "DCP":{cor:"#CA8A04",bg:"#FEFCE8"},
+  "DESPESA FIXA":{cor:C.red,bg:C.redLight},
+  "DIVIDA_PARCELADA":{cor:C.purple,bg:C.purpleLight},
+  "DIVIDA_NAO_PARCELADA":{cor:C.purple,bg:C.purpleLight},
+  "EXTRAORDINARIA":{cor:C.orange,bg:C.orangeLight},
+  "IMPOSTO":{cor:"#991B1B",bg:C.redLight},
+  "INVESTIMENTO":{cor:C.teal,bg:C.tealLight},
+  "TRANSFERENCIA":{cor:C.accent,bg:C.accentLight},
+  "RECEITA":{cor:C.green,bg:C.greenLight},
+  "DEPOSITO_AVULSO":{cor:C.teal,bg:C.tealLight},
+};
+function corCategoria(cat){ return COR_CATEGORIA[cat]||{cor:C.textSub,bg:C.borderLight}; }
+function PilulaCategoriaGrande({cat}){
+  const {cor,bg}=corCategoria(cat);
+  return <span style={{fontSize:11,fontWeight:800,padding:"3px 10px",borderRadius:14,background:bg,color:cor,flexShrink:0}}>
+    {rotuloCategoriaPillGrande(cat)}
+  </span>;
+}
 function fmtCentro(v){ return fmt(v); }
 /**
  * ofx={desc,valor} app={desc,valor,categoria} -- forca: "exato"|"forte"|"fraco"|"semclass"
@@ -4564,7 +4587,7 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
       {/* [NOVO 07/09, pedido do Marcus] Parcela logo depois do nome, fonte
           menor -- antes ficava espremida entre a categoria e o valor. */}
       {parcelaBadge(app.parcela)}
-      <Pilula>{rotuloCategoriaPill(app.categoria)}</Pilula>
+      <PilulaCategoriaGrande cat={app.categoria}/>
       <span style={{fontSize:12.5,fontWeight:700,color:C.text,flexShrink:0}}>{fmtCentro(app.valor)}</span>
     </div>
     {!editando&&<div style={{fontSize:9,fontWeight:700,color:cor,background:bg,padding:"1px 5px 1px 12px",display:"block"}}>
@@ -4574,30 +4597,30 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
     {/* sublinhas -- SEMPRE visiveis, nunca viram campo (valor/data/nome do
         banco sao verdade do OFX) */}
     <div style={{
-      display:"grid",gridTemplateColumns:"1fr auto auto auto 1fr",alignItems:"center",columnGap:5,rowGap:3,
+      display:"flex",flexDirection:"column",gap:3,
       padding:"6px 12px",background:"#EFF6FF",
       border:"1px solid "+C.border,borderTop:"none",borderBottom:editando?"none":"1px solid "+C.border,
       borderRadius:editando?0:"0 0 10px 10px",boxSizing:"border-box",
     }}>
-      <div style={{display:"flex",alignItems:"center",gap:4,minWidth:0}}>
+      {/* [NOVO 09/09, pedido do Marcus] Mesma disposição nome-valor-parcela-
+          categoria que já tinha entrado nos cards soltos da conciliação --
+          nome com espaço de verdade (flex, só encolhe até 40% da linha),
+          em vez de dividir em colunas fixas de grid que sobravam pouco
+          espaço mesmo com nome curto. */}
+      <div style={{display:"flex",alignItems:"center",gap:5}}>
         <span style={{fontSize:9,flexShrink:0}}>🏦</span>
-        <span style={{fontSize:9.5,fontWeight:600,color:C.textMuted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ofx.desc}</span>
-      </div>
-      <div/><Pilula>OFX</Pilula>
-      <div style={{display:"flex",alignItems:"center",gap:3,justifyContent:"flex-end"}}>
+        <span style={{flex:1,minWidth:0,maxWidth:"60%",fontSize:9.5,fontWeight:600,color:C.textMuted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ofx.desc}</span>
+        <span style={{flex:1}}/>
         {parcelaBadge(ofx.parcela)}
-        <span style={{fontSize:9.5,fontWeight:700,color:C.textMuted,whiteSpace:"nowrap"}}>{fmtCentro(ofx.valor)}</span>
+        <span style={{fontSize:9.5,fontWeight:700,color:C.textMuted,whiteSpace:"nowrap",flexShrink:0}}>{fmtCentro(ofx.valor)}</span>
+        <span style={{flexShrink:0}}><Pilula>OFX</Pilula></span>
       </div>
-      <div/>
-      <div/>
-      <div style={{display:"flex",alignItems:"center",gap:3,justifyContent:"flex-end"}}>
-        <span style={{fontSize:9.5,fontWeight:700,color:C.textMuted,whiteSpace:"nowrap"}}>{fmtCentro(app.valor)}</span>
+      <div style={{display:"flex",alignItems:"center",gap:5}}>
+        <span style={{flexShrink:0}}><Pilula>{rotuloCategoriaPill(categoriaEdit)}</Pilula></span>
+        <span style={{fontSize:9.5,fontWeight:700,color:C.textMuted,whiteSpace:"nowrap",flexShrink:0}}>{fmtCentro(app.valor)}</span>
         {parcelaBadge(app.parcela)}
-      </div>
-      <Pilula>{rotuloCategoriaPill(categoriaEdit)}</Pilula>
-      <div/>
-      <div style={{display:"flex",alignItems:"center",gap:4,justifyContent:"flex-end",minWidth:0}}>
-        <span style={{flex:1,fontSize:9.5,fontWeight:600,color:C.textMuted,textAlign:"right",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{apelidoEdit}</span>
+        <span style={{flex:1}}/>
+        <span style={{flex:1,minWidth:0,maxWidth:"60%",fontSize:9.5,fontWeight:600,color:C.textMuted,textAlign:"right",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{apelidoEdit}</span>
         <span style={{fontSize:9,flexShrink:0}}>📱</span>
       </div>
     </div>
@@ -4770,6 +4793,18 @@ function PreviaAppCartao({item,previa,numero,envelopes,despesasFixas,ocorrencias
             crédito) oferece as categorias de entrada (Receita/Depósito
             Avulso/etc), não mais sempre as de despesa. */}
         {categoriasPorSinal(-item.amount).map(c=><Pilula key={c} grande editavel ativa={previa.categoria===c} onClick={()=>onMudar({...previa,categoria:c})}>{rotuloCategoriaPillGrande(c)}</Pilula>)}
+        {/* [NOVO 09/09, pedido do Marcus] Estorno também pode voltar pra
+            DCP -- devolve o dinheiro pra semana errada de propósito, sem
+            que o estorno vire "receita" solta e a semana continue
+            comprometida pelo gasto que já foi desfeito. Fundo amarelo
+            igual ao resto do sistema usa pra DCP, pra ficar claro que é
+            um caminho diferente do normal (Receita/Depósito). */}
+        {item.amount<0&&<button type="button" onClick={()=>onMudar({...previa,categoria:"DCP"})}
+          style={{padding:"5px 10px",borderRadius:16,fontSize:11,fontWeight:700,border:"1px solid #EAB308",cursor:"pointer",
+            background:previa.categoria==="DCP"?"#EAB308":"#FEFCE8",
+            color:previa.categoria==="DCP"?"#fff":"#854D0E"}}>
+          Devolver pro DCP da semana
+        </button>}
       </div>
       {!previa.categoria&&<div style={{fontSize:9,color:C.red,marginTop:4}}>Escolha uma categoria (obrigatório pra mesclar).</div>}
       {/* [NOVO 06/09] Mesmo bloco que o extrato ja tinha desde 03/09 --
@@ -9898,7 +9933,11 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     // ocorrenciaEscolhida entram aqui tambem -- mesmo padrao que o extrato
     // ja usava, agora a fatura de cartao tambem oferece "e uma despesa fixa
     // ja cadastrada?" em vez de nascer sempre como lancamento solto.
-    setPreviasApp(prev=>({...prev,[idOfx]:{apelido:limparParcelaTitulo(item.title),categoria:"",envelope:"",
+    // [NOVO 09/09, pedido do Marcus] Estorno/crédito (item.amount negativo)
+    // já nasce classificado como Depósito Avulso, em vez de forçar escolha
+    // -- ele ainda pode trocar pra DCP se o estorno for de uma compra que
+    // já tinha sido semanal, sem precisar clicar em nada primeiro.
+    setPreviasApp(prev=>({...prev,[idOfx]:{apelido:limparParcelaTitulo(item.title),categoria:item.amount<0?"DEPOSITO_AVULSO":"",envelope:"",
       despesaFixaVinculo:"",criarNova:false,periodicidadeNova:"mensal",ocorrenciaEscolhida:null}}));
     const num=proximoNumeroPar;
     setParesPorNumero(prev=>({...prev,[num]:{ofxId:idOfx,appId:idPreview}}));
@@ -11336,7 +11375,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260909.0200 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260909.1500 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -11423,7 +11462,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260909.0200
+      // HTML v3.20260909.1500
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
