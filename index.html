@@ -5349,37 +5349,47 @@ function ConciliarExtratoTab({data,onUpdate}){
   // Também já nasce com confirmadoExtrato:true -- é dado que só existe do
   // lado do banco (o OFX), então já entra "confirmado" desse lado, mesmo
   // cadeado/selo que qualquer outro item reconciliado ganha.
-  function _rendimentoRowExistente(dataFim){
+  // [NOVO 10/09, redesenho pedido pelo Marcus] Em vez de calcular diferença
+  // entre períodos (frágil, dependia de todo upload começar no mesmo dia),
+  // segue o próprio jeito do banco de mostrar isso: rendimento é sempre
+  // "acumulado do mês, ainda rolando" -- só vira lançamento de verdade no
+  // FECHAMENTO do mês (o dia seguinte já zera e começa a contar de novo).
+  // Fora do fechamento, é só informativo, sem botão de ação nenhum.
+  function _ultimoDiaDoMes(dataISO){
+    const d=_dataLocalSegura(dataISO);
+    const fim=new Date(d.getFullYear(),d.getMonth()+1,0);
+    return d.getDate()===fim.getDate();
+  }
+  function _rendimentoDoMes(dataFim){
     const contaAlvo=String(contaExtrato||"CONTA").toUpperCase();
+    const mesAlvo=dataFim.slice(0,7); // "AAAA-MM"
     for(const f of (data.fluxo||[])){
       let o={}; try{o=JSON.parse(f.obs||"{}");}catch(e){continue;}
-      if(o.tipo==="RENDIMENTO_CONTA"&&o.conta===contaAlvo&&o.dataFim===dataFim) return f;
+      if(o.tipo==="RENDIMENTO_CONTA"&&o.conta===contaAlvo&&String(o.dataFim||"").slice(0,7)===mesAlvo) return {row:f.row,valor:f.valor,dataFim:o.dataFim};
     }
     return null;
   }
   const [lancandoRendimento,setLancandoRendimento]=useState(false);
-  async function lancarRendimento(){
-    if(!resultado||!resultado.rendimentoDetectado) return;
-    const {valor,dataFim}=resultado.rendimentoDetectado;
+  async function lancarRendimento(valorParaLancar,dataFim){
     setLancandoRendimento(true);
     try{
       const obsJson=JSON.stringify({tipo:"RENDIMENTO_CONTA",conta:String(contaExtrato||"CONTA").toUpperCase(),dataFim,confirmadoExtrato:true});
       const r=await api({action:"lancar",data:dataFim,
-        descricao:"RENDIMENTO CONTA",valor:Math.abs(Number(valor)),
+        descricao:"RENDIMENTO CONTA",valor:Math.abs(Number(valorParaLancar)),
         tipo:"DEPOSITO_AVULSO",categoria:"DEPOSITO_AVULSO",forma:contaExtrato||"CONTA",
         status:"EXECUTADO",obs:obsJson});
       onUpdate(r);
     }catch(e){ alert(e.message); }
     setLancandoRendimento(false);
   }
-  // [NOVO 07/09] O mesmo período pode aparecer de novo com um valor
-  // DIFERENTE (Nubank recalculou, ou o Marcus subiu um OFX mais completo do
-  // mesmo intervalo) -- nesse caso não lança um segundo, corrige o mesmo
+  // [NOVO 07/09] O mesmo mês pode fechar de novo com um valor DIFERENTE
+  // (Nubank recalculou, ou o Marcus subiu um OFX mais completo do mesmo
+  // fechamento) -- nesse caso não lança um segundo, corrige o mesmo
   // lançamento. Preserva tudo (data, descrição, marcador) e só troca VALOR.
-  async function atualizarRendimento(rowExistente,valorNovo){
+  async function atualizarRendimento(row,valorNovo){
     setLancandoRendimento(true);
     try{
-      const r=await api({action:"editar",row:rowExistente.row,campo:"VALOR",valor:Math.abs(Number(valorNovo))});
+      const r=await api({action:"editar",row,campo:"VALOR",valor:Math.abs(Number(valorNovo))});
       onUpdate(r);
     }catch(e){ alert(e.message); }
     setLancandoRendimento(false);
@@ -5387,7 +5397,14 @@ function ConciliarExtratoTab({data,onUpdate}){
 
   async function criarAjuste(){
     if(!resultado||!resultado.comparacaoSaldo||resultado.comparacaoSaldo.bate) return;
-    const {diferenca,data}=resultado.comparacaoSaldo;
+    // [NOVO 10/09] Mesmo ajuste do rendimento pendente que já aparece no
+    // botão -- usa o valor consistente com o que foi mostrado, nunca o
+    // valor cru de antes de contar o rendimento do mês.
+    const rd=resultado.rendimentoDetectado;
+    const jaLancadoEsseMes=rd&&_rendimentoDoMes(rd.dataFim);
+    const ajusteRend=(rd&&!jaLancadoEsseMes)?Math.abs(Number(rd.valor)):0;
+    const diferenca=Number(resultado.comparacaoSaldo.diferenca)-ajusteRend;
+    const {data}=resultado.comparacaoSaldo;
     setLoad(true);
     try{
       const r=await api({action:"lancar",data,descricao:"AJUSTE",valor:diferenca,tipo:"EXTRAORDINARIA",
@@ -5595,33 +5612,47 @@ function ConciliarExtratoTab({data,onUpdate}){
         Fica salvo mesmo se você sair pra conferir Fluxo/Histórico e voltar — some só se descartar aqui ou subir outro extrato.
       </div>
 
-      {resultado.comparacaoSaldo&&<div style={{marginBottom:18,padding:"12px 14px",borderRadius:10,
-        background:resultado.comparacaoSaldo.bate?C.greenLight:"#FEF3C7",
-        border:"1px solid "+(resultado.comparacaoSaldo.bate?C.green:"#F59E0B")}}>
-        {resultado.comparacaoSaldo.bate?
+      {resultado.comparacaoSaldo&&(()=>{
+        // [NOVO 10/09, pedido do Marcus] Enquanto o rendimento do mês ainda
+        // não virou lançamento de verdade (só informativo na caixinha
+        // verde), soma ele aqui na comparação -- o banco já conta esse
+        // valor no saldo real dele, então o "App" também precisa contar
+        // pra comparação fazer sentido, mesmo sem gravar nada ainda.
+        const rd=resultado.rendimentoDetectado;
+        const jaLancadoEsseMes=rd&&_rendimentoDoMes(rd.dataFim);
+        const ajusteRend=(rd&&!jaLancadoEsseMes)?Math.abs(Number(rd.valor)):0;
+        const cs=resultado.comparacaoSaldo;
+        const saldoAppAj=Number(cs.saldoApp)+ajusteRend;
+        const diferencaAj=Number(cs.diferenca)-ajusteRend;
+        const bateAj=cs.bate||Math.abs(diferencaAj)<=0.01;
+        return <div style={{marginBottom:18,padding:"12px 14px",borderRadius:10,
+        background:bateAj?C.greenLight:"#FEF3C7",
+        border:"1px solid "+(bateAj?C.green:"#F59E0B")}}>
+        {bateAj?
           <div style={{fontSize:13,fontWeight:700,color:C.green}}>
-            ✓ Saldo bate em {fmtD(resultado.comparacaoSaldo.data)}{resultado.comparacaoSaldo.ajustado?" (ajustado agora)":""} — {fmt(resultado.comparacaoSaldo.saldoBanco)}
+            ✓ Saldo bate em {fmtD(cs.data)}{cs.ajustado?" (ajustado agora)":""}{!cs.bate&&ajusteRend>0?" (contando o rendimento do mês)":""} — {fmt(cs.saldoBanco)}
           </div>
         :<>
           <div style={{fontSize:13,fontWeight:700,color:"#92400E",marginBottom:4}}>
-            ⚠️ Saldo não bate em {fmtD(resultado.comparacaoSaldo.data)}
+            ⚠️ Saldo não bate em {fmtD(cs.data)}
           </div>
           <div style={{fontSize:11,color:"#78350F",marginBottom:8}}>
-            Banco: {fmt(resultado.comparacaoSaldo.saldoBanco)} · App: {fmt(resultado.comparacaoSaldo.saldoApp)} · Diferença: {fmt(resultado.comparacaoSaldo.diferenca)}
+            Banco: {fmt(cs.saldoBanco)} · App: {fmt(saldoAppAj)}{ajusteRend>0&&" (já com o rendimento do mês)"} · Diferença: {fmt(diferencaAj)}
           </div>
-          {resultado.comparacaoSaldo.candidatos&&resultado.comparacaoSaldo.candidatos.length>0&&<div style={{marginBottom:8}}>
+          {cs.candidatos&&cs.candidatos.length>0&&<div style={{marginBottom:8}}>
             <div style={{fontSize:10,fontWeight:700,color:"#92400E",marginBottom:4,letterSpacing:".05em"}}>CANDIDATOS MAIS PROVÁVEIS</div>
-            {resultado.comparacaoSaldo.candidatos.map(c=><div key={c.row} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"3px 0"}}>
+            {cs.candidatos.map(c=><div key={c.row} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"3px 0"}}>
               <span style={{color:"#78350F"}}>{fmtD(c.data)} · {c.desc}</span>
               <span style={{fontWeight:600,color:"#92400E"}}>{fmt(c.valor)}</span>
             </div>)}
           </div>}
           <button onClick={criarAjuste} disabled={load}
             style={{width:"100%",padding:"8px",borderRadius:6,background:"#D97706",color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-            Criar lançamento de ajuste ({fmt(resultado.comparacaoSaldo.diferenca)})
+            Criar lançamento de ajuste ({fmt(diferencaAj)})
           </button>
         </>}
-      </div>}
+      </div>;
+      })()}
 
       {/* [NOVO 07/09] Rendimento do período (RENDIMENTO LIQUIDO do OFX) --
           nunca é uma transação de verdade, então não tem "par" do lado do
@@ -5629,27 +5660,39 @@ function ConciliarExtratoTab({data,onUpdate}){
           Lança direto, sem nenhuma tela de pareamento. */}
       {resultado.rendimentoDetectado&&(()=>{
         const {valor,dataInicio,dataFim}=resultado.rendimentoDetectado;
-        const existente=_rendimentoRowExistente(dataFim);
-        const valorBate=existente&&Math.abs(Math.abs(existente.valor)-Math.abs(valor))<=0.01;
-        const precisaAtualizar=existente&&!valorBate;
-        const jaLancado=existente&&valorBate;
+        const fechamento=_ultimoDiaDoMes(dataFim);
+        if(!fechamento){
+          // [NOVO 10/09] Fora do fechamento do mês -- só informativo, sem
+          // nenhum botão de ação. O valor final so vira lançamento quando
+          // o extrato alcançar o último dia do mês.
+          return <div style={{marginBottom:18,padding:"12px 14px",borderRadius:10,background:C.tealLight,border:"1px solid "+C.teal}}>
+            <div style={{fontSize:13,fontWeight:700,color:C.teal}}>💰 Rendimento acumulado no mês: {fmt(valor)}</div>
+            <div style={{fontSize:11,color:C.textSub,marginTop:4}}>
+              {dataInicio?fmtD(dataInicio)+" a ":""}{fmtD(dataFim)} · ainda rolando -- só vira lançamento quando o extrato alcançar o fechamento do mês (o Nubank zera e recomeça a contar no dia seguinte).
+            </div>
+          </div>;
+        }
+        const jaDoMes=_rendimentoDoMes(dataFim);
+        const valorBate=jaDoMes&&Math.abs(Math.abs(jaDoMes.valor)-Math.abs(valor))<=0.01;
+        const jaLancado=jaDoMes&&valorBate;
+        const precisaAtualizar=jaDoMes&&!valorBate;
         const cor=jaLancado?C.green:(precisaAtualizar?C.orange:C.teal);
         const bg=jaLancado?C.greenLight:(precisaAtualizar?C.orangeLight:C.tealLight);
         return <div style={{marginBottom:18,padding:"12px 14px",borderRadius:10,background:bg,border:"1px solid "+cor}}>
           <div style={{fontSize:13,fontWeight:700,color:cor,marginBottom:jaLancado?0:4}}>
-            {jaLancado?"✓ Rendimento já lançado":precisaAtualizar?"⚠ Rendimento mudou de valor":"💰 Rendimento do período"}
+            {jaLancado?"✓ Rendimento do mês já lançado":precisaAtualizar?"⚠ Rendimento do fechamento mudou de valor":"💰 Fechamento do mês"}
             {!precisaAtualizar&&(": "+fmt(valor))}
           </div>
           {precisaAtualizar&&<div style={{fontSize:11,color:C.textSub,marginBottom:8}}>
-            Já lançado como {fmt(existente.valor)} · o OFX agora traz {fmt(valor)} pro mesmo período ({fmtD(dataFim)}).
+            Já lançado como {fmt(jaDoMes.valor)} · o OFX agora traz {fmt(valor)} pro fechamento de {fmtD(dataFim)}.
           </div>}
           {!jaLancado&&<>
             {!precisaAtualizar&&<div style={{fontSize:11,color:C.textSub,marginBottom:8}}>
-              {dataInicio?fmtD(dataInicio)+" a ":""}{fmtD(dataFim)} · rendimento automático da conta (Nubank), informado no OFX mas nunca vem como transação -- lançar como Depósito Avulso.
+              {fmtD(dataFim)} é o último dia do mês -- lançar o rendimento total do mês como Depósito Avulso.
             </div>}
-            <button onClick={precisaAtualizar?(()=>atualizarRendimento(existente,valor)):lancarRendimento} disabled={lancandoRendimento}
+            <button onClick={precisaAtualizar?(()=>atualizarRendimento(jaDoMes.row,valor)):(()=>lancarRendimento(valor,dataFim))} disabled={lancandoRendimento}
               style={{width:"100%",padding:"8px",borderRadius:6,background:cor,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-              {lancandoRendimento?"…":precisaAtualizar?("Atualizar valor lançado para "+fmt(valor)):("Lançar rendimento ("+fmt(valor)+")")}
+              {lancandoRendimento?"…":precisaAtualizar?("Atualizar valor lançado para "+fmt(valor)):("Lançar rendimento do mês ("+fmt(valor)+")")}
             </button>
           </>}
         </div>;
@@ -11375,7 +11418,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260909.1500 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260910.2000 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -11462,7 +11505,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260909.1500
+      // HTML v3.20260910.2000
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
