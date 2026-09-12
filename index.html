@@ -172,11 +172,19 @@ const fmtD=s=>{
 // pra sempre depois de renomear pelo cadastro novo. Agora lê data.cartoes
 // primeiro (fonte atual); cai pro CONFIG legado só se o cartão não estiver
 // no cadastro por algum motivo; senão o default de sempre.
+// [CORRIGIDO 11/09, "fusão dos 3 campos de nome do cartão"] Antes tentava 3
+// fontes em cascata (cadastro novo -> chave solta antiga em CONFIG -> texto
+// fixo "Cartão PF/PJ") -- redundância real: as duas primeiras podiam
+// descolar se alguém editasse só uma. CONFIG.NOME_CARTAO_PF/PJ não é mais
+// escrito por nada no sistema desde a Fase 2 do multi-cartão (editarCartao
+// já escreve só em CARTOES.NOME) -- então essa fonte do meio nunca mais
+// muda sozinha, só existe fixa desde então. Fonte única agora: CARTOES.NOME
+// (mesmo padrão que CONTAS.NOME já usava), com o texto fixo só como último
+// recurso se o cadastro nunca teve nome nenhum.
 function nomeCartao(sigla,data){
   const cad=(data&&data.cartoes||[]).find(c=>c.id===sigla);
   if(cad&&cad.nome&&cad.nome.trim())return cad.nome.trim();
-  const custom=data&&data.config&&data.config["NOME_CARTAO_"+sigla];
-  return custom&&custom.trim()?custom.trim():"Cartão "+sigla;
+  return "Cartão "+sigla;
 }
 // [NOVO 20/07] Fechamento e vencimento de fatura configuraveis, desacoplados
 // um do outro -- mesmo raciocinio do backend (_configFatura/_calcVencimentoFatura
@@ -2090,6 +2098,11 @@ function CardDividaPosFixada({divida,onUpdate,data}){
 }
 function FormCriarEmprestimo({onSalvo,onClose,data}){
   const [desc,setDesc]=useState("");
+  // [NOVO 11/09, campo que faltava] "Nome no extrato/conciliação" -- o
+  // backend já exige isso pra qualquer recorrência nova (é o que deixa a
+  // Conciliação reconhecer sozinha quando o banco usa um texto diferente
+  // do nome cadastrado), mas esse formulário nunca tinha o campo.
+  const [aliasCsv,setAliasCsv]=useState("");
   const [valorTotal,setValorTotal]=useState("");
   const [valorParcela,setValorParcela]=useState("");
   const [parcelas,setParcelas]=useState("");
@@ -2103,8 +2116,8 @@ function FormCriarEmprestimo({onSalvo,onClose,data}){
   const envelopes=useMemo(()=>parseEnvelopesCustom(data||{}),[data]);
 
   async function salvar(){
-    if(!desc.trim()||!valorTotal||!valorParcela||!parcelas){
-      alert("Preencha descrição, valor recebido, valor da parcela e número de parcelas.");
+    if(!desc.trim()||!valorTotal||!valorParcela||!parcelas||!aliasCsv.trim()){
+      alert("Preencha descrição, valor recebido, valor da parcela, número de parcelas e o nome no extrato/banco.");
       return;
     }
     setLoad(true);
@@ -2122,7 +2135,7 @@ function FormCriarEmprestimo({onSalvo,onClose,data}){
       const r=await api({action:"lancarRecorrencia",descricao:desc,
         valor:-Math.abs(numBR(valorParcela)),forma,dia_venc:parseInt(diaVenc),
         semanal:false,destino:"FLUXO",parc_total:parseInt(parcelas),
-        tipo:"EMPRESTIMO",intervalo_meses:1,obs:"",envelope_padrao:envelopeId});
+        tipo:"EMPRESTIMO",intervalo_meses:1,obs:"",envelope_padrao:envelopeId,alias_csv:aliasCsv.trim().toUpperCase()});
       onSalvo(r);
     }catch(e){alert(e.message);}
     setLoad(false);
@@ -2142,6 +2155,10 @@ function FormCriarEmprestimo({onSalvo,onClose,data}){
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       <div><label style={lbl}>Descrição</label>
         <input value={desc} onChange={e=>setDesc(e.target.value.toUpperCase())} placeholder="Ex: EMPRÉSTIMO 5" style={inp}/></div>
+      <div><label style={lbl}>Nome no extrato/banco</label>
+        <input value={aliasCsv} onChange={e=>setAliasCsv(e.target.value.toUpperCase())} placeholder="Como aparece no extrato/fatura do banco" style={inp}/>
+        <div style={{fontSize:9,color:C.textMuted,marginTop:3}}>Obrigatório -- é o que deixa a Conciliação reconhecer essa parcela sozinha, mesmo se o texto do banco for diferente do nome acima.</div>
+      </div>
       <div style={{display:"flex",gap:8}}>
         <div style={{flex:1}}><label style={lbl}>Valor recebido (crédito)</label>
           <input type="text" inputMode="numeric" value={valorTotal} onChange={e=>setValorTotal(formatarMoedaInput(e.target.value))} placeholder="0,00" style={{...inp,textAlign:"right"}}/></div>
@@ -11418,7 +11435,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260910.2000 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260912.0030 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -11505,7 +11522,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260910.2000
+      // HTML v3.20260912.0030
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
