@@ -1449,7 +1449,7 @@ function CicloCard({fluxo,nome,atual,dcpResumo,basais}){
 }
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
-function Dashboard({data}){
+function Dashboard({data,onUpdate}){
   const fluxo=data.fluxo||[],cfg=data.config||{},hj=hoje();
   const dcpResumo=data.dcpResumo||{base:1250,numSemanas:0,totalGasto:0,semanas:[]};
   // Custo de vida dinamico: soma dos recorrentes DESPESA FIXA ativos (FLUXO
@@ -1485,7 +1485,50 @@ function Dashboard({data}){
   // ciclo mais antigo do historico pra sempre. ciclosOrdenados (acima) ja
   // filtra por data>=hoje antes de tirar os unicos -- so reaproveitar.
   const ciclos=useMemo(()=>ciclosOrdenados.slice(0,3),[ciclosOrdenados]);
+  // [NOVO 12/09, resolve pendência de 28/08 -- "sugestões fracas da virada
+  // de ciclo persistindo automaticamente"] A virada (rodando sozinha, sem
+  // ninguém olhando) pode achar duas assinaturas de cartão parecidas
+  // (nome diferente, valor igual) e antes essa sugestão nascia e morria
+  // no mesmo instante -- ninguém nunca via. Agora fica guardada em CONFIG
+  // até o Marcus decidir; aparece aqui, no primeiro lugar que ele abre.
+  const sugestoesAssinaturas=useMemo(()=>{
+    try{ return JSON.parse(cfg.SUGESTOES_ASSINATURAS_PENDENTES||"[]"); }catch(e){ return []; }
+  },[cfg.SUGESTOES_ASSINATURAS_PENDENTES]);
+  const [loadSugAssin,setLoadSugAssin]=useState(false);
+  const [emVooSugAssin,setEmVooSugAssin]=useState(null);
+  async function decidirSugestaoAssinatura(s,confirma){
+    setLoadSugAssin(true); setEmVooSugAssin(s.recorrencia+"|"+s.candidato);
+    try{
+      const r=await api({action:confirma?"confirmarSugestaoAssinatura":"descartarSugestaoAssinatura",
+        recorrencia:s.recorrencia,candidato:s.candidato});
+      onUpdate&&onUpdate(r);
+    }catch(e){ alert(e.message); }
+    setLoadSugAssin(false); setEmVooSugAssin(null);
+  }
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    {sugestoesAssinaturas.length>0&&<div style={{border:"1px solid "+C.orange,borderRadius:10,padding:"10px 12px",background:C.orangeLight}}>
+      <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:6}}>
+        🤔 {sugestoesAssinaturas.length} possível mesma assinatura, nomes diferentes — confirma?
+      </div>
+      {sugestoesAssinaturas.map((s,idx)=>{
+        const emVoo=emVooSugAssin===(s.recorrencia+"|"+s.candidato);
+        return <div key={idx} style={{background:"#fff",borderRadius:8,padding:"8px 10px",marginBottom:idx<sugestoesAssinaturas.length-1?6:0}}>
+          <div style={{fontSize:11,color:C.text}}>
+            <b>{s.recorrencia}</b> (R$ {Math.abs(s.valorRecorrencia).toFixed(2).replace(".",",")}) é o mesmo que <b>{s.candidato}</b> (R$ {Math.abs(s.valorCandidato).toFixed(2).replace(".",",")}) em {s.tipo}, {fmtD(s.vencimento)}?
+          </div>
+          <div style={{display:"flex",gap:6,marginTop:6}}>
+            <button onClick={()=>decidirSugestaoAssinatura(s,true)} disabled={loadSugAssin}
+              style={{padding:"5px 12px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+              {emVoo?"…":"Sim, é a mesma"}
+            </button>
+            <button onClick={()=>decidirSugestaoAssinatura(s,false)} disabled={loadSugAssin}
+              style={{padding:"5px 12px",borderRadius:6,background:"transparent",color:C.textMuted,fontSize:11,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
+              Não, são diferentes
+            </button>
+          </div>
+        </div>;
+      })}
+    </div>}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
       <div style={{background:bgZ(saldo),border:"2px solid "+corZ(saldo),borderRadius:16,padding:"14px 14px"}}>
         <Label>Saldo em conta</Label>
@@ -5335,6 +5378,24 @@ function ConciliarExtratoTab({data,onUpdate}){
     });
     return achado?achado.row:null;
   }
+  // [NOVO 12/09, corrige pendência de 14/08] Confirmado com o Marcus como o
+  // banco de verdade trata isso: pagamento atrasado/parcial não "pula" pra
+  // fatura atual só porque a data bateu com o ciclo de hoje -- o saldo em
+  // aberto de uma fatura antiga só se funde na atual quando essa PRÓXIMA
+  // fatura FECHA sem ter sido quitada antes (aí sim vira "rotativo", com
+  // juros, e passa a ser só mais um valor dentro da fatura nova). Enquanto
+  // isso não acontece, a fatura antiga continua em aberto (PROGRAMADO) e é
+  // ela que qualquer pagamento deveria abater primeiro -- nunca a calculada
+  // pela data de hoje. Só cai na conta por data (vencimentoFaturaDoMes) 
+  // quando não sobra nenhuma fatura antiga em aberto.
+  function acharFaturaAbertaMaisAntiga(cartao){
+    const tipoAlvo="CARTAO"+cartao;
+    const abertas=(data.fluxo||[]).filter(r=>{
+      const tNorm=String(r.tipo||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+      return tNorm===tipoAlvo&&r.status==="PROGRAMADO";
+    }).sort((a,b)=>a.data<b.data?-1:1);
+    return abertas.length?abertas[0]:null;
+  }
 
   async function processar(file){
     setLoad(true);
@@ -5492,9 +5553,12 @@ function ConciliarExtratoTab({data,onUpdate}){
         if(String(appId).indexOf("prev_")===0){
           const previa=previasApp[ofxId];
           if(previa.pagFatura){
-            const venc=vencimentoFaturaDoMes(n.data);
-            const row=acharFaturaRow(previa.pagFatura,venc);
-            if(!row){ alert("Não achei a fatura "+previa.pagFatura+" com vencimento "+fmtD(venc)+" pra \""+n.descricao.slice(0,40)+"\" -- pulei esse, os outros continuam."); continue; }
+            // [NOVO 12/09] Fatura antiga ainda em aberto sempre vence a
+            // calculada pela data -- só cai na conta por data quando não
+            // sobra nada atrasado daquele cartão.
+            const abertaAntiga=acharFaturaAbertaMaisAntiga(previa.pagFatura);
+            const row=abertaAntiga?abertaAntiga.row:acharFaturaRow(previa.pagFatura,vencimentoFaturaDoMes(n.data));
+            if(!row){ const venc=vencimentoFaturaDoMes(n.data); alert("Não achei a fatura "+previa.pagFatura+" com vencimento "+fmtD(venc)+" pra \""+n.descricao.slice(0,40)+"\" -- pulei esse, os outros continuam."); continue; }
             onUpdate(await api({action:"pagarFaturaAvulso",row,valorPago:Math.abs(Number(n.valor)),data:n.data}));
           }else if(previa.criarEspelho&&previa.contaEspelho){
             const origem=n.valor<0?(contaExtrato||"CONTA"):previa.contaEspelho;
@@ -11435,7 +11499,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260912.0030 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260912.1700 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -11475,7 +11539,7 @@ function Tesouraria(){
         {err}<button onClick={carregar} style={{display:"block",marginTop:8,color:C.accent,fontSize:12,background:"none",border:"none",cursor:"pointer",padding:0}}>Tentar novamente</button>
       </div>}
       {!load&&!err&&data&&(
-        tab==="dashboard"   ? <Dashboard data={data}/> :
+        tab==="dashboard"   ? <Dashboard data={data} onUpdate={setData}/> :
         tab==="fluxo"       ? <Fluxo data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
         tab==="historico"   ? <Historico data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
         tab==="timeline"    ? <Timeline data={data} onUpdate={setData} onIrPara={irPara}/> :
@@ -11522,7 +11586,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260912.0030
+      // HTML v3.20260912.1700
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
