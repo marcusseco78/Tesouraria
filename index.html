@@ -452,15 +452,24 @@ function apelidosCandidatos(descricaoCrua,data){
   const vistos=new Set();
   return out.filter(c=>{ if(vistos.has(c.apelido)) return false; vistos.add(c.apelido); return true; });
 }
-// Periodo que uma provisao DCP cobre: a data do envelope e sempre a
-// segunda-feira que FECHA a semana; a semana comeca 6 dias antes (terca).
-// So matematica de data em cima do que ja temos -- nenhum dado novo.
+// [NOVO 15/09] Reforma da janela semanal -- corte real decidido com o
+// Marcus em 15/09 (mesma data de corte usada no backend, _DCP_CORTE_JANELA
+// em Tesouraria_v3.txt). Envelope com data ANTES do corte: a data e a
+// segunda-feira que FECHA a semana (janela comeca 6 dias antes). Envelope
+// com data A PARTIR do corte: a data e a segunda-feira que ABRE a semana
+// (janela termina 6 dias depois). NUNCA recalcula historico -- so muda
+// pra frente a partir do corte.
 // Regra de NEGOCIO centralizada aqui -- tanto o formato completo quanto o
 // compacto consomem o mesmo intervalo, nunca recalculam por conta propria.
+var _DCP_CORTE_JANELA = "2026-09-16";
 function _intervaloDCP(dataEnvelope){
   const [y,m,d]=dataEnvelope.split("-").map(Number);
-  const fim=new Date(y,m-1,d,12,0,0);
-  const ini=new Date(fim); ini.setDate(ini.getDate()-6);
+  const ancora=new Date(y,m-1,d,12,0,0);
+  if(dataEnvelope < _DCP_CORTE_JANELA){
+    const fim=ancora, ini=new Date(fim); ini.setDate(ini.getDate()-6);
+    return {ini,fim};
+  }
+  const ini=ancora, fim=new Date(ini); fim.setDate(fim.getDate()+6);
   return {ini,fim};
 }
 function periodoDCP(dataEnvelope){
@@ -1449,7 +1458,52 @@ function CicloCard({fluxo,nome,atual,dcpResumo,basais}){
 }
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
-function Dashboard({data,onUpdate}){
+// [NOVO 12/09, Camada B do DCP] Componente compartilhado -- aparece no
+// Dashboard e na Previsão (mesmo bloco, mesma lógica de aplicar), já que
+// "Sim" no diálogo central leva direto pra Previsão pra ver o detalhe.
+const CORES_NIVEL_DCP={vermelho:{cor:"#991B1B",bg:"#FEE2E2"},laranja:{cor:"#EA580C",bg:"#FFF7ED"},amarelo:{cor:"#854D0E",bg:"#FEFCE8"},verde:{cor:"#16A34A",bg:"#F0FDF4"}};
+function AvisoEstouroDCP({estouro,onUpdate}){
+  const [aplicandoEstouro,setAplicandoEstouro]=useState(false);
+  async function aplicarEstouro(){
+    if(!estouro||!estouro.semanas||!estouro.semanas.length)return;
+    setAplicandoEstouro(true);
+    try{
+      const r=await api({action:"aplicarAjusteDCPEstouro",semanas:estouro.semanas});
+      onUpdate&&onUpdate(r);
+    }catch(e){ alert(e.message); }
+    setAplicandoEstouro(false);
+  }
+  if(!estouro||!estouro.temProblema) return null;
+  return <div style={{border:"1px solid "+C.red,borderRadius:10,padding:"10px 12px",background:C.redLight}}>
+    <div style={{fontSize:11,fontWeight:700,color:C.red,marginBottom:6}}>
+      ⚠️ Saldo projetado fica negativo em {fmtD(estouro.dataProblema)} — faltam {fmt(estouro.deficit)}
+    </div>
+    {estouro.semanas.length>0&&<>
+      <div style={{fontSize:10,color:C.textSub,marginBottom:6}}>
+        Cobre reduzindo estas semanas do DCP, sem passar do Mínimo Vital de nenhuma:
+      </div>
+      {estouro.semanas.map((s,idx)=>{
+        const cc=CORES_NIVEL_DCP[s.cor]||{cor:C.textSub,bg:"#fff"};
+        return <div key={idx} style={{background:cc.bg,borderRadius:8,padding:"7px 10px",marginBottom:idx<estouro.semanas.length-1?4:0,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span style={{fontSize:11,color:C.text}}>{s.desc||fmtD(s.data)}</span>
+          <span style={{fontSize:11,fontWeight:700,color:cc.cor}}>{fmt(s.valorAtual)} → {fmt(s.valorNovo)}</span>
+        </div>;
+      })}
+      <button onClick={aplicarEstouro} disabled={aplicandoEstouro}
+        style={{width:"100%",marginTop:8,padding:"8px",borderRadius:6,background:C.red,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+        {aplicandoEstouro?"…":"Aplicar essa redução"}
+      </button>
+    </>}
+    {estouro.sobra>0.01&&<div style={{fontSize:10,color:C.textSub,marginTop:8,fontStyle:"italic"}}>
+      Mesmo cortando até o Mínimo Vital de {estouro.semanas.length>0?"todas as semanas acima":"tudo"}, ainda falta {fmt(estouro.sobra)}.
+      {estouro.reagendamento&&estouro.reagendamento.sugestoes&&estouro.reagendamento.sugestoes.length>0
+        ?" Considere adiar \""+estouro.reagendamento.sugestoes[0].descricao+"\" (Ferramentas → Recorrências)."
+        :" Nenhuma conta postergável cadastrada resolveria o resto sozinha."}
+    </div>}
+  </div>;
+}
+
+function Dashboard({data,onUpdate,estouro}){
   const fluxo=data.fluxo||[],cfg=data.config||{},hj=hoje();
   const dcpResumo=data.dcpResumo||{base:1250,numSemanas:0,totalGasto:0,semanas:[]};
   // Custo de vida dinamico: soma dos recorrentes DESPESA FIXA ativos (FLUXO
@@ -1505,7 +1559,12 @@ function Dashboard({data,onUpdate}){
     }catch(e){ alert(e.message); }
     setLoadSugAssin(false); setEmVooSugAssin(null);
   }
+  // [NOVO 12/09, Camada B do DCP] estouro agora vem pronto do componente
+  // raiz (App) -- calculado ali, de forma central e debounced, pra
+  // disparar sozinho depois de qualquer lançamento/edição/conciliação, não
+  // só quando o Dashboard é aberto.
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    <AvisoEstouroDCP estouro={estouro} onUpdate={onUpdate}/>
     {sugestoesAssinaturas.length>0&&<div style={{border:"1px solid "+C.orange,borderRadius:10,padding:"10px 12px",background:C.orangeLight}}>
       <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:6}}>
         🤔 {sugestoesAssinaturas.length} possível mesma assinatura, nomes diferentes — confirma?
@@ -1651,7 +1710,33 @@ function DCPBaseEditor({data,onUpdate}){
       </>}
     </div>
     {msgGer&&<div style={{fontSize:10,color:C.textMuted,marginTop:4}}>{msgGer}</div>}
+    <BotaoMigracaoJanelaDCP onUpdate={onUpdate}/>
   </div>;
+}
+
+// [TEMPORARIO 15/09] Botao de uso unico pra migrar as semanas DCP futuras
+// pra reforma da janela semanal (ver Tesouraria_v3.txt, migrarJanelaDCP).
+// REMOVER este componente e o botao junto na proxima versao, depois que o
+// Marcus confirmar que rodou.
+function BotaoMigracaoJanelaDCP({onUpdate}){
+  const[loading,setLoading]=useState(false);
+  const[feito,setFeito]=useState(false);
+  async function rodar(){
+    if(!confirm("Isso apaga as semanas DCP futuras ainda sem gasto (a partir de 16/09) e recria com a regra nova da janela semanal. A semana aberta agora não é tocada. Rodar uma vez só — confirma?"))return;
+    setLoading(true);
+    try{
+      const r=await api({action:"migrarJanelaDCP"});
+      onUpdate(r);
+      setFeito(true);
+      alert((r.linhasApagadas||0)+" semana(s) futura(s) apagada(s), "+(r.itensRegenerados||0)+" recriada(s) com a regra nova.");
+    }catch(e){ alert(e.message); }
+    setLoading(false);
+  }
+  if(feito)return null;
+  return <button onClick={rodar} disabled={loading}
+    style={{marginTop:6,background:"#FEF3C7",color:"#92400E",border:"1px solid #FDE68A",borderRadius:6,padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+    {loading?"…":"⚠️ Migrar janela semanal do DCP (1x)"}
+  </button>;
 }
 
 // ── EDITOR DE ENVELOPE (DCP minimo/maximo) -- planejamento, nao rastreamento.
@@ -1893,20 +1978,6 @@ function SugestaoReagendamento({onUpdate}){
             {loadAplicar?"…":"Aplicar este adiamento"}
           </button>
         </div>)}
-        {resultado.sugestaoEnvelope&&<div style={{background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:8,padding:10,marginBottom:6}}>
-          <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:4}}>
-            Outra opção: reduzir {resultado.sugestaoEnvelope.semanas.length>1?`as ${resultado.sugestaoEnvelope.semanas.length} semanas antes do problema`:resultado.sugestaoEnvelope.semanas[0].descricao} pra <b>{resultado.sugestaoEnvelope.nivel}</b>
-          </div>
-          {resultado.sugestaoEnvelope.semanas.map((s,i)=><div key={i} style={{fontSize:11,color:C.textMuted,marginTop:i>0?2:0}}>
-            {s.descricao}: {fmt(s.metaAtual)} → {fmt(s.metaSugerida)}
-          </div>)}
-          <div style={{fontSize:11,color:C.textSub,marginTop:6,fontWeight:600}}>
-            Libera {fmt(resultado.sugestaoEnvelope.reducaoTotalLiberada)} no total — o suficiente pro déficit de {fmt(resultado.deficit)}
-          </div>
-          <div style={{fontSize:10,color:"#B45309",marginTop:4,fontStyle:"italic"}}>
-            Ainda não tem botão de aplicar direto — ajuste manualmente pelo "Limite de Despesas Cotidianas" acima, se preferir esse caminho.
-          </div>
-        </div>}
       </div>}
     </div>}
   </div>;
@@ -6711,7 +6782,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
   </div>;
 }
 
-function Fluxo({data,onUpdate,destaque,onIrPara}){
+function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
   const [conf,setConf]=useState(null);
   const [busca,setBusca]=useState("");
   const [mostrarCofres,setMostrarCofres]=useState(false);
@@ -6869,6 +6940,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara}){
   </div>;
 
   return <div>
+    {estouro&&estouro.temProblema&&<div style={{padding:"10px 14px 0"}}><AvisoEstouroDCP estouro={estouro} onUpdate={onUpdate}/></div>}
     <div style={{padding:"10px 14px"}}>
       <input type="text" value={busca} onChange={e=>setBusca(e.target.value.toUpperCase())} placeholder="🔍 Buscar por descrição ou categoria"
         style={{width:"100%",padding:"9px 14px",borderRadius:24,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
@@ -9784,9 +9856,10 @@ function ResetCartao({cartao, data, onUpdate}){
   async function executar(pago, nomeP, pend, nomeD, acctid){
     setLoad(true);setStep(3);
     try{
-      const param=cartao==="PJ"
-        ?{action:"resetCartao",cartao:"PJ",csvPagoE:pago,nomeArqPagoE:nomeP,csvPendPJ:pend,nomeArqPendPJ:nomeD,acctidPJ:acctid||""}
-        :{action:"resetCartao",cartao:"PF",csvPagoP:pago,nomeArqPagoP:nomeP,csvPendPF:pend,nomeArqPendPF:nomeD,acctidPF:acctid||""};
+      // [CORRIGIDO 12/09, resto da Fase 2 multi-cartao] Antes montava o
+      // pedido com nomes de campo diferentes por PF/PJ (csvPagoP/csvPagoE
+      // etc) -- agora 1 formato só, funciona pra qualquer cartão cadastrado.
+      const param={action:"resetCartao",cartao,csvPago:pago,nomeArqPago:nomeP,csvPend:pend,nomeArqPend:nomeD,acctid:acctid||""};
       const r=await api(param);
       onUpdate(r);
       setStep(0);
@@ -10389,6 +10462,17 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     catch(e){ alert(e.message); }
     setLoadDestravaFatura(false);
   }
+  // [NOVO 13/09, resolve pendência de 28/08] Recalcula o total dessa fatura
+  // travada sem precisar destravar/retravar em dois passos -- pra quando
+  // algo dentro dela foi corrigido (ex: valor de uma compra) depois de já
+  // travada, e o total mostrado no Fluxo ficou desatualizado.
+  const [loadResincFatura,setLoadResincFatura]=useState(false);
+  async function resincronizarFaturaAtual(){
+    setLoadResincFatura(true);
+    try{ onUpdate(await api({action:"ressincronizarFaturaTravada",cartao,vencimento:faturaAtual.venc})); }
+    catch(e){ alert(e.message); }
+    setLoadResincFatura(false);
+  }
   const [loadTravaFatura,setLoadTravaFatura]=useState(false);
   async function travarFaturaAtual(){
     if(!confirm("Travar a fatura "+cartao+" de vencimento "+fmtD(faturaAtual.venc)+"? Ela fica protegida -- nenhuma conciliação ou reconstrução mexe nela até você destravar de novo."))return;
@@ -10831,6 +10915,10 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           <button onClick={destravarFaturaAtual} disabled={loadDestravaFatura}
             style={{padding:"5px 10px",borderRadius:6,background:"#1E40AF",color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
             {loadDestravaFatura?"…":"🔓 Destravar esta fatura"}
+          </button>
+          <button onClick={resincronizarFaturaAtual} disabled={loadResincFatura}
+            style={{padding:"5px 10px",borderRadius:6,background:"transparent",color:"#1E40AF",fontSize:11,fontWeight:700,border:"1px solid #1E40AF",cursor:"pointer",fontFamily:"inherit",marginLeft:6}}>
+            {loadResincFatura?"…":"🔄 Recalcular total"}
           </button>
           <button onClick={()=>setAjusteAberto(!ajusteAberto)}
             style={{padding:"5px 10px",borderRadius:6,background:"transparent",color:"#1E40AF",fontSize:11,fontWeight:700,border:"1px solid #1E40AF",cursor:"pointer",fontFamily:"inherit",marginLeft:6}}>
@@ -11405,11 +11493,15 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
 function Tesouraria(){
   const [data,setData]=useState(null);const [load,setLoad]=useState(true);const [err,setErr]=useState(null);
   const [tab,setTab]=useState("dashboard");const [chatInit,setChatInit]=useState(null);
-  // [24/07] Timeline "esconde" Previsao/Historico da barra principal por
-  // padrao -- tocar de novo na Timeline (com ela ja ativa) revela as duas
-  // ao lado, como transicao gradual ate confiar 100% na Timeline (ou pra
-  // sempre, se o Marcus decidir manter as duas versoes -- e so um toggle).
-  const [timelineExpandida,setTimelineExpandida]=useState(false);
+  // [24/07] Timeline "escondia" Previsao/Historico da barra principal por
+  // padrao -- precisava tocar de novo na Timeline (com ela ja ativa) pra
+  // revelar as duas ao lado, como transicao gradual ate confiar 100% na
+  // Timeline. [REMOVIDO 15/09, pedido do Marcus] Previsao e Historico
+  // ficam sempre visiveis na barra agora -- a trava estava atrapalhando
+  // chegar nelas, que sao as telas que ele usa pra ajustes mais
+  // complicados. timelineExpandida fica travado em true (nunca mais false)
+  // so pra nao precisar reescrever toda a logica que ja depende dela.
+  const [timelineExpandida,setTimelineExpandida]=useState(true);
   const [destaque,setDestaque]=useState(null); // {tab,row,cartao} -- pra onde "ir pro lancamento" na aba DCP aponta
 
   // Navegacao com historico do navegador: TODA troca de aba passa por aqui
@@ -11417,12 +11509,6 @@ function Tesouraria(){
   // voltar do Android/navegador navega dentro do app em vez de sair dele.
   function navegar(novaTab,opts){
     opts=opts||{};
-    // Tocar na Timeline com ela ja ativa alterna a revelacao de Previsao/
-    // Historico, em vez de "navegar" pra ela de novo (nao muda de aba).
-    if(novaTab==="timeline"&&tab==="timeline"){
-      setTimelineExpandida(v=>!v);
-      return;
-    }
     setTab(novaTab);
     if(!opts.semHistorico && novaTab!==tab){
       try{ history.pushState({tesourariaTab:novaTab},"","#"+novaTab); }catch(e){}
@@ -11455,6 +11541,42 @@ function Tesouraria(){
     const t=setTimeout(()=>setDestaque(null),3000); // pisca e depois esquece sozinho
     return ()=>clearTimeout(t);
   },[destaque]);
+
+  // [NOVO 12/09, Camada B do DCP -- religada no ponto central, pedido do
+  // Marcus] Antes só rodava ao abrir o Dashboard. Agora observa `data` em
+  // si -- QUALQUER ação que mude alguma coisa (lançar, editar, conciliar)
+  // troca essa referência, disparando de novo sozinho, em qualquer tela.
+  // Debounce de 1.5s: uma ação em lote (ex: "Mesclar 26 pares") dispara
+  // `onUpdate` várias vezes seguidas -- sem isso, checaria 26 vezes à toa.
+  const [estouro,setEstouro]=useState(null);
+  const [estouroDialogAberto,setEstouroDialogAberto]=useState(false);
+  useEffect(()=>{
+    if(!data) return; // ainda carregando a primeira vez
+    const t=setTimeout(()=>{
+      api({action:"verificarEstouroProjetado"}).then(r=>{
+        setEstouro(r);
+        if(r&&r.temProblema){
+          const assinatura=r.piorData+"|"+Math.round((r.piorSaldo||0)*100);
+          let jaVisto=null;
+          try{ jaVisto=localStorage.getItem("tesouraria_dcp_estouro_dispensado"); }catch(e){}
+          if(jaVisto!==assinatura) setEstouroDialogAberto(true);
+        }
+      }).catch(()=>{});
+    },1500);
+    return ()=>clearTimeout(t);
+  },[data]);
+  function dispensarEstouroDialog(){
+    if(estouro&&estouro.temProblema){
+      const assinatura=estouro.piorData+"|"+Math.round((estouro.piorSaldo||0)*100);
+      try{ localStorage.setItem("tesouraria_dcp_estouro_dispensado",assinatura); }catch(e){}
+    }
+    setEstouroDialogAberto(false);
+  }
+  function irParaPrevisaoPeloEstouro(){
+    setEstouroDialogAberto(false);
+    irPara({tab:"fluxo"});
+  }
+
   // [NOVO 18/08] Toggle de som de feedback -- vive no cabecalho (fora do
   // switch de abas), entao aparece igual em todas as telas. Estado local so
   // pra repintar o botao; a fonte da verdade e o localStorage (somFeedbackAtivo()).
@@ -11499,7 +11621,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260912.1700 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260915.1130 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -11539,8 +11661,8 @@ function Tesouraria(){
         {err}<button onClick={carregar} style={{display:"block",marginTop:8,color:C.accent,fontSize:12,background:"none",border:"none",cursor:"pointer",padding:0}}>Tentar novamente</button>
       </div>}
       {!load&&!err&&data&&(
-        tab==="dashboard"   ? <Dashboard data={data} onUpdate={setData}/> :
-        tab==="fluxo"       ? <Fluxo data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
+        tab==="dashboard"   ? <Dashboard data={data} onUpdate={setData} estouro={estouro}/> :
+        tab==="fluxo"       ? <Fluxo data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara} estouro={estouro}/> :
         tab==="historico"   ? <Historico data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
         tab==="timeline"    ? <Timeline data={data} onUpdate={setData} onIrPara={irPara}/> :
         tab==="ferramentas" ? <Ferramentas onIrPara={t=>{navegar(t);}}/> :
@@ -11559,6 +11681,33 @@ function Tesouraria(){
         tab==="cofres"      ? <Cofres data={data} onUpdate={setData}/> : null
       )}
     </div>
+    {/* [NOVO 12/09, Camada B do DCP] Caixa de diálogo central -- aparece em
+        cima de qualquer tela, só quando um problema NOVO é detectado (não
+        repete pro mesmo problema já dispensado, guardado no localStorage). */}
+    {estouroDialogAberto&&estouro&&estouro.temProblema&&<div style={{
+      position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,
+      display:"flex",alignItems:"center",justifyContent:"center",padding:20,
+    }}>
+      <div style={{background:"#fff",borderRadius:14,padding:"20px 18px",maxWidth:380,width:"100%",boxShadow:"0 10px 40px rgba(0,0,0,.3)"}}>
+        <div style={{fontSize:15,fontWeight:800,color:C.red,marginBottom:10}}>⚠️ Saldo vai ficar negativo</div>
+        <div style={{fontSize:13,color:C.text,lineHeight:1.5,marginBottom:16}}>
+          O saldo em <b>{fmtD(estouro.dataProblema)}</b> fica negativo.
+          {estouro.diasNegativos>1&&<> No total, <b>{estouro.diasNegativos} dias</b> ficarão negativos no período projetado,</>}
+          {" "}com saldo mínimo de <b>{fmt(estouro.piorSaldo)}</b> (em {fmtD(estouro.piorData)}).
+        </div>
+        <div style={{fontSize:13,color:C.textSub,marginBottom:16}}>Deseja rodar a redefinição dos aportes semanais?</div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={dispensarEstouroDialog}
+            style={{flex:1,padding:"10px",borderRadius:8,background:C.borderLight,color:C.textSub,fontSize:13,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+            Não
+          </button>
+          <button onClick={irParaPrevisaoPeloEstouro}
+            style={{flex:1,padding:"10px",borderRadius:8,background:C.red,color:"#fff",fontSize:13,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+            Sim
+          </button>
+        </div>
+      </div>
+    </div>}
   </div>;
 }
 </script>
@@ -11586,7 +11735,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260912.1700
+      // HTML v3.20260915.1130
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
