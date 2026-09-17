@@ -1710,33 +1710,7 @@ function DCPBaseEditor({data,onUpdate}){
       </>}
     </div>
     {msgGer&&<div style={{fontSize:10,color:C.textMuted,marginTop:4}}>{msgGer}</div>}
-    <BotaoMigracaoJanelaDCP onUpdate={onUpdate}/>
   </div>;
-}
-
-// [TEMPORARIO 15/09] Botao de uso unico pra migrar as semanas DCP futuras
-// pra reforma da janela semanal (ver Tesouraria_v3.txt, migrarJanelaDCP).
-// REMOVER este componente e o botao junto na proxima versao, depois que o
-// Marcus confirmar que rodou.
-function BotaoMigracaoJanelaDCP({onUpdate}){
-  const[loading,setLoading]=useState(false);
-  const[feito,setFeito]=useState(false);
-  async function rodar(){
-    if(!confirm("Isso apaga as semanas DCP futuras ainda sem gasto (a partir de 16/09) e recria com a regra nova da janela semanal. A semana aberta agora não é tocada. Rodar uma vez só — confirma?"))return;
-    setLoading(true);
-    try{
-      const r=await api({action:"migrarJanelaDCP"});
-      onUpdate(r);
-      setFeito(true);
-      alert((r.linhasApagadas||0)+" semana(s) futura(s) apagada(s), "+(r.itensRegenerados||0)+" recriada(s) com a regra nova.");
-    }catch(e){ alert(e.message); }
-    setLoading(false);
-  }
-  if(feito)return null;
-  return <button onClick={rodar} disabled={loading}
-    style={{marginTop:6,background:"#FEF3C7",color:"#92400E",border:"1px solid #FDE68A",borderRadius:6,padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
-    {loading?"…":"⚠️ Migrar janela semanal do DCP (1x)"}
-  </button>;
 }
 
 // ── EDITOR DE ENVELOPE (DCP minimo/maximo) -- planejamento, nao rastreamento.
@@ -11621,7 +11595,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260915.1130 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260915.1400 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -11735,7 +11709,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260915.1130
+      // HTML v3.20260915.1400
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
