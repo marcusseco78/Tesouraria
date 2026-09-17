@@ -1539,55 +1539,17 @@ function Dashboard({data,onUpdate,estouro}){
   // ciclo mais antigo do historico pra sempre. ciclosOrdenados (acima) ja
   // filtra por data>=hoje antes de tirar os unicos -- so reaproveitar.
   const ciclos=useMemo(()=>ciclosOrdenados.slice(0,3),[ciclosOrdenados]);
-  // [NOVO 12/09, resolve pendência de 28/08 -- "sugestões fracas da virada
-  // de ciclo persistindo automaticamente"] A virada (rodando sozinha, sem
-  // ninguém olhando) pode achar duas assinaturas de cartão parecidas
-  // (nome diferente, valor igual) e antes essa sugestão nascia e morria
-  // no mesmo instante -- ninguém nunca via. Agora fica guardada em CONFIG
-  // até o Marcus decidir; aparece aqui, no primeiro lugar que ele abre.
-  const sugestoesAssinaturas=useMemo(()=>{
-    try{ return JSON.parse(cfg.SUGESTOES_ASSINATURAS_PENDENTES||"[]"); }catch(e){ return []; }
-  },[cfg.SUGESTOES_ASSINATURAS_PENDENTES]);
-  const [loadSugAssin,setLoadSugAssin]=useState(false);
-  const [emVooSugAssin,setEmVooSugAssin]=useState(null);
-  async function decidirSugestaoAssinatura(s,confirma){
-    setLoadSugAssin(true); setEmVooSugAssin(s.recorrencia+"|"+s.candidato);
-    try{
-      const r=await api({action:confirma?"confirmarSugestaoAssinatura":"descartarSugestaoAssinatura",
-        recorrencia:s.recorrencia,candidato:s.candidato});
-      onUpdate&&onUpdate(r);
-    }catch(e){ alert(e.message); }
-    setLoadSugAssin(false); setEmVooSugAssin(null);
-  }
+  // [REMOVIDO 15/09, pedido do Marcus] Bloco de "possível mesma assinatura,
+  // nomes diferentes" removido -- comparava previsão futura de uma
+  // recorrência contra previsão futura de OUTRA (nunca dado real do banco),
+  // então nunca havia risco de duplicata de verdade ali, só ruído. Ver
+  // _preencherRecorrentesCartao12Ciclos no backend, mesma remoção.
   // [NOVO 12/09, Camada B do DCP] estouro agora vem pronto do componente
   // raiz (App) -- calculado ali, de forma central e debounced, pra
   // disparar sozinho depois de qualquer lançamento/edição/conciliação, não
   // só quando o Dashboard é aberto.
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <AvisoEstouroDCP estouro={estouro} onUpdate={onUpdate}/>
-    {sugestoesAssinaturas.length>0&&<div style={{border:"1px solid "+C.orange,borderRadius:10,padding:"10px 12px",background:C.orangeLight}}>
-      <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:6}}>
-        🤔 {sugestoesAssinaturas.length} possível mesma assinatura, nomes diferentes — confirma?
-      </div>
-      {sugestoesAssinaturas.map((s,idx)=>{
-        const emVoo=emVooSugAssin===(s.recorrencia+"|"+s.candidato);
-        return <div key={idx} style={{background:"#fff",borderRadius:8,padding:"8px 10px",marginBottom:idx<sugestoesAssinaturas.length-1?6:0}}>
-          <div style={{fontSize:11,color:C.text}}>
-            <b>{s.recorrencia}</b> (R$ {Math.abs(s.valorRecorrencia).toFixed(2).replace(".",",")}) é o mesmo que <b>{s.candidato}</b> (R$ {Math.abs(s.valorCandidato).toFixed(2).replace(".",",")}) em {s.tipo}, {fmtD(s.vencimento)}?
-          </div>
-          <div style={{display:"flex",gap:6,marginTop:6}}>
-            <button onClick={()=>decidirSugestaoAssinatura(s,true)} disabled={loadSugAssin}
-              style={{padding:"5px 12px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-              {emVoo?"…":"Sim, é a mesma"}
-            </button>
-            <button onClick={()=>decidirSugestaoAssinatura(s,false)} disabled={loadSugAssin}
-              style={{padding:"5px 12px",borderRadius:6,background:"transparent",color:C.textMuted,fontSize:11,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
-              Não, são diferentes
-            </button>
-          </div>
-        </div>;
-      })}
-    </div>}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
       <div style={{background:bgZ(saldo),border:"2px solid "+corZ(saldo),borderRadius:16,padding:"14px 14px"}}>
         <Label>Saldo em conta</Label>
@@ -9936,13 +9898,6 @@ function ResetCartao({cartao, data, onUpdate}){
 
 function ImportarAssinaturas({onUpdate}){
   const [load, setLoad]=useState(false);
-  // [NOVO 06/08, ideia do Marcus] Sugestoes fracas -- valor proximo, mas
-  // nome muito diferente da recorrencia pra confiar num casamento automatico
-  // (ex: "Apple TV" vs "Amazon Prime Canais"). Fica pra confirmar, em vez
-  // de criar duplicata as cegas ou de simplesmente nao avisar nada.
-  const [sugestoes,setSugestoes]=useState(null);
-  const [loadSug,setLoadSug]=useState(false);
-  const [emVooSug,setEmVooSug]=useState(null);
 
   async function executar(){
     setLoad(true);
@@ -9958,52 +9913,17 @@ function ImportarAssinaturas({onUpdate}){
         "\nAdicionados PF: "+d.preenchimentoCartao.itensAdicionadosPF+
         "\nAdicionados PJ: "+d.preenchimentoCartao.itensAdicionadosPJ+corrTxt):"";
       alert("Assinaturas importadas!"+txt);
-      const fracas=d&&d.preenchimentoCartao&&d.preenchimentoCartao.sugestoesFracas;
-      setSugestoes(fracas&&fracas.length?fracas:null);
     }catch(e){alert("Erro: "+e.message);}
     setLoad(false);
-  }
-
-  async function confirmarSugestao(idx){
-    const s=sugestoes[idx];
-    setLoadSug(true); setEmVooSug(idx);
-    try{
-      const r=await api({action:"confirmarSugestaoAssinatura",recorrencia:s.recorrencia,candidato:s.candidato});
-      onUpdate(r);
-      setSugestoes(sugestoes.filter((_,i)=>i!==idx));
-    }catch(e){alert(e.message);}
-    setLoadSug(false); setEmVooSug(null);
   }
 
   return <div>
     <button onClick={executar} disabled={load}
       style={{width:"100%",padding:"8px",borderRadius:10,background:"transparent",
         color:C.textMuted,fontSize:11,fontWeight:600,border:"1px dashed "+C.border,
-        cursor:load?"default":"pointer",fontFamily:"inherit",marginBottom:sugestoes?8:12}}>
+        cursor:load?"default":"pointer",fontFamily:"inherit",marginBottom:12}}>
       {load?"Importando...":"📥 Importar/reparar assinaturas de cartão"}
     </button>
-    {sugestoes&&sugestoes.length>0&&<div style={{border:"1px solid "+C.orange,borderRadius:10,padding:"10px 12px",marginBottom:12,background:C.orangeLight}}>
-      <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:6}}>
-        🤔 {sugestoes.length} possível mesma assinatura, nomes diferentes — confirma?
-      </div>
-      {sugestoes.map((s,idx)=>
-        <div key={idx} style={{background:"#fff",borderRadius:8,padding:"8px 10px",marginBottom:6}}>
-          <div style={{fontSize:11,color:C.text}}>
-            <b>{s.recorrencia}</b> (R$ {Math.abs(s.valorRecorrencia).toFixed(2).replace(".",",")}) é o mesmo que <b>{s.candidato}</b> (R$ {Math.abs(s.valorCandidato).toFixed(2).replace(".",",")}) em {s.tipo}, {fmtD(s.vencimento)}?
-          </div>
-          <div style={{display:"flex",gap:6,marginTop:6}}>
-            <button onClick={()=>confirmarSugestao(idx)} disabled={loadSug}
-              style={{padding:"5px 12px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-              {emVooSug===idx?"…":"Sim, é a mesma"}
-            </button>
-            <button onClick={()=>setSugestoes(sugestoes.filter((_,i)=>i!==idx))} disabled={loadSug}
-              style={{padding:"5px 12px",borderRadius:6,background:"transparent",color:C.textMuted,fontSize:11,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
-              Não, são diferentes
-            </button>
-          </div>
-        </div>
-      )}
-    </div>}
   </div>;
 }
 
@@ -11595,7 +11515,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260915.1400 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260916.0900 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -11709,7 +11629,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260915.1400
+      // HTML v3.20260916.0900
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
