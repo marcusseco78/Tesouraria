@@ -4234,8 +4234,16 @@ function ConfiguracoesGerais({data,onUpdate,onIrPara}){
             <div>
               <input value={editNomeConta} onChange={e=>setEditNomeConta(e.target.value.toUpperCase())} placeholder="Nome"
                 style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",marginBottom:6}}/>
-              <input value={editTipoConta} onChange={e=>setEditTipoConta(e.target.value.toUpperCase())} placeholder="Tipo (PF/PJ/livre)"
-                style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",marginBottom:6}}/>
+              <div style={{display:"flex",gap:6,marginBottom:6}}>
+                {["PF","PJ",""].map(op=>
+                  <button key={op||"livre"} type="button" onClick={()=>setEditTipoConta(op)}
+                    style={{flex:1,padding:"6px 4px",borderRadius:20,border:"1px solid "+(editTipoConta===op?C.accent:C.border),
+                      background:editTipoConta===op?C.accent:"transparent",color:editTipoConta===op?"#fff":C.textMuted,
+                      fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                    {op||"Livre"}
+                  </button>
+                )}
+              </div>
               <div style={{display:"flex",gap:6}}>
                 <button onClick={()=>salvarEdicaoConta(c.id)} disabled={loadConta}
                   style={{flex:1,padding:"6px",borderRadius:6,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>Salvar</button>
@@ -4268,12 +4276,14 @@ function ConfiguracoesGerais({data,onUpdate,onIrPara}){
           <input value={novoNomeConta} onChange={e=>setNovoNomeConta(e.target.value.toUpperCase())} placeholder="Nome (ex: Poupança Itaú)"
             style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",marginBottom:6}}/>
           <div style={{display:"flex",gap:6,marginBottom:6}}>
-            <select value={novoTipoConta} onChange={e=>setNovoTipoConta(e.target.value)}
-              style={{padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit"}}>
-              <option value="PF">PF</option>
-              <option value="PJ">PJ</option>
-              <option value="">Livre</option>
-            </select>
+            {["PF","PJ",""].map(op=>
+              <button key={op||"livre"} type="button" onClick={()=>setNovoTipoConta(op)}
+                style={{padding:"7px 12px",borderRadius:20,border:"1px solid "+(novoTipoConta===op?C.accent:C.border),
+                  background:novoTipoConta===op?C.accent:"transparent",color:novoTipoConta===op?"#fff":C.textMuted,
+                  fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                {op||"Livre"}
+              </button>
+            )}
             <input type="text" inputMode="numeric" value={novoSaldoConta} onChange={e=>setNovoSaldoConta(formatarMoedaInput(e.target.value))} placeholder="Saldo inicial (opcional)"
               style={{flex:1,padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
           </div>
@@ -6049,6 +6059,7 @@ function Ferramentas({onIrPara}){
     </div>
     <div style={{padding:"14px 12px 0"}}>
       <BotaoFaseANomenclatura/>
+      <BotaoMigrarIdsNomenclatura/>
     </div>
   </div>;
 }
@@ -6074,8 +6085,33 @@ function BotaoFaseANomenclatura(){
   }
   if(feito)return null;
   return <button onClick={rodar} disabled={loading}
-    style={{width:"100%",padding:"8px",borderRadius:10,background:"#FEF3C7",color:"#92400E",border:"1px dashed #FDE68A",fontSize:11,fontWeight:700,cursor:loading?"default":"pointer",fontFamily:"inherit"}}>
+    style={{width:"100%",padding:"8px",borderRadius:10,background:"#FEF3C7",color:"#92400E",border:"1px dashed #FDE68A",fontSize:11,fontWeight:700,cursor:loading?"default":"pointer",fontFamily:"inherit",marginBottom:6}}>
     {loading?"…":"⚠️ Reforma de nomenclatura — Fase A (1x)"}
+  </button>;
+}
+
+// [TEMPORARIO 16/09] Botao de uso unico -- migração REAL dos IDs (Fase B
+// final): troca CONTAS.ID/CARTOES.ID pros IDs novos, renomeia as 2 abas
+// físicas, atualiza RECORRENCIAS/faturas travadas/ACCTID e grava o
+// apelido permanente pro histórico. REMOVER este componente e o botão
+// junto na próxima versão, depois que o Marcus confirmar que rodou.
+function BotaoMigrarIdsNomenclatura(){
+  const[loading,setLoading]=useState(false);
+  const[feito,setFeito]=useState(false);
+  async function rodar(){
+    if(!confirm("Isso troca de vez o ID da conta e do cartão PF/PJ pro formato novo (ex: PF.CC.NU-MC.PLT), renomeia as 2 abas de lançamento, e atualiza tudo que aponta pra elas. Lançamentos já feitos NUNCA são reescritos — continuam reconhecidos pelo texto antigo. Rodar uma vez só — confirma?"))return;
+    setLoading(true);
+    try{
+      const r=await api({action:"migrarIdsNomenclatura"});
+      setFeito(true);
+      alert("Migração concluída:\n"+(r.log||[]).join("\n"));
+    }catch(e){ alert(e.message); }
+    setLoading(false);
+  }
+  if(feito)return null;
+  return <button onClick={rodar} disabled={loading}
+    style={{width:"100%",padding:"8px",borderRadius:10,background:"#FEE2E2",color:"#991B1B",border:"1px dashed #FCA5A5",fontSize:11,fontWeight:700,cursor:loading?"default":"pointer",fontFamily:"inherit"}}>
+    {loading?"…":"🔴 Reforma de nomenclatura — Fase B, migração REAL de IDs (1x)"}
   </button>;
 }
 
@@ -11544,7 +11580,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260916.1030 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260916.1800 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -11658,7 +11694,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260916.1030
+      // HTML v3.20260916.1800
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
