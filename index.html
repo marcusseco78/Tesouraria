@@ -3975,6 +3975,10 @@ function ConfiguracoesGerais({data,onUpdate,onIrPara}){
   const [contaEditandoId,setContaEditandoId]=useState(null);
   const [editNomeConta,setEditNomeConta]=useState("");
   const [editTipoConta,setEditTipoConta]=useState("");
+  const [editBancoConta,setEditBancoConta]=useState("");
+  const [editTitularConta,setEditTitularConta]=useState("");
+  const [editCategoriaConta,setEditCategoriaConta]=useState("");
+  const [editUsaAutoConta,setEditUsaAutoConta]=useState(false);
   async function salvarNovaConta(){
     if(!novoNomeConta.trim()){ alert("Informe um nome pra conta."); return; }
     setLoadConta(true);
@@ -3986,12 +3990,15 @@ function ConfiguracoesGerais({data,onUpdate,onIrPara}){
     setLoadConta(false);
   }
   function abrirEdicaoConta(c){
-    setContaEditandoId(c.id);setEditNomeConta(c.nome);setEditTipoConta(c.tipo);
+    setContaEditandoId(c.id);setEditNomeConta(c.nomePersonalizado||c.nomeManual||c.nome);setEditTipoConta(c.tipo);
+    setEditBancoConta(c.banco||"");setEditTitularConta(c.titular||"");setEditCategoriaConta(c.categoria||"");
+    setEditUsaAutoConta(!!c.usaNomeAuto);
   }
   async function salvarEdicaoConta(id){
     setLoadConta(true);
     try{
-      const r=await api({action:"editarConta",id,nome:editNomeConta,tipo:editTipoConta});
+      const r=await api({action:"editarConta",id,nome:editNomeConta,tipo:editTipoConta,
+        banco:editBancoConta,titular:editTitularConta,categoria:editCategoriaConta,usaNomeAuto:editUsaAutoConta});
       onUpdate(r);setContaEditandoId(null);
     }catch(e){alert(e.message);}
     setLoadConta(false);
@@ -4032,6 +4039,10 @@ function ConfiguracoesGerais({data,onUpdate,onIrPara}){
   const [editContaCartaoCad,setEditContaCartaoCad]=useState("");
   const [editFechCartao,setEditFechCartao]=useState("");
   const [editVencCartao,setEditVencCartao]=useState("");
+  const [editBandeiraCartao,setEditBandeiraCartao]=useState("");
+  const [editCategoriaCartao,setEditCategoriaCartao]=useState("");
+  const [editBancoCartao,setEditBancoCartao]=useState("");
+  const [editUsaAutoCartao,setEditUsaAutoCartao]=useState(false);
   async function salvarNovoCartaoCad(){
     if(!novoNomeCartao.trim()){ alert("Informe um nome pro cartão."); return; }
     setLoadCartaoCad(true);
@@ -4043,13 +4054,16 @@ function ConfiguracoesGerais({data,onUpdate,onIrPara}){
     setLoadCartaoCad(false);
   }
   function abrirEdicaoCartaoCad(c){
-    setCartaoEditandoId(c.id);setEditNomeCartao(c.nome);setEditContaCartaoCad(c.conta);
+    setCartaoEditandoId(c.id);setEditNomeCartao(c.nomePersonalizado||c.nomeManual||c.nome);setEditContaCartaoCad(c.conta);
     setEditFechCartao(String(c.diaFechamento));setEditVencCartao(String(c.diaVencimento));
+    setEditBandeiraCartao(c.bandeira||"");setEditCategoriaCartao(c.categoria||"");setEditBancoCartao(c.banco||"");
+    setEditUsaAutoCartao(!!c.usaNomeAuto);
   }
   async function salvarEdicaoCartaoCad(id){
     setLoadCartaoCad(true);
     try{
-      const r=await api({action:"editarCartao",id,nome:editNomeCartao,conta:editContaCartaoCad,diaFechamento:editFechCartao,diaVencimento:editVencCartao});
+      const r=await api({action:"editarCartao",id,nome:editNomeCartao,conta:editContaCartaoCad,diaFechamento:editFechCartao,diaVencimento:editVencCartao,
+        bandeira:editBandeiraCartao,categoria:editCategoriaCartao,banco:editBancoCartao,usaNomeAuto:editUsaAutoCartao});
       onUpdate(r);setCartaoEditandoId(null);
     }catch(e){alert(e.message);}
     setLoadCartaoCad(false);
@@ -4127,10 +4141,29 @@ function ConfiguracoesGerais({data,onUpdate,onIrPara}){
         <div key={c.id} style={{border:"1px solid "+C.border,borderRadius:10,padding:"10px 12px",marginBottom:8,opacity:c.ativo?1:0.5}}>
           {cartaoEditandoId===c.id?
             <div>
-              <input value={editNomeCartao} onChange={e=>setEditNomeCartao(e.target.value.toUpperCase())} placeholder="Nome"
-                style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",marginBottom:6}}/>
+              <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.text,marginBottom:8,cursor:"pointer"}}>
+                <input type="checkbox" checked={editUsaAutoCartao} onChange={e=>setEditUsaAutoCartao(e.target.checked)}/>
+                Usar nome automático (Banco + Bandeira + Categoria)
+              </label>
+              {editUsaAutoCartao?
+                <div style={{fontSize:11,color:C.textMuted,marginBottom:6,fontStyle:"italic"}}>
+                  Prévia: {[editBancoCartao,editBandeiraCartao,editCategoriaCartao].filter(Boolean).join(" ")||"(preencha os campos abaixo — Banco herda da conta vinculada, se tiver)"}
+                </div>
+              :
+                <input value={editNomeCartao} onChange={e=>setEditNomeCartao(e.target.value.toUpperCase())} placeholder="Nome"
+                  style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",marginBottom:6}}/>
+              }
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
+                <input value={editBandeiraCartao} onChange={e=>setEditBandeiraCartao(e.target.value)} placeholder="Bandeira (ex: Mastercard)"
+                  style={{padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+                <input value={editCategoriaCartao} onChange={e=>setEditCategoriaCartao(e.target.value)} placeholder="Categoria (ex: Platinum)"
+                  style={{padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+              </div>
+              {!editContaCartaoCad&&<input value={editBancoCartao} onChange={e=>setEditBancoCartao(e.target.value)} placeholder="Banco (cartão avulso, sem conta)"
+                style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",marginBottom:6}}/>}
               {contasAtivas.length>1&&<select value={editContaCartaoCad} onChange={e=>setEditContaCartaoCad(e.target.value)}
                 style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",marginBottom:6}}>
+                <option value="">Avulso (sem conta)</option>
                 {contasAtivas.map(ct=><option key={ct.id} value={ct.id}>{ct.nome}</option>)}
               </select>}
               <div style={{display:"flex",gap:6,marginBottom:6}}>
@@ -4232,7 +4265,25 @@ function ConfiguracoesGerais({data,onUpdate,onIrPara}){
         <div key={c.id} style={{border:"1px solid "+C.border,borderRadius:10,padding:"10px 12px",marginBottom:8,opacity:c.ativa?1:0.5}}>
           {contaEditandoId===c.id?
             <div>
-              <input value={editNomeConta} onChange={e=>setEditNomeConta(e.target.value.toUpperCase())} placeholder="Nome"
+              <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.text,marginBottom:8,cursor:"pointer"}}>
+                <input type="checkbox" checked={editUsaAutoConta} onChange={e=>setEditUsaAutoConta(e.target.checked)}/>
+                Usar nome automático (Banco + Categoria + Titular)
+              </label>
+              {editUsaAutoConta?
+                <div style={{fontSize:11,color:C.textMuted,marginBottom:6,fontStyle:"italic"}}>
+                  Prévia: {[editBancoConta,editCategoriaConta,editTitularConta].filter(Boolean).join(" ")||"(preencha os campos abaixo)"}
+                </div>
+              :
+                <input value={editNomeConta} onChange={e=>setEditNomeConta(e.target.value.toUpperCase())} placeholder="Nome"
+                  style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",marginBottom:6}}/>
+              }
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
+                <input value={editBancoConta} onChange={e=>setEditBancoConta(e.target.value)} placeholder="Banco"
+                  style={{padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+                <input value={editCategoriaConta} onChange={e=>setEditCategoriaConta(e.target.value)} placeholder="Categoria (ex: Black)"
+                  style={{padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+              </div>
+              <input value={editTitularConta} onChange={e=>setEditTitularConta(e.target.value)} placeholder="Titular"
                 style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",marginBottom:6}}/>
               <div style={{display:"flex",gap:6,marginBottom:6}}>
                 {["PF","PJ",""].map(op=>
@@ -6060,6 +6111,7 @@ function Ferramentas({onIrPara}){
     <div style={{padding:"14px 12px 0"}}>
       <BotaoFaseANomenclatura/>
       <BotaoMigrarIdsNomenclatura/>
+      <BotaoFaseCNomenclatura/>
     </div>
   </div>;
 }
@@ -6110,8 +6162,33 @@ function BotaoMigrarIdsNomenclatura(){
   }
   if(feito)return null;
   return <button onClick={rodar} disabled={loading}
-    style={{width:"100%",padding:"8px",borderRadius:10,background:"#FEE2E2",color:"#991B1B",border:"1px dashed #FCA5A5",fontSize:11,fontWeight:700,cursor:loading?"default":"pointer",fontFamily:"inherit"}}>
+    style={{width:"100%",padding:"8px",borderRadius:10,background:"#FEE2E2",color:"#991B1B",border:"1px dashed #FCA5A5",fontSize:11,fontWeight:700,cursor:loading?"default":"pointer",fontFamily:"inherit",marginBottom:6}}>
     {loading?"…":"🔴 Reforma de nomenclatura — Fase B, migração REAL de IDs (1x)"}
+  </button>;
+}
+
+// [TEMPORARIO 16/09] Botao de uso unico -- Fase C (parte 1): cria os
+// campos novos de nome automatico (Categoria/Banco/Nome personalizado/
+// toggle) em Contas e Cartões. NÃO liga o nome automático pros 2
+// cadastros que já existem -- só prepara o terreno. REMOVER este
+// componente e o botão junto na próxima versão.
+function BotaoFaseCNomenclatura(){
+  const[loading,setLoading]=useState(false);
+  const[feito,setFeito]=useState(false);
+  async function rodar(){
+    if(!confirm("Isso adiciona os campos novos pro nome automático (Categoria/Banco/Nome personalizado) em Contas e Cartões, e preenche a Categoria dos 2 cartões existentes (Platinum/Micro Business). Não muda o nome que já aparece hoje. Rodar uma vez só — confirma?"))return;
+    setLoading(true);
+    try{
+      const r=await api({action:"preencherFaseCNomenclatura"});
+      setFeito(true);
+      alert((r.camposPreenchidos||0)+" campo(s) preenchido(s):\n"+(r.detalhe||[]).join("\n"));
+    }catch(e){ alert(e.message); }
+    setLoading(false);
+  }
+  if(feito)return null;
+  return <button onClick={rodar} disabled={loading}
+    style={{width:"100%",padding:"8px",borderRadius:10,background:"#DBEAFE",color:"#1E40AF",border:"1px dashed #93C5FD",fontSize:11,fontWeight:700,cursor:loading?"default":"pointer",fontFamily:"inherit"}}>
+    {loading?"…":"🔵 Reforma de nomenclatura — Fase C, campos de nome automático (1x)"}
   </button>;
 }
 
@@ -11580,7 +11657,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260916.1800 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260916.2100 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -11694,7 +11771,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260916.1800
+      // HTML v3.20260916.2100
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
