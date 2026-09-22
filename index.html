@@ -364,12 +364,21 @@ const CAT_LIVRES_GASTO=["DCP","EXTRAORDINARIA"];
 // Tolera a inconsistencia de acento ja existente nos dados (algumas linhas
 // antigas tem "EXTRAORDINÁRIA" com acento).
 function normTipoGasto(t){ return String(t||"").toUpperCase()==="EXTRAORDINÁRIA"?"EXTRAORDINARIA":t; }
+// [NOVO 17/09] Mesma lógica do backend (_ehTipoFaturaCartao): uma linha de
+// fatura sempre tem TIPO = "CARTAO " + id do cartão, pra QUALQUER cartão
+// registrado -- "começa com CARTAO" já identifica, sem precisar saber qual
+// id específico. Substitui os checks antigos que só reconheciam "CARTAO PF"
+// /"CARTAO PJ" literal (iam parar de funcionar pra fatura de cartão novo).
+function ehTipoFaturaCartao(t){
+  const n=String(t||"").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Z0-9]/g,"");
+  return n.indexOf("CARTAO")===0&&n.length>"CARTAO".length;
+}
 function unificarBucketGasto(item){
   const t=normTipoGasto(item.tipo);
   if(t==="DESPESA FIXA"||t==="IMPOSTO") return "DESPESA FIXA";
   if(t==="DCP") return "DCP";
   if(t==="EXTRAORDINARIA") return "EXTRAORDINARIA";
-  if(t==="CARTAO PF"||t==="CARTAO PJ"||t==="CARTÃO PF"||t==="CARTÃO PJ") return "PAGAMENTO_FATURA";
+  if(ehTipoFaturaCartao(t)) return "PAGAMENTO_FATURA";
   if(t==="PASSIVO") return "PAGAMENTO_EMPRESTIMO";
   if(t==="COFRE") return "COFRE";
   return null;
@@ -1106,36 +1115,42 @@ function previewItensCSV(csvTexto){
 }
 
 // Compara os itens de um CSV/OFX recém-lido contra o que o app já sabe: (1)
-// assinaturas ATIVAS do OUTRO cartão em RECORRENCIAS (coluna DESTINO), (2)
-// parcelamentos em andamento no OUTRO cartão (aba CARTAO_PF/PJ). Sinal de
-// que o arquivo pode ter sido trocado entre PF e PJ. Roda só no app -- os
+// assinaturas ATIVAS de OUTRO cartão em RECORRENCIAS (coluna DESTINO), (2)
+// parcelamentos em andamento em OUTRO cartão (aba CARTAO_<id>). Sinal de
+// que o arquivo pode ter sido trocado entre cartões. Roda só no app -- os
 // dados já estão carregados em `data`, não precisa ida-e-volta no backend.
+// [GENERALIZADO 17/09] Antes só comparava contra o "outro" fixo (PF<->PJ).
+// Agora compara contra QUALQUER outro cartão ativo, cobrindo um 3º cartão.
 function detectarContaminacaoCruzada(data, cartaoAlvo, itens){
-  const outro = cartaoAlvo==="PF"?"PJ":"PF";
+  const outros=(data.cartoes||[]).filter(c=>c.ativo&&c.id!==cartaoAlvo);
   const avisos=[];
 
-  const assinaturasOutro=(data.recorr||[])
-    .filter(r=>String(r[6]).toUpperCase()==="S"&&String(r[9]||"").toUpperCase()==="CARTAO_"+outro)
-    .map(r=>String(r[0]||"").toUpperCase())
-    .filter(Boolean);
+  outros.forEach(outroCartao=>{
+    const outro=outroCartao.id;
+    const nomeOutro=nomeCartao(outro,data);
+    const assinaturasOutro=(data.recorr||[])
+      .filter(r=>String(r[6]).toUpperCase()==="S"&&String(r[9]||"").toUpperCase().replace(/[^A-Z0-9_]/g,"")===("CARTAO_"+outro).toUpperCase().replace(/[^A-Z0-9_]/g,""))
+      .map(r=>String(r[0]||"").toUpperCase())
+      .filter(Boolean);
 
-  itens.forEach(item=>{
-    assinaturasOutro.forEach(nome=>{
-      if(item.desc.indexOf(nome)>=0){
-        avisos.push(`"${item.desc}" parece a assinatura "${nome}", que normalmente é do cartão ${outro}.`);
+    itens.forEach(item=>{
+      assinaturasOutro.forEach(nome=>{
+        if(item.desc.indexOf(nome)>=0){
+          avisos.push(`"${item.desc}" parece a assinatura "${nome}", que normalmente é do cartão ${nomeOutro}.`);
+        }
+      });
+    });
+
+    const parceladosOutro={};
+    ((data.cartaoItens&&data.cartaoItens[outro])||[]).forEach(r=>{
+      const parc=String(r[3]||"");
+      if(parc&&parc!=="1/1") parceladosOutro[String(r[1]||"").toUpperCase().trim()]=true;
+    });
+    itens.forEach(item=>{
+      if(item.totParc>1&&parceladosOutro[item.desc]){
+        avisos.push(`"${item.desc}" (parcela ${item.numParc}/${item.totParc}) já está sendo controlada como parcelamento no cartão ${nomeOutro}.`);
       }
     });
-  });
-
-  const parceladosOutro={};
-  (outro==="PF"?(data.cartaoPF||[]):(data.cartaoPJ||[])).forEach(r=>{
-    const parc=String(r[3]||"");
-    if(parc&&parc!=="1/1") parceladosOutro[String(r[1]||"").toUpperCase().trim()]=true;
-  });
-  itens.forEach(item=>{
-    if(item.totParc>1&&parceladosOutro[item.desc]){
-      avisos.push(`"${item.desc}" (parcela ${item.numParc}/${item.totParc}) já está sendo controlada como parcelamento no cartão ${outro}.`);
-    }
   });
 
   return avisos;
@@ -1145,7 +1160,7 @@ function detectarContaminacaoCruzada(data, cartaoAlvo, itens){
 // data e marcas em OBS (JSON) deixadas por baixa()/editar() -- puramente
 // visual, nunca influencia calculo nenhum.
 function corDoItem(item, hj){
-  const ehFatura=item.tipo==="CARTAO PF"||item.tipo==="CARTAO PJ";
+  const ehFatura=ehTipoFaturaCartao(item.tipo);
   let obs={};
   try{ obs=JSON.parse(item.obs||"{}"); }catch(e){}
   // [NOVO 20/07] Confirmado contra extrato de conta real (conciliarExtrato
@@ -1400,20 +1415,27 @@ function KPI({label,value,sub,color,bg,raw}){const neg=typeof raw==="number"&&ra
 </div>;}
 
 // ── CICLO CARD ────────────────────────────────────────────────────────────────
-function CicloCard({fluxo,nome,atual,dcpResumo,basais}){
+function CicloCard({fluxo,nome,atual,dcpResumo,basais,data}){
   const hj=hoje();
   const rows=fluxo.filter(r=>r.ciclo===nome);
   const receitas=rows.filter(r=>r.tipo==="RECEITA").reduce((s,r)=>s+r.valor,0);
   const saidas=Math.abs(rows.filter(r=>r.tipo!=="RECEITA").reduce((s,r)=>s+r.valor,0));
-  const fatPF=Math.abs(rows.filter(r=>r.tipo==="CARTÃO PF").reduce((s,r)=>s+r.valor,0));
-  const fatPJ=Math.abs(rows.filter(r=>r.tipo==="CARTÃO PJ").reduce((s,r)=>s+r.valor,0));
+  // [GENERALIZADO 17/09] Antes so somava CARTAO PF/PJ literal -- agora
+  // qualquer linha de fatura (comeca com "CARTAO", ver ehTipoFaturaCartao)
+  // conta, agrupada pelo id real do cartao extraido do proprio TIPO.
+  const faturasPorCartao={};
+  rows.filter(r=>ehTipoFaturaCartao(r.tipo)).forEach(r=>{
+    const cid=r.tipo.replace(/^CART[AÃ]O\s*/i,"").trim();
+    faturasPorCartao[cid]=(faturasPorCartao[cid]||0)+Math.abs(r.valor);
+  });
   const sorted=[...rows].filter(r=>r.saldoProjetado!=null).sort((a,b)=>a.data>b.data?1:-1);
   const saldo15=sorted.length?sorted[sorted.length-1].saldoProjetado:null;
   const fut=rows.filter(r=>r.data>=hj&&r.saldoProjetado!=null);
   const ml=fut.length?fut.reduce((m,r)=>r.saldoProjetado<m.saldoProjetado?r:m,fut[0]):null;
   const extras=[];
-  if(fatPF>0) extras.push({desc:"Fatura PF",v:fatPF});
-  if(fatPJ>0) extras.push({desc:"Fatura PJ",v:fatPJ});
+  Object.keys(faturasPorCartao).forEach(cid=>{
+    if(faturasPorCartao[cid]>0) extras.push({desc:"Fatura "+nomeCartao(cid,data),v:faturasPorCartao[cid]});
+  });
   rows.filter(r=>r.categoria==="DIVIDA_PARCELADA").forEach(r=>extras.push({desc:r.descricao.slice(0,30),v:Math.abs(r.valor)}));
   const totEx=extras.reduce((s,e)=>s+e.v,0);
   const pctEx=basais+totEx>0?totEx/(basais+totEx)*100:0;
@@ -1429,11 +1451,11 @@ function CicloCard({fluxo,nome,atual,dcpResumo,basais}){
       <KPI label="Receitas" value={fmt(receitas)} color={C.blue} bg={C.blueLight}/>
       <KPI label="Saídas" value={fmt(saidas)} color={C.red} bg={C.redLight}/>
     </div>
-    {(fatPF>0||fatPJ>0)&&<div style={{borderTop:"1px solid "+C.border,paddingTop:10,display:"flex",gap:8,marginBottom:10}}>
-      <div style={{flex:1,background:C.borderLight,borderRadius:8,padding:"8px 10px"}}><Label>Fatura PF 07</Label>
-        <div style={{fontSize:13,fontWeight:700,color:C.text,marginTop:2}}>{fatPF>0?fmt(fatPF):"—"}</div></div>
-      <div style={{flex:1,background:C.borderLight,borderRadius:8,padding:"8px 10px"}}><Label>Fatura PJ 07</Label>
-        <div style={{fontSize:13,fontWeight:700,color:C.text,marginTop:2}}>{fatPJ>0?fmt(fatPJ):"—"}</div></div>
+    {Object.keys(faturasPorCartao).some(cid=>faturasPorCartao[cid]>0)&&<div style={{borderTop:"1px solid "+C.border,paddingTop:10,display:"flex",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+      {Object.keys(faturasPorCartao).map(cid=><div key={cid} style={{flex:"1 1 45%",background:C.borderLight,borderRadius:8,padding:"8px 10px"}}>
+        <Label>Fatura {nomeCartao(cid,data)}</Label>
+        <div style={{fontSize:13,fontWeight:700,color:C.text,marginTop:2}}>{faturasPorCartao[cid]>0?fmt(faturasPorCartao[cid]):"—"}</div>
+      </div>)}
     </div>}
     {atual&&dcpResumo&&dcpResumo.semanas.length>0&&<div style={{borderTop:"1px solid "+C.border,paddingTop:10,marginBottom:10}}>
       <div style={{marginBottom:6}}><Label>Saldo p/ Despesas Cotidianas (DCP)</Label></div>
@@ -1620,7 +1642,7 @@ function Dashboard({data,onUpdate,estouro}){
       </div>
       <Chart pts={chartPts} zoomX={zoomX}/>
     </Card>
-    {ciclos.map((n,i)=><CicloCard key={n} fluxo={fluxo} nome={n} atual={i===0} dcpResumo={dcpResumo} basais={basais}/>)}
+    {ciclos.map((n,i)=><CicloCard key={n} fluxo={fluxo} nome={n} atual={i===0} dcpResumo={dcpResumo} basais={basais} data={data}/>)}
     <div style={{height:8}}/>
   </div>;
 }
@@ -5007,7 +5029,7 @@ function PreviaAppCartao({item,previa,numero,envelopes,despesasFixas,ocorrencias
 // dentro do componente do cartão arriscaria quebrar o que já funciona lá
 // só pra acomodar campos que ele nunca usa. Mesmo contrato de "nunca salva
 // sozinha" -- só grava quando Mesclar roda.
-function PreviaAppExtrato({n,previa,numero,envelopes,contas,despesasFixas,ocorrenciasProgramadasDe,onMudar,onDesvincular}){
+function PreviaAppExtrato({n,previa,numero,envelopes,contas,cartoes,data,despesasFixas,ocorrenciasProgramadasDe,onMudar,onDesvincular}){
   const cor=numero?PALETA_PARES[(numero-1)%PALETA_PARES.length]:{cor:C.blue,bg:"#EFF6FF"};
   return <div style={{width:"90%",marginLeft:"auto",marginBottom:6}}>
     <div style={{
@@ -5025,7 +5047,7 @@ function PreviaAppExtrato({n,previa,numero,envelopes,contas,despesasFixas,ocorre
     <div style={{border:"1px solid "+cor.cor,borderTop:"none",borderRadius:"0 0 8px 8px",padding:"7px 10px",background:cor.bg}}>
       <div style={{fontSize:9,color:C.textMuted,fontWeight:700,letterSpacing:".05em",marginBottom:4}}>ISSO É PAGAMENTO DE FATURA?</div>
       <div style={{display:"flex",gap:6,marginBottom:8}}>
-        {[["","Não"],["PJ","Fatura PJ"],["PF","Fatura PF"]].map(([val,label])=>(
+        {[["","Não"]].concat((cartoes||[]).filter(c=>c.ativo).map(c=>[c.id,"Fatura "+nomeCartao(c.id,data)])).map(([val,label])=>(
           <button key={val} onClick={()=>onMudar({...previa,pagFatura:val||null})}
             style={{flex:1,padding:"5px",borderRadius:6,fontSize:10,fontWeight:700,fontFamily:"inherit",cursor:"pointer",
               border:"1px solid "+((previa.pagFatura||"")===val?C.accent:C.border),
@@ -5907,6 +5929,8 @@ function ConciliarExtratoTab({data,onUpdate}){
                   numero={parIdParaNumero[idOfx]}
                   envelopes={parseEnvelopesCustom(data)}
                   contas={(data.contas||[]).filter(c=>c.ativa!==false&&c.id!==contaExtrato)}
+                  cartoes={data.cartoes}
+                  data={data}
                   despesasFixas={despesasFixas}
                   ocorrenciasProgramadasDe={ocorrenciasProgramadasDe}
                   onMudar={nova=>mudarPrevia(idOfx,nova)}
@@ -6345,7 +6369,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
   }
 
   const hj=hoje();
-  const ehFatura=item.tipo==="CARTAO PF"||item.tipo==="CARTAO PJ";
+  const ehFatura=ehTipoFaturaCartao(item.tipo);
   const podeExecutar=item.status==="PROGRAMADO";
   const execMode=podeExecutar&&dt<=hj;
 
@@ -7700,12 +7724,16 @@ function buildPrompt(data){
     const s15=sorted.length?sorted[sorted.length-1].saldoProjetado:null;
     const fut2=rows.filter(r=>r.data>=hj&&r.saldoProjetado!=null);
     const mlc=fut2.length?fut2.reduce((m,r)=>r.saldoProjetado<m.saldoProjetado?r:m,fut2[0]):null;
-    const fatPF=Math.abs(rows.filter(r=>r.tipo==="CARTAO PF"||r.tipo==="CARTÃO PF").reduce((s,r)=>s+r.valor,0));
-    const fatPJ=Math.abs(rows.filter(r=>r.tipo==="CARTAO PJ"||r.tipo==="CARTÃO PJ").reduce((s,r)=>s+r.valor,0));
+    const faturasPorCartaoC={};
+    rows.filter(r=>ehTipoFaturaCartao(r.tipo)).forEach(r=>{
+      const cid=r.tipo.replace(/^CART[AÃ]O\s*/i,"").trim();
+      faturasPorCartaoC[cid]=(faturasPorCartaoC[cid]||0)+Math.abs(r.valor);
+    });
+    const faturasTxt=Object.keys(faturasPorCartaoC).filter(cid=>faturasPorCartaoC[cid]>0)
+      .map(cid=>" | fat"+cid+" "+fmt(faturasPorCartaoC[cid])).join("");
     return nome+": rec "+fmt(rec)+" | sai "+fmt(sai)+(s15!=null?" | dia15 "+fmt(s15):"")+
            (mlc?" | menorLiq "+fmt(mlc.saldoProjetado)+" em "+fmtD(mlc.data):"")+
-           (fatPF>0?" | fatPF "+fmt(fatPF):"")+
-           (fatPJ>0?" | fatPJ "+fmt(fatPJ):"");
+           faturasTxt;
   }).join("\n");
 
   // Próximos 30 dias de lançamentos (mais detalhado)
@@ -7714,6 +7742,13 @@ function buildPrompt(data){
 
   // Últimos executados (para contexto recente)
   const ultimos=ex.slice(-10).map(r=>"row:"+r.row+"|"+r.data+"|"+r.descricao+"|"+fmt(r.valor)).join("\n");
+
+  // [NOVO 17/09] Lista dinâmica de cartões registrados, pro assistente
+  // conhecer qualquer cartão cadastrado, não só PF/PJ fixos.
+  const cartoesAtivosPrompt=(data.cartoes||[]).filter(c=>c.ativo);
+  const cartoesListaTxt=cartoesAtivosPrompt.map(c=>'Cartão '+nomeCartao(c.id,data)+' = cartao="'+c.id+'"').join("\n");
+  const cartoesNomesTxt=cartoesAtivosPrompt.map(c=>nomeCartao(c.id,data)).join(" ou ");
+  const cartaoExemploId=cartoesAtivosPrompt[0]?cartoesAtivosPrompt[0].id:"PF";
 
   const alertas=[];
   if(ml&&ml.saldoProjetado<0) alertas.push("⚠ LIQUIDEZ NEGATIVA: "+fmt(ml.saldoProjetado)+" em "+fmtD(ml.data)+" — checar se HSA cobre antes");
@@ -7780,18 +7815,18 @@ Para FATURA de cartão (CSV Nubank):
 - Estorno (valor positivo que não é pagamento): RECEITA
 - CONCILIAÇÃO: o CSV tem a data da COMPRA; o vencimento é ~30 dias depois (ex: compra em junho → vence em julho)
 - PASSO 1: identifique o vencimento desta fatura (dia ${cfg.CARTAO_DIA_VENCIMENTO||7} do mês seguinte ao fechamento, salvo configuração diferente)
-- PASSO 2: nos dados do CARTÃO_PF/PJ acima, localize o bloco de vencimento correspondente (dia ${cfg.CARTAO_DIA_VENCIMENTO||7})
+- PASSO 2: nos dados de cada cartão acima (CARTÃO_<id>), localize o bloco de vencimento correspondente (dia ${cfg.CARTAO_DIA_VENCIMENTO||7})
 - PASSO 3: compare CSV com esse bloco — itens com mesma descrição (aproximada) e valor = JÁ LANÇADO
 - PASSO 4: lance só o que NÃO está no bloco
 - Se a pessoa pedir para listar o que já está na planilha: mostre o bloco do vencimento correspondente
-- Cartão PF = cartao="PF", Cartão PJ = cartao="PJ"
+${cartoesListaTxt}
 - Parcelados: informe total de parcelas
 - "RECEITA FED" ou "DARF" = tipo="IMPOSTO", dcp="N"
 - Se não existe: usar lancarCartao
 - Assinaturas = DESPESA FIXA, dcp="N": YouTube, Claude, ChatGPT, Google, Netlify, Jusbrasil, Folha de S.Paulo, Premiere, Disney, Netflix, Spotify
 - Gastos do dia a dia = DCP, dcp="S"
 - Restaurantes, alimentação, farmácia, posto = DCP
-- Cartão PF = cartao="PF", Cartão PJ = cartao="PJ"
+${cartoesListaTxt}
 - Parcelados: coloque o total de parcelas (ex: "3x" no CSV = parcelas:3)
 - "RECEITA FED" ou "DARF" = imposto, tipo="IMPOSTO", dcp="N"
 - data_compra = data da compra no CSV (não do vencimento)
@@ -7807,19 +7842,19 @@ RECEITAS: sempre pelo valor líquido real (NF ou cálculo bruto − retenção).
 
 REGRAS DE OPERAÇÃO:
 - Despesas = valor negativo. Receitas = valor positivo.
-- Tipos: RECEITA | DCP | DESPESA FIXA | EMPRESTIMO | CARTÃO PF | CARTÃO PJ | FAMÍLIA | EXTRAORDINÁRIA
-- Formas: CONTA | DÉBITO | CARTÃO PF | CARTÃO PJ
+- Tipos: RECEITA | DCP | DESPESA FIXA | EMPRESTIMO | CARTÃO <id do cartão> | FAMÍLIA | EXTRAORDINÁRIA
+- Formas: CONTA | DÉBITO | CARTÃO <id do cartão>
 
 AÇÕES (use quando a pessoa pedir operações na planilha):
 Coloque o JSON em linha isolada, ANTES da explicação. NUNCA misture JSON com texto corrido.
 
 DESTINO AMBÍGUO (conta ou cartão) — pergunte antes de agir:
-Se a pessoa mencionar um gasto novo em texto livre (ex: "gastei 45 na farmácia") sem dizer se foi na conta ou em qual cartão (PF/PJ), NÃO adivinhe e NÃO proponha JSON nenhum ainda — pergunte primeiro, em texto simples, algo como "Foi na conta, no cartão PF ou no cartão PJ?". Só monte o JSON de lancar/lancarCartao depois que ela responder. Isso vale só pra lançamento novo mencionado em texto solto — não se aplica à conciliação de CSV (que já tem suas próprias regras acima) nem quando ela já disse explicitamente onde foi.
+Se a pessoa mencionar um gasto novo em texto livre (ex: "gastei 45 na farmácia") sem dizer se foi na conta ou em qual cartão, NÃO adivinhe e NÃO proponha JSON nenhum ainda — pergunte primeiro, em texto simples, algo como "Foi na conta, no cartão ${cartoesNomesTxt}?". Só monte o JSON de lancar/lancarCartao depois que ela responder. Isso vale só pra lançamento novo mencionado em texto solto — não se aplica à conciliação de CSV (que já tem suas próprias regras acima) nem quando ela já disse explicitamente onde foi.
 
 Lancar conta: {"acao":"lancar","lancamentos":[{"data":"YYYY-MM-DD","descricao":"DESC","valor":-100,"tipo":"DCP","categoria":"DCP","forma":"CONTA","status":"EXECUTADO","obs":""}],"resumo":"texto"}
-Lancar cartao: {"acao":"lancarCartao","cartao":"PF","descricao":"DESC","valor":-300,"parcelas":3,"categoria":"DCP","dcp":"S","data_compra":"YYYY-MM-DD","resumo":"texto"}
+Lancar cartao: {"acao":"lancarCartao","cartao":"${cartaoExemploId}","descricao":"DESC","valor":-300,"parcelas":3,"categoria":"DCP","dcp":"S","data_compra":"YYYY-MM-DD","resumo":"texto"}
 Baixa: {"acao":"baixa","row":N,"valorReal":-100,"resumo":"texto"}
-Baixa fatura: {"acao":"baixaFatura","cartao":"PF","vencimento":"YYYY-MM-DD","valorPago":-6800,"resumo":"texto"}
+Baixa fatura: {"acao":"baixaFatura","cartao":"${cartaoExemploId}","vencimento":"YYYY-MM-DD","valorPago":-6800,"resumo":"texto"}
 Editar campo: {"acao":"editar","row":N,"campo":"VALOR","valor":"-150","resumo":"texto"}
 Editar varios: {"acao":"editar","lancamentos":[{"row":N,"campo":"DATA","valor":"2026-07-17"}],"resumo":"texto"}
 Deletar: {"acao":"deletar","row":N,"resumo":"texto"}
@@ -9079,8 +9114,8 @@ function BotaoLancar({data,onUpdate,onIrPara}){
     :fonteEspSelecionada.modo.calculada?Number(plantoesEsp)>0
     :!!numBR(bruto));
 
-  const ehPagamento=dest==="pagpj"||dest==="pagpf";
-  const cartaoPagamento=dest==="pagpj"?"PJ":"PF";
+  const ehPagamento=dest.indexOf("pagcartao:")===0;
+  const cartaoPagamento=ehPagamento?dest.slice(10):"";
   const tipoAlvoPagamento="CARTAO "+cartaoPagamento;
 
   // Faturas/pagamentos em aberto desse cartao (para o seletor de "Pagar
@@ -9158,6 +9193,11 @@ function BotaoLancar({data,onUpdate,onIrPara}){
   // "Qual despesa fixa/qual emprestimo/qual parcela" NUNCA vira pilula --
   // vira select dentro da bandeja classica (mesmo padrao ja usado em Fatura
   // Avulsa e Receita Esporadica), porque sao listas de dados, nao categorias.
+  // [GENERALIZADO 17/09] Antes 2 cartoes fixos (PF/PJ) espalhados pela
+  // arvore toda. Agora 1 lista soh (cartoesAtivosMenu), e cada no/acao de
+  // cartao e gerado a partir dela -- registrar um 3o cartao aparece aqui
+  // sozinho, sem editar nada.
+  const cartoesAtivosMenu=(data.cartoes||[]).filter(c=>c.ativo);
   const NODES={
     // [NOVO 25/07] Reforma pedida pelo Marcus: 5 raizes em vez de 2
     // (Gastos/Ganhos), separando Emprestimos/Cofres/Cartoes -- fica mais
@@ -9176,33 +9216,18 @@ function BotaoLancar({data,onUpdate,onIrPara}){
     emp_pagamento:[{id:"cred_parcelados",label:"Parcelado"},{id:"cred_posfixados",label:"Pós-Fixado"}],
     cofresinvest:[{id:"cofre_aporte",label:"Aporte"},{id:"cofre_resgate",label:"Resgate"}],
     cartoes:[{id:"cartoes_prox",label:"Pagamento Próxima Fatura"},{id:"cartoes_avulso",label:"Pagamento Avulso"},{id:"cartoes_compras",label:"Compras"}],
-    cartoes_prox:[{id:"fat_pf_proxima",label:nomeCartao("PF",data)},{id:"fat_pj_proxima",label:nomeCartao("PJ",data)}],
-    cartoes_avulso:[{id:"fat_pf_avulsa",label:nomeCartao("PF",data)},{id:"fat_pj_avulsa",label:nomeCartao("PJ",data)}],
-    cartoes_compras:[{id:"gastos_cartao_pf",label:nomeCartao("PF",data)},{id:"gastos_cartao_pj",label:nomeCartao("PJ",data)}],
-    gastos_cartao_pf:[{id:"fixa_pf",label:"Despesas Fixas"},{id:"dcp_pf",label:"Gastos Semanais"},{id:"extra_pf",label:"Extraordinário"}],
-    gastos_cartao_pj:[{id:"fixa_pj",label:"Despesas Fixas"},{id:"dcp_pj",label:"Gastos Semanais"},{id:"extra_pj",label:"Extraordinário"}],
+    cartoes_prox:cartoesAtivosMenu.map(c=>({id:"fatprox:"+c.id,label:nomeCartao(c.id,data)})),
+    cartoes_avulso:cartoesAtivosMenu.map(c=>({id:"fatavulsa:"+c.id,label:nomeCartao(c.id,data)})),
+    cartoes_compras:cartoesAtivosMenu.map(c=>({id:"gastoscartao:"+c.id,label:nomeCartao(c.id,data)})),
   };
+  cartoesAtivosMenu.forEach(c=>{
+    NODES["gastoscartao:"+c.id]=[{id:"fixa:"+c.id,label:"Despesas Fixas"},{id:"dcp:"+c.id,label:"Gastos Semanais"},{id:"extra:"+c.id,label:"Extraordinário"}];
+  });
   const LEAF_ACOES={
-    // [22/07] Despesa Fixa em CARTAO nunca antecipa individualmente -- vem
-    // junto da fatura inteira. So resta criar nova, na aba especializada.
-    fixa_pf:()=>{fecharTudo();onIrPara&&onIrPara({tab:"recorr"});},
-    fixa_pj:()=>{fecharTudo();onIrPara&&onIrPara({tab:"recorr"});},
     // Despesa Fixa em CONTA -- abre a bandeja com o select de qual antecipar
     fixa_conta:()=>{setDest("fixaconta");setFormAberto(true);},
-    dcp_pf:()=>{setDest("pf");setCat("DCP");setVNeg(true);setFormAberto(true);},
-    extra_pf:()=>{setDest("pf");setCat("EXTRAORDINARIA");setVNeg(true);setFormAberto(true);},
-    dcp_pj:()=>{setDest("pj");setCat("DCP");setVNeg(true);setFormAberto(true);},
-    extra_pj:()=>{setDest("pj");setCat("EXTRAORDINARIA");setVNeg(true);setFormAberto(true);},
     dcp_conta:()=>{setDest("conta");setCat("DCP");setVNeg(true);setFormAberto(true);},
     extra_conta:()=>{setDest("conta");setCat("EXTRAORDINARIA");setVNeg(true);setFormAberto(true);},
-    fat_pf_avulsa:()=>{setDest("pagpf");setVencAlvo("");setFormAberto(true);},
-    fat_pf_proxima:()=>{const alvo=proximaFaturaGenuina("PF");
-      if(!alvo){alert("Nenhuma fatura em aberto encontrada nesse cartão.");return;}
-      irAntecipar("fluxo",alvo.row);},
-    fat_pj_avulsa:()=>{setDest("pagpj");setVencAlvo("");setFormAberto(true);},
-    fat_pj_proxima:()=>{const alvo=proximaFaturaGenuina("PJ");
-      if(!alvo){alert("Nenhuma fatura em aberto encontrada nesse cartão.");return;}
-      irAntecipar("fluxo",alvo.row);},
     // Parcelados: abre a bandeja com os 2 selects em cascata (emprestimo -> parcela)
     cred_parcelados:()=>{setDest("emprestimoparc");setFormAberto(true);},
     // [CORRIGIDO 25/07] Pos-Fixados/Cofre (Aporte/Resgate) agora tem
@@ -9216,6 +9241,17 @@ function BotaoLancar({data,onUpdate,onIrPara}){
     emp_tomar:()=>{fecharTudo();onIrPara&&onIrPara({tab:"emprestimos"});},
     ganhos_avulso:()=>{setDest("conta");setCat("DEPOSITO_AVULSO");setVNeg(false);setFormAberto(true);},
   };
+  cartoesAtivosMenu.forEach(c=>{
+    // [22/07] Despesa Fixa em CARTAO nunca antecipa individualmente -- vem
+    // junto da fatura inteira. So resta criar nova, na aba especializada.
+    LEAF_ACOES["fixa:"+c.id]=()=>{fecharTudo();onIrPara&&onIrPara({tab:"recorr"});};
+    LEAF_ACOES["dcp:"+c.id]=()=>{setDest("cartao:"+c.id);setCat("DCP");setVNeg(true);setFormAberto(true);};
+    LEAF_ACOES["extra:"+c.id]=()=>{setDest("cartao:"+c.id);setCat("EXTRAORDINARIA");setVNeg(true);setFormAberto(true);};
+    LEAF_ACOES["fatavulsa:"+c.id]=()=>{setDest("pagcartao:"+c.id);setVencAlvo("");setFormAberto(true);};
+    LEAF_ACOES["fatprox:"+c.id]=()=>{const alvo=proximaFaturaGenuina(c.id);
+      if(!alvo){alert("Nenhuma fatura em aberto encontrada nesse cartão.");return;}
+      irAntecipar("fluxo",alvo.row);};
+  });
   const ehFixaConta=dest==="fixaconta";
   const ehEmprestimoParc=dest==="emprestimoparc";
   const ehCofreLanc=dest==="cofre_aporte"||dest==="cofre_resgate";
@@ -9293,7 +9329,7 @@ function BotaoLancar({data,onUpdate,onIrPara}){
         const v=(vNeg?-1:1)*Math.abs(numBR(valor));
         r=await api({action:"lancar",data:data_,descricao:descFinal.toUpperCase(),valor:v,tipo:tipoDaCategoria(cat),categoria:cat,forma:contaLancamento||"CONTA",status:data_<=hoje()?"EXECUTADO":"PROGRAMADO",obs:"",envelopeId,apelido});
       } else {
-        const cartao=dest==="pj"?"PJ":"PF";
+        const cartao=dest.indexOf("cartao:")===0?dest.slice(7):dest;
         const v=(vNeg?-1:1)*Math.abs(numBR(valor));
         r=await api({action:"lancarCartao",cartao,descricao:descFinal.toUpperCase(),valor:v,parcelas:parseInt(parc)||1,categoria:cat,dcp:cat==="DCP"?"S":"N",data_compra:data_,envelopeId,apelido});
       }
@@ -11601,7 +11637,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260916.2330 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260917.1330 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -11715,7 +11751,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260916.2330
+      // HTML v3.20260917.1330
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
