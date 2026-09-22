@@ -10051,7 +10051,23 @@ function ImportarAssinaturas({onUpdate}){
 
 // ── ABA CARTÕES ───────────────────────────────────────────────────────────────
 function Cartoes({data,onUpdate,destaque,onIrPara}){
-  const [cartao,setCartao]=useState("PJ");
+  // [CORRIGIDO 17/09, achado real do Marcus] Antes começava sempre em "PJ"
+  // fixo -- depois da migração real dos IDs (16-17/09), "PJ" deixou de
+  // existir como ID de verdade, então a aba abria sem achar nada
+  // ("Nenhuma fatura encontrada") e quebrava mais adiante (React #310) ao
+  // tentar usar um cartão que não existe. Agora começa no primeiro cartão
+  // ativo de verdade, e se o selecionado sumir (desativado/apagado depois),
+  // troca sozinho pro primeiro disponível em vez de travar.
+  const [cartao,setCartao]=useState(()=>{
+    const primeiro=(data.cartoes||[]).find(c=>c.ativo);
+    return primeiro?primeiro.id:"PJ";
+  });
+  useEffect(()=>{
+    const ativos=(data.cartoes||[]).filter(c=>c.ativo);
+    if(ativos.length&&!ativos.some(c=>c.id===cartao)){
+      setCartao(ativos[0].id);
+    }
+  },[data.cartoes,cartao]);
   const [fatIdx,setFatIdx]=useState(0); // 0=vigente, 1=próxima, etc
   const [load,setLoad]=useState(false);
   const [showForm,setShowForm]=useState(false);
@@ -11637,7 +11653,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260917.1330 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260917.1530 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -11751,7 +11767,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260917.1330
+      // HTML v3.20260917.1530
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
