@@ -6966,13 +6966,24 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
   // sequência COMPLETA e sem cortes (arrasta pra frente dia a dia). Filtrar
   // os itens ANTES desse cálculo quebraria o saldo mostrado. Também filtra
   // as compras de cartão (mesmo bug do Histórico corrigido aqui de uma vez).
+  // [CORRIGIDO 17/09, achado real do Marcus] Mesma correção do Histórico --
+  // compras de cartão agora também filtram pela conta selecionada (via
+  // conta vinculada do cartão), não só os lançamentos normais.
+  const contaPorCartao=useMemo(()=>{
+    const m={};
+    (data.cartoes||[]).forEach(c=>{ m[c.id]=c.conta; });
+    return m;
+  },[data.cartoes]);
   const gruposExibidos=useMemo(()=>{
     const b=busca.trim().toUpperCase();
     const filtrarPorConta=contasAtivas.length>1&&contaSelecionada;
     return gruposComSaldo
       .map(g=>{
         let itensExibir=g.itens, cartaoExibir=cartaoPorData[g.gdt]||[];
-        if(filtrarPorConta) itensExibir=itensExibir.filter(item=>(item.forma||"CONTA")===contaSelecionada);
+        if(filtrarPorConta){
+          itensExibir=itensExibir.filter(item=>(item.forma||"CONTA")===contaSelecionada);
+          cartaoExibir=cartaoExibir.filter(c=>contaPorCartao[c.cartao]===contaSelecionada);
+        }
         if(b){
           itensExibir=itensExibir.filter(item=>String(item.descricao||"").toUpperCase().includes(b)||String(item.categoria||"").toUpperCase().includes(b));
           cartaoExibir=cartaoExibir.filter(c=>String(c.descricao||"").toUpperCase().includes(b));
@@ -6980,7 +6991,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
         return {...g,itensExibir,cartaoExibir};
       })
       .filter(g=>g.itensExibir.length||g.cartaoExibir.length);
-  },[gruposComSaldo,cartaoPorData,busca,contaSelecionada,contasAtivas]);
+  },[gruposComSaldo,cartaoPorData,busca,contaSelecionada,contasAtivas,contaPorCartao]);
 
   if(!prog.length) return <div>
     <div style={{padding:"40px 20px",textAlign:"center",color:C.textMuted,fontSize:14}}>
@@ -7168,22 +7179,30 @@ function Historico({data,onUpdate,destaque,onIrPara}){
     Object.keys(data.cartaoItens||{}).forEach(cid=>(data.cartaoItens[cid]||[]).forEach(r=>add(r,cid)));
     return m;
   },[data.cartaoItens,hj]);
-  // [CORRIGIDO 13/07] a busca nunca filtrava as compras de cartao (o bloco
-  // esmaecido "nao conta aqui, ja esta na fatura") -- so os lancamentos
-  // normais. Resultado: buscar "PSICOL" ainda trazia o dia inteiro de
-  // qualquer compra de cartao sem nenhuma relacao, so porque aquele dia
-  // tinha ALGUMA compra -- parecia que a busca "nao funcionava". Agora as
-  // compras de cartao tambem passam pelo mesmo filtro de texto.
+  // [CORRIGIDO 17/09, achado real do Marcus] Compras de cartão nunca eram
+  // filtradas pela conta selecionada (só os lançamentos normais eram) --
+  // por isso as duas pílulas de conta mostravam exatamente as mesmas
+  // compras de cartão, não importa qual estivesse selecionada. Agora olha
+  // a conta VINCULADA de cada cartão (data.cartoes) e só mostra a compra
+  // se o cartão pertencer à conta selecionada (ou sempre, se só existe
+  // 1 conta ativa -- nada muda nesse caso).
+  const contaPorCartao=useMemo(()=>{
+    const m={};
+    (data.cartoes||[]).forEach(c=>{ m[c.id]=c.conta; });
+    return m;
+  },[data.cartoes]);
   const cartaoPorDataFiltrado=useMemo(()=>{
-    if(!busca.trim()) return cartaoPorData;
-    const b=busca.toUpperCase();
+    const filtrarPorConta=contasAtivas.length>1&&contaSelecionada;
+    const b=busca.trim().toUpperCase();
     const m={};
     Object.entries(cartaoPorData).forEach(([d,itens])=>{
-      const f=itens.filter(c=>String(c.descricao||"").toUpperCase().includes(b));
+      let f=itens;
+      if(filtrarPorConta) f=f.filter(c=>contaPorCartao[c.cartao]===contaSelecionada);
+      if(b) f=f.filter(c=>String(c.descricao||"").toUpperCase().includes(b));
       if(f.length) m[d]=f;
     });
     return m;
-  },[cartaoPorData,busca]);
+  },[cartaoPorData,busca,contaPorCartao,contaSelecionada,contasAtivas]);
 
   const grupos=useMemo(()=>{
     const m={};
@@ -7438,24 +7457,28 @@ function Timeline({data,onUpdate,onIrPara}){
   // (o mock nao tinha status real nem texto pra buscar). Filtra os ITENS
   // dentro de cada dia, nunca o saldo do dia (saldo sempre reflete o real,
   // senao o numero mostrado mentiria sobre o filtro aplicado).
+  // [CORRIGIDO 17/09, achado real do Marcus] O comentário de 01/08 dizia
+  // "cartão ainda não está ligado a uma conta específica" -- isso já não é
+  // mais verdade (todo cartão tem CONTA vinculada desde a Fase 2 do multi-
+  // cartão). Mesma correção do Histórico/Previsão: item de cartão agora
+  // também filtra pela conta selecionada, via a conta vinculada do cartão.
+  const contaPorCartao=useMemo(()=>{
+    const m={};
+    (data.cartoes||[]).forEach(c=>{ m[c.id]=c.conta; });
+    return m;
+  },[data.cartoes]);
   const linhas=useMemo(()=>{
     const b=busca.trim().toUpperCase();
-    // [CORRIGIDO 01/08] A pilula de conta so mudava o saldo mostrado (linha
-    // "gorda"), nunca filtrava OS ITENS listados -- por isso trocar de PF
-    // pra PJ parecia nao fazer nada na lista abaixo. Agora, com mais de 1
-    // conta ativa, so mostra os itens do Fluxo daquela conta (item de
-    // cartao continua sempre visivel, ja que cartao ainda nao esta ligado
-    // a uma conta especifica -- isso e Fase 5).
     const filtrarPorConta=contasAtivas.length>1&&contaSelecionada;
     return linhasBrutas.map(l=>{
       let itens=l.itens;
-      if(filtrarPorConta) itens=itens.filter(it=>it.ehCartao||(it.item&&(it.item.forma||"CONTA")===contaSelecionada));
+      if(filtrarPorConta) itens=itens.filter(it=>it.ehCartao?contaPorCartao[it.cartao]===contaSelecionada:(it.item&&(it.item.forma||"CONTA")===contaSelecionada));
       if(filtro==="previsao") itens=itens.filter(it=>it.ehCartao?it.status==="PENDENTE":it.status==="PROGRAMADO");
       else if(filtro==="historico") itens=itens.filter(it=>it.ehCartao?it.status==="PAGO":it.status==="EXECUTADO");
       if(b) itens=itens.filter(it=>String(it.descricao||"").toUpperCase().indexOf(b)>=0||String(it.categoriaTxt||"").toUpperCase().indexOf(b)>=0);
       return {...l,itens};
     }).filter(l=>l.itens.length||l.hoje);
-  },[linhasBrutas,filtro,busca,contaSelecionada,contasAtivas]);
+  },[linhasBrutas,filtro,busca,contaSelecionada,contasAtivas,contaPorCartao]);
   const hojeIdx=useMemo(()=>linhas.findIndex(l=>l.hoje),[linhas]);
 
   // Achata em "slots" (1 slot = 1 linha de saldo OU 1 item), pra cada um
@@ -11653,7 +11676,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260917.1530 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260917.1700 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -11767,7 +11790,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260917.1530
+      // HTML v3.20260917.1700
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
