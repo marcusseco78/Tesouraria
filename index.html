@@ -675,11 +675,11 @@ function calcularEnvelopesCustom(data){
       porEnvelope[envId].itens.push({row:r.row,descricao:r.descricao,valor:r.valor,data:r.data,origem:"fluxo",status:r.status});
     }
   });
-  [["cartaoPF","PF"],["cartaoPJ","PJ"]].forEach(([chave,cartao])=>{
-    (data[chave]||[]).forEach(r=>{
+  Object.entries(data.cartaoItens||{}).forEach(([cartao,arr])=>{
+    (arr||[]).forEach(r=>{
       const envId=_obsEnvelopeId(_obsCartaoRaw(r));
       if(envId&&porEnvelope[envId]){
-        porEnvelope[envId].itens.push({row:_linhaCartao(r),descricao:r[1],valor:-Math.abs(Number(r[2])||0),data:r[0],origem:chave,status:r[7],cartao});
+        porEnvelope[envId].itens.push({row:_linhaCartao(r),descricao:r[1],valor:-Math.abs(Number(r[2])||0),data:r[0],origem:cartao,status:r[7],cartao});
       }
     });
   });
@@ -2459,7 +2459,7 @@ function ComprasParceladas({data}){
     const grupos={};
     const hj=hoje();
     const futuras=[]; // {data,valor} de toda parcela ainda nao paga/vencida, pra projecao de ciclos
-    [["PF",data.cartaoPF],["PJ",data.cartaoPJ]].forEach(([cartao,arr])=>{
+    Object.entries(data.cartaoItens||{}).forEach(([cartao,arr])=>{
       (arr||[]).forEach(r=>{
         const parc=String(r[3]||"");
         const m=parc.match(/^(\d+)\/(\d+)$/);
@@ -4135,7 +4135,7 @@ function ConfiguracoesGerais({data,onUpdate,onIrPara}){
         Nome, conta que paga a fatura e dia de fechamento/vencimento — configurável por cartão, mesmo modelo que já existia pra PF/PJ.
       </div>
       <div style={{fontSize:10,color:C.textMuted,marginBottom:10,background:C.borderLight,borderRadius:6,padding:"6px 8px"}}>
-        Cartão novo (além de PF/PJ) já ganha aba própria de compras, mas ainda não dá pra lançar/editar/conciliar por ele — isso é a próxima etapa da migração. Por enquanto, só o cadastro em si já funciona.
+        Cartão novo (além de PF/PJ) já ganha aba própria de compras, e já dá pra lançar/editar/conciliar por ele normalmente dentro da aba Cartões (pílulas no topo). Ainda não aparece nos atalhos do Dashboard nem no assistente de chat — isso é a próxima etapa.
       </div>
       {cartoesCadastro.map(c=>
         <div key={c.id} style={{border:"1px solid "+C.border,borderRadius:10,padding:"10px 12px",marginBottom:8,opacity:c.ativo?1:0.5}}>
@@ -4445,8 +4445,7 @@ function ConciliacaoHub({data,onUpdate,onIrPara}){
   }
 
   const opcoes=[
-    {titulo:"💳 "+nomeCartao("PF",data),sub:"Conciliar fatura (CSV ou OFX) — abre a aba Cartões",onClick:()=>onIrPara&&onIrPara({tab:"cartoes",cartao:"PF"})},
-    {titulo:"💳 "+nomeCartao("PJ",data),sub:"Conciliar fatura (CSV ou OFX) — abre a aba Cartões",onClick:()=>onIrPara&&onIrPara({tab:"cartoes",cartao:"PJ"})},
+    ...(data.cartoes||[]).filter(c=>c.ativo).map(c=>({titulo:"💳 "+nomeCartao(c.id,data),sub:"Conciliar fatura (CSV ou OFX) — abre a aba Cartões",onClick:()=>onIrPara&&onIrPara({tab:"cartoes",cartao:c.id})})),
     {titulo:"🧾 Extrato (conta corrente)",sub:"Conciliar extrato bancário (CSV ou OFX)",onClick:()=>setModo("extrato")}
   ];
 
@@ -6109,62 +6108,9 @@ function Ferramentas({onIrPara}){
       </div>)}
     </div>
     <div style={{padding:"14px 12px 0"}}>
-      <BotaoFaseANomenclatura/>
-      <BotaoMigrarIdsNomenclatura/>
       <BotaoFaseCNomenclatura/>
     </div>
   </div>;
-}
-
-// [TEMPORARIO 16/09] Botao de uso unico -- Fase A da reforma de
-// nomenclatura (so adiciona colunas novas em CONTAS/CARTOES e preenche os
-// 2 cadastros existentes com os dados reais ja confirmados com o Marcus;
-// nao toca em ID nem em nome de aba de ninguem). REMOVER este componente
-// e o botao junto na proxima versao, depois que o Marcus confirmar que
-// rodou.
-function BotaoFaseANomenclatura(){
-  const[loading,setLoading]=useState(false);
-  const[feito,setFeito]=useState(false);
-  async function rodar(){
-    if(!confirm("Isso adiciona colunas novas (Banco, Titular, Categoria, Bandeira, Tipo, ACCTID) em Contas e Cartões e preenche os 2 cadastros existentes com os dados já confirmados. Não muda nenhum ID nem nome de aba. Rodar uma vez só — confirma?"))return;
-    setLoading(true);
-    try{
-      const r=await api({action:"preencherFaseANomenclatura"});
-      setFeito(true);
-      alert((r.camposPreenchidos||0)+" campo(s) preenchido(s):\n"+(r.detalhe||[]).join("\n"));
-    }catch(e){ alert(e.message); }
-    setLoading(false);
-  }
-  if(feito)return null;
-  return <button onClick={rodar} disabled={loading}
-    style={{width:"100%",padding:"8px",borderRadius:10,background:"#FEF3C7",color:"#92400E",border:"1px dashed #FDE68A",fontSize:11,fontWeight:700,cursor:loading?"default":"pointer",fontFamily:"inherit",marginBottom:6}}>
-    {loading?"…":"⚠️ Reforma de nomenclatura — Fase A (1x)"}
-  </button>;
-}
-
-// [TEMPORARIO 16/09] Botao de uso unico -- migração REAL dos IDs (Fase B
-// final): troca CONTAS.ID/CARTOES.ID pros IDs novos, renomeia as 2 abas
-// físicas, atualiza RECORRENCIAS/faturas travadas/ACCTID e grava o
-// apelido permanente pro histórico. REMOVER este componente e o botão
-// junto na próxima versão, depois que o Marcus confirmar que rodou.
-function BotaoMigrarIdsNomenclatura(){
-  const[loading,setLoading]=useState(false);
-  const[feito,setFeito]=useState(false);
-  async function rodar(){
-    if(!confirm("Isso troca de vez o ID da conta e do cartão PF/PJ pro formato novo (ex: PF.CC.NU-MC.PLT), renomeia as 2 abas de lançamento, e atualiza tudo que aponta pra elas. Lançamentos já feitos NUNCA são reescritos — continuam reconhecidos pelo texto antigo. Rodar uma vez só — confirma?"))return;
-    setLoading(true);
-    try{
-      const r=await api({action:"migrarIdsNomenclatura"});
-      setFeito(true);
-      alert("Migração concluída:\n"+(r.log||[]).join("\n"));
-    }catch(e){ alert(e.message); }
-    setLoading(false);
-  }
-  if(feito)return null;
-  return <button onClick={rodar} disabled={loading}
-    style={{width:"100%",padding:"8px",borderRadius:10,background:"#FEE2E2",color:"#991B1B",border:"1px dashed #FCA5A5",fontSize:11,fontWeight:700,cursor:loading?"default":"pointer",fontFamily:"inherit",marginBottom:6}}>
-    {loading?"…":"🔴 Reforma de nomenclatura — Fase B, migração REAL de IDs (1x)"}
-  </button>;
 }
 
 // [TEMPORARIO 16/09] Botao de uso unico -- Fase C (parte 1): cria os
@@ -6233,8 +6179,11 @@ function DCPTab({data,onUpdate,onIrPara}){
   function transacoesDoEnvelope(envData){
     const doFluxo=fluxo.filter(r=>r.categoria==="DCP"&&r.dcpEnvelopeData===envData)
       .map(r=>({row:r.row,descricao:r.descricao,valor:r.valor,data:r.data,status:r.status,origem:"fluxo"}));
-    const doPF=cartaoPF.filter(r=>r[10]===envData).map(r=>({row:_linhaCartao(r),descricao:r[1],valor:r[2],data:r[0],status:r[7],parcela:r[3],origem:"cartaoPF"}));
-    const doPJ=cartaoPJ.filter(r=>r[10]===envData).map(r=>({row:_linhaCartao(r),descricao:r[1],valor:r[2],data:r[0],status:r[7],parcela:r[3],origem:"cartaoPJ"}));
+    const doCartao=[];
+    Object.entries(data.cartaoItens||{}).forEach(([cid,arr])=>{
+      (arr||[]).filter(r=>r[10]===envData).forEach(r=>
+        doCartao.push({row:_linhaCartao(r),descricao:r[1],valor:r[2],data:r[0],status:r[7],parcela:r[3],origem:cid}));
+    });
     const grupos={};
     const semGrupo=[];
     // [CORRIGIDO 08/08, achado real do Marcus] Chave antes so tinha
@@ -6251,7 +6200,7 @@ function DCPTab({data,onUpdate,onIrPara}){
     // mesmo total e valor por parcela parecido), mas separa compras
     // diferentes que so coincidem no nome.
     const totalParcelasDe=p=>{ const m=String(p||"").match(/^\d+\/(\d+)$/); return m?m[1]:"1"; };
-    [...doPF,...doPJ].forEach(t=>{
+    doCartao.forEach(t=>{
       const chave=t.origem+"|"+t.descricao+"|"+totalParcelasDe(t.parcela)+"|"+Math.round(Math.abs(t.valor));
       if(!grupos[chave]) grupos[chave]={...t,total:0,parcelas:0};
       grupos[chave].total+=t.valor;
@@ -6264,7 +6213,7 @@ function DCPTab({data,onUpdate,onIrPara}){
 
   function irParaLancamento(t){
     if(t.origem==="fluxo") onIrPara({tab:t.status==="EXECUTADO"?"historico":"fluxo",row:t.row});
-    else onIrPara({tab:"cartoes",row:t.row,cartao:t.origem==="cartaoPF"?"PF":"PJ"});
+    else onIrPara({tab:"cartoes",row:t.row,cartao:t.origem});
   }
 
   return <div>
@@ -6297,7 +6246,7 @@ function DCPTab({data,onUpdate,onIrPara}){
                   {t.descricao}{t.parcelas>1&&<span style={{color:C.accent,fontWeight:800}}> ({t.parcelas}x)</span>}
                 </div>
                 <div style={{fontSize:9,color:C.textMuted,marginTop:1}}>
-                  {fmtD(t.data)} · {t.origem==="fluxo"?"Fluxo":t.origem==="cartaoPF"?nomeCartao("PF",data):nomeCartao("PJ",data)} · {t.status}
+                  {fmtD(t.data)} · {t.origem==="fluxo"?"Fluxo":nomeCartao(t.origem,data)} · {t.status}
                   {t.parcelas>1&&" · total das "+t.parcelas+" parcelas"}
                 </div>
               </div>
@@ -6915,10 +6864,9 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
       if(!dataCompra||dataCompra<=hj) return; // so estritamente futuro -- hoje ja e "aconteceu", mora no Historico
       (m[dataCompra]=m[dataCompra]||[]).push({row:_linhaCartao(r),descricao:r[1],valor:r[2],cartao,status:r[7],dcpEnvelope:r[9]||null,dcpEnvelopeData:r[10]||null});
     };
-    (data.cartaoPF||[]).forEach(r=>add(r,"PF"));
-    (data.cartaoPJ||[]).forEach(r=>add(r,"PJ"));
+    Object.keys(data.cartaoItens||{}).forEach(cid=>(data.cartaoItens[cid]||[]).forEach(r=>add(r,cid)));
     return m;
-  },[data.cartaoPF,data.cartaoPJ,hj]);
+  },[data.cartaoItens,hj]);
 
   const grupos=useMemo(()=>{
     const m={};
@@ -7193,10 +7141,9 @@ function Historico({data,onUpdate,destaque,onIrPara}){
       if(!dataCompra||dataCompra>hj) return;
       (m[dataCompra]=m[dataCompra]||[]).push({row:_linhaCartao(r),descricao:r[1],valor:r[2],cartao,status:r[7],dcpEnvelope:r[9]||null,dcpEnvelopeData:r[10]||null});
     };
-    (data.cartaoPF||[]).forEach(r=>add(r,"PF"));
-    (data.cartaoPJ||[]).forEach(r=>add(r,"PJ"));
+    Object.keys(data.cartaoItens||{}).forEach(cid=>(data.cartaoItens[cid]||[]).forEach(r=>add(r,cid)));
     return m;
-  },[data.cartaoPF,data.cartaoPJ,hj]);
+  },[data.cartaoItens,hj]);
   // [CORRIGIDO 13/07] a busca nunca filtrava as compras de cartao (o bloco
   // esmaecido "nao conta aqui, ja esta na fatura") -- so os lancamentos
   // normais. Resultado: buscar "PSICOL" ainda trazia o dia inteiro de
@@ -7353,8 +7300,7 @@ function _gerarLinhasTimeline(data,hj){
     if(!porDia[d]) porDia[d]=[];
     porDia[d].push({origem:"cartao",cartao,linhaCartao:_linhaCartao(r),descricao:r[1],valor:r[2],status:r[7],dcpEnvelope:r[9]||null});
   };
-  (data.cartaoPF||[]).forEach(r=>addCartao(r,"PF"));
-  (data.cartaoPJ||[]).forEach(r=>addCartao(r,"PJ"));
+  Object.keys(data.cartaoItens||{}).forEach(cid=>(data.cartaoItens[cid]||[]).forEach(r=>addCartao(r,cid)));
   // [24/07] Garante que HOJE sempre tem uma linha, mesmo sem nenhum
   // lancamento nesse dia -- sem isso, o botao "Hoje" e o auto-scroll ao
   // abrir nao achavam pra onde ir (bug reportado pelo Marcus). O mock
@@ -8176,14 +8122,12 @@ function Conversar({data,onUpdate,initTxt,onInitDone,msgs,setMsgs}){
           display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",
           boxShadow:"0 -2px 12px rgba(217,119,6,.15)"}}>
           <span style={{fontSize:12,color:"#92400E",flex:1,fontWeight:600}}>Este CSV é de qual cartão?</span>
-          <button onClick={()=>executarConciliacao("PJ")} disabled={!!load}
-            style={{background:C.accent,color:"#fff",borderRadius:6,padding:"6px 16px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",flexShrink:0}}>
-            Cartão PJ
-          </button>
-          <button onClick={()=>executarConciliacao("PF")} disabled={!!load}
-            style={{background:C.accent,color:"#fff",borderRadius:6,padding:"6px 16px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",flexShrink:0}}>
-            Cartão PF
-          </button>
+          {(data.cartoes||[]).filter(c=>c.ativo).map(c=>
+            <button key={c.id} onClick={()=>executarConciliacao(c.id)} disabled={!!load}
+              style={{background:C.accent,color:"#fff",borderRadius:6,padding:"6px 16px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",flexShrink:0}}>
+              {nomeCartao(c.id,data)}
+            </button>
+          )}
           <button onClick={()=>setPendCSV(null)} style={{background:C.borderLight,color:C.textSub,borderRadius:6,padding:"6px 10px",fontSize:12,border:"none",cursor:"pointer",flexShrink:0}}>✕</button>
         </div>}
         {pendConc&&<div style={{background:"#fff",
@@ -8349,12 +8293,13 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
                 {c.nome}
               </button>;
             })}
-            {[["CARTAO_PF","PF"],["CARTAO_PJ","PJ"]].map(([cid,tipoCartao])=>{
+            {(data.cartoes||[]).filter(c=>c.ativo).map(c=>{
+              const cid="CARTAO_"+c.id;
               const ativo=destinoEdit===cid;
               return <button key={cid} type="button" onClick={()=>setDestinoEdit(cid)}
                 style={{padding:"7px 12px",borderRadius:16,fontSize:12,fontWeight:700,border:"none",cursor:"pointer",
                   background:ativo?C.accent:C.borderLight,color:ativo?"#fff":C.textMuted}}>
-                {nomeCartao(tipoCartao,data)}
+                {nomeCartao(c.id,data)}
               </button>;
             })}
           </div>
@@ -8983,8 +8928,7 @@ function FormNovaRecorr({onSalvo,onClose,data}){
       <div><label style={lbl}>Destino</label>
         <select value={destinoUI} onChange={e=>{const v=e.target.value;setDestinoUI(v);if(!v.startsWith("FLUXO:")&&isWeekly)setFreq("mensal");}} style={sel}>
           {contasAtivasRec.map(c=><option key={c.id} value={"FLUXO:"+c.id}>{c.nome}</option>)}
-          <option value="CARTAO_PF">{nomeCartao("PF",data)}</option>
-          <option value="CARTAO_PJ">{nomeCartao("PJ",data)}</option>
+          {(data.cartoes||[]).filter(c=>c.ativo).map(c=><option key={c.id} value={"CARTAO_"+c.id}>{nomeCartao(c.id,data)}</option>)}
         </select></div>
       {!ehCartao&&<div style={{display:"flex",gap:8}}>
         <div style={{flex:1}}><label style={lbl}>Parcelas (0=infinito)</label>
@@ -11657,7 +11601,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260916.2100 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260916.2330 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -11771,7 +11715,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260916.2100
+      // HTML v3.20260916.2330
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
