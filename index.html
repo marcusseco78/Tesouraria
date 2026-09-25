@@ -1178,6 +1178,11 @@ function corDoItem(item, hj){
   // falha silenciosamente pra essa string e cai no catch, entao usa o OBS
   // cru mesmo) ganha destaque azul clarinho + texto azul na descricao.
   const ehFonteReceita=/FONTE_RECEITA:/.test(String(item.obs||""));
+  // [NOVO 25/09] Fundo azul agora vale pra qualquer lancamento categoria
+  // RECEITA, nao so os gerados pelo motor estruturado (HSA/HSI/HDWC com
+  // marcador FONTE_RECEITA) -- pedido do Marcus pra uma receita avulsa
+  // (esporadica lancada na mao) ficar visualmente igual a uma estruturada.
+  const ehReceita = cat==="RECEITA" || ehFonteReceita;
   // [NOVO 05/09-3] Transferencia vinculada a receita (obs.origemReceita)
   // ganha sombreado proprio -- azul (tom diferente do azul de Receita, pra
   // nao confundir os dois) do lado que RECEBE, vermelho bem fraco do lado
@@ -1186,9 +1191,9 @@ function corDoItem(item, hj){
   // precisar abrir o item.
   const ehTransfReceita=!!obs.origemReceita;
   const bgCat = cat==="DCP_PROVISAO" ? C.orangeLight : (cat==="DCP" ? C.yellowLight
-    : (ehFonteReceita?C.blueLight
+    : (ehReceita?C.blueLight
     : (ehTransfReceita?(item.valor>0?C.greenLight:"rgba(220,38,38,0.05)"):null)));
-  const descCor = ehFonteReceita ? C.blue : null;
+  const descCor = ehReceita ? C.blue : null;
 
   if(ehFatura){
     if(item.status==="EXECUTADO"){
@@ -11676,7 +11681,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260917.1700 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260925.1730 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -11790,7 +11795,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260917.1700
+      // HTML v3.20260925.1730
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
