@@ -5760,6 +5760,16 @@ function ConciliarExtratoTab({data,onUpdate}){
               background:contaExtrato===c.id?C.orange:C.borderLight,color:contaExtrato===c.id?"#fff":C.textSub}}>{c.nome}</button>)}
       </div>
     </div>}
+    {/* [NOVO 25/09, pedido do Marcus] Data da ultima vez que essa conta foi
+        conciliada -- gravada pelo backend (conciliarExtrato) toda vez que
+        um extrato e processado com sucesso, guardada em CONFIG por conta
+        (ULTIMA_CONCILIACAO_<contaId>), chega aqui via data.config. */}
+    {(()=>{
+      const ultConc=(resultado&&resultado.ultimaConciliacao)||(data&&data.config&&data.config["ULTIMA_CONCILIACAO_"+contaExtrato]);
+      return <div style={{fontSize:11,color:C.textMuted,marginBottom:10}}>
+        {ultConc?("Última conciliação desta conta: "+fmtD(ultConc)):"Essa conta ainda não foi conciliada."}
+      </div>;
+    })()}
     <input ref={fileRef} type="file" accept=".csv,.ofx" style={{display:"none"}}
       onChange={e=>{const f=e.target.files[0];if(f)processar(f);e.target.value="";}}/>
     <button onClick={()=>fileRef.current.click()} disabled={load}
@@ -11681,7 +11691,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260925.1730 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260925.1930 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -11795,7 +11805,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260925.1730
+      // HTML v3.20260925.1930
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
