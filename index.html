@@ -1962,6 +1962,7 @@ function SugestaoReagendamento({onUpdate}){
 function FormCriarDividaPosFixada({data,onSalvo,onClose}){
   const [nome,setNome]=useState("");
   const [saldoInicial,setSaldoInicial]=useState("");
+  const [dataInicial,setDataInicial]=useState("");
   const [percCdi,setPercCdi]=useState("100");
   const [observacao,setObservacao]=useState("");
   const [load,setLoad]=useState(false);
@@ -1972,11 +1973,15 @@ function FormCriarDividaPosFixada({data,onSalvo,onClose}){
   useEffect(()=>{ if(!conta&&contasAtivas.length) setConta(contasAtivas[0].id); },[contasAtivas]);
 
   async function salvar(){
-    if(!nome.trim()||!saldoInicial){ alert("Preencha nome e saldo inicial."); return; }
+    if(!nome.trim()||!saldoInicial||!dataInicial){ alert("Preencha nome, saldo inicial e data inicial."); return; }
     setLoad(true);
     try{
+      // [NOVO 27/09] Toda divida nova nasce em modo EVENTOS: guarda so data +
+      // saldo iniciais e as amortizacoes; o saldo de cada ponto e o de hoje
+      // sao recalculados com o CDI diario do Banco Central.
       const r=await api({action:"criarDividaPosFixada",nome,saldo_inicial:numBR(saldoInicial),
-        percentual_cdi:parseFloat(percCdi)||100,observacao,conta});
+        percentual_cdi:parseFloat(percCdi)||100,observacao,conta,modo:"EVENTOS",data_inicial:dataInicial});
+      if(r&&r._avisoCriacaoDivida) alert(r._avisoCriacaoDivida);
       onSalvo(r);
     }catch(e){alert(e.message);}
     setLoad(false);
@@ -1996,8 +2001,11 @@ function FormCriarDividaPosFixada({data,onSalvo,onClose}){
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       <div><label style={lbl}>Nome</label>
         <input value={nome} onChange={e=>setNome(e.target.value.toUpperCase())} placeholder="Ex: Empréstimo Tia Márcia" style={inp}/></div>
-      <div><label style={lbl}>Saldo inicial (R$)</label>
-        <input type="text" inputMode="numeric" value={saldoInicial} onChange={e=>setSaldoInicial(formatarMoedaInput(e.target.value))} placeholder="0,00" style={inp}/></div>
+      <div><label style={lbl}>Data inicial</label>
+        <input type="date" value={dataInicial} max={hoje()} onChange={e=>setDataInicial(e.target.value)} style={inp}/></div>
+      <div><label style={lbl}>Saldo inicial (R$) — nessa data</label>
+        <input type="text" inputMode="numeric" value={saldoInicial} onChange={e=>setSaldoInicial(formatarMoedaInput(e.target.value))} placeholder="0,00" style={inp}/>
+        <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Depois lance as amortizações (com a data de cada uma): o app recalcula o saldo de cada ponto com o CDI diário do Banco Central.</div></div>
       <div><label style={lbl}>% do CDI</label>
         <input type="number" step="1" value={percCdi} onChange={e=>setPercCdi(e.target.value)} placeholder="100" style={inp}/>
         <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Só variação de percentual do CDI (ex: 100, 120) — nunca outro índice.</div></div>
@@ -2011,10 +2019,10 @@ function FormCriarDividaPosFixada({data,onSalvo,onClose}){
                 background:conta===c.id?C.accent:C.borderLight,color:conta===c.id?"#fff":C.textMuted}}>{c.nome}</button>)}
         </div>
       </div>}
-      <button onClick={salvar} disabled={load||!nome.trim()||!saldoInicial}
+      <button onClick={salvar} disabled={load||!nome.trim()||!saldoInicial||!dataInicial}
         style={{width:"100%",padding:"10px",borderRadius:8,background:C.accent,color:"#fff",
           fontSize:14,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-        {load?"Salvando...":"Criar dívida"}
+        {load?"Criando e buscando CDI...":"Criar dívida"}
       </button>
     </div>
   </div>;
@@ -2058,6 +2066,101 @@ function TimelineSaldo({historico,futuro,corPositivo,corNegativo}){
   </div>;
 }
 
+// [NOVO 27/09] Lista de eventos (amortizacoes e marcos de saldo real) de uma
+// divida em modo EVENTOS: editar / apagar / importar varios de uma vez. Toda
+// mudanca recalcula a divida inteira no backend (CDI diario do Banco Central).
+function EventosDivida({divida,eventos,onUpdate}){
+  const [aberto,setAberto]=useState(false);
+  const [editId,setEditId]=useState("");
+  const [eData,setEData]=useState("");
+  const [eValor,setEValor]=useState("");
+  const [eDesc,setEDesc]=useState("");
+  const [load,setLoad]=useState(false);
+  const [impAberto,setImpAberto]=useState(false);
+  const [impTexto,setImpTexto]=useState("");
+  const inp={padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"};
+  function avisar(r){ if(r&&r._avisosDivida&&r._avisosDivida.length) alert(r._avisosDivida.join("\n")); }
+  function abrirEdicao(e){ setEditId(e.id); setEData(e.data); setEValor(formatarValorInicial(e.valor)); setEDesc(e.descricao||""); }
+  async function salvarEdicao(){
+    const v=numBR(eValor);
+    if(!eData||!(v>0)){ alert("Data e valor válidos, por favor."); return; }
+    setLoad(true);
+    try{
+      const r=await api({action:"editarEventoDivida",id:editId,data:eData,valor:v,descricao:eDesc});
+      onUpdate&&onUpdate(r); avisar(r); setEditId("");
+    }catch(e){alert(e.message);}
+    setLoad(false);
+  }
+  async function apagar(e){
+    if(!confirm("Apagar "+(e.tipo==="MARCO"?"esse marco de saldo real":"essa amortização de "+fmt(e.valor)+" ("+fmtD(e.data)+")")+"?"+(e.comFluxo?" A linha ligada no Fluxo também será apagada.":"")+" O saldo da dívida será recalculado.")) return;
+    setLoad(true);
+    try{ const r=await api({action:"apagarEventoDivida",id:e.id}); onUpdate&&onUpdate(r); avisar(r); }
+    catch(err){alert(err.message);}
+    setLoad(false);
+  }
+  async function importar(){
+    const brutas=impTexto.split("\n").map(l=>l.trim()).filter(Boolean);
+    if(!brutas.length){ alert("Cole pelo menos uma linha."); return; }
+    const linhas=[];
+    for(let i=0;i<brutas.length;i++){
+      const partes=brutas[i].split(";").map(x=>x.trim());
+      const m=(partes[0]||"").match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      const v=numBR(partes[1]||"");
+      if(!m||!(v>0)){ alert("Linha "+(i+1)+" inválida. Use: DD/MM/AAAA;valor;observação (a observação é opcional)."); return; }
+      linhas.push({data:m[3]+"-"+m[2].padStart(2,"0")+"-"+m[1].padStart(2,"0"),valor:v,descricao:partes[2]||""});
+    }
+    setLoad(true);
+    try{
+      const r=await api({action:"importarEventosDivida",nome:divida.nome,linhas});
+      onUpdate&&onUpdate(r); avisar(r);
+      const res=r._resultadoImportacao;
+      if(res) alert("Importados: "+res.importados+(res.ignorados?" · já existiam (ignorados): "+res.ignorados:""));
+      setImpTexto(""); setImpAberto(false);
+    }catch(e){alert(e.message);}
+    setLoad(false);
+  }
+  return <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #FDBA74"}}>
+    <button onClick={()=>setAberto(a=>!a)}
+      style={{width:"100%",background:"none",border:"none",textAlign:"left",padding:0,fontSize:10,fontWeight:700,color:C.textMuted,cursor:"pointer",fontFamily:"inherit"}}>
+      {aberto?"▼":"▶"} AMORTIZAÇÕES E MARCOS ({eventos.length}) — editar / apagar / importar
+    </button>
+    {aberto&&<div style={{marginTop:6}}>
+      {eventos.length===0&&<div style={{fontSize:11,color:C.textMuted,padding:"4px 0"}}>Nenhuma ainda.</div>}
+      {eventos.map(e=>editId===e.id
+        ?<div key={e.id} style={{background:C.surface,border:"1px solid "+C.border,borderRadius:8,padding:8,margin:"6px 0"}}>
+          <div style={{display:"flex",gap:6,marginBottom:6}}>
+            <input type="date" value={eData} max={hoje()} onChange={ev=>setEData(ev.target.value)} style={{...inp,flex:1}}/>
+            <input type="text" inputMode="numeric" value={eValor} onChange={ev=>setEValor(formatarMoedaInput(ev.target.value))} style={{...inp,flex:1,textAlign:"right"}}/>
+          </div>
+          <input type="text" value={eDesc} onChange={ev=>setEDesc(ev.target.value)} placeholder="Observação" style={{...inp,width:"100%",marginBottom:6}}/>
+          <div style={{display:"flex",gap:6}}>
+            <button onClick={salvarEdicao} disabled={load} style={{flex:1,background:C.accent,color:"#fff",border:"none",borderRadius:6,padding:"6px",fontSize:12,fontWeight:700,cursor:"pointer"}}>{load?"Recalculando…":"Salvar"}</button>
+            <button onClick={()=>setEditId("")} style={{background:"none",border:"1px solid "+C.border,borderRadius:6,padding:"6px 10px",fontSize:12,color:C.textMuted,cursor:"pointer"}}>Cancelar</button>
+          </div>
+        </div>
+        :<div key={e.id} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 0",borderBottom:"1px solid "+C.borderLight,fontSize:12}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontWeight:700,color:C.text}}>{e.tipo==="MARCO"?"Saldo real":"Amortização"} · {fmt(e.valor)}</div>
+            <div style={{fontSize:10,color:C.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fmtD(e.data)}{e.descricao?" · "+e.descricao:""}{e.tipo==="AMORTIZACAO"&&!e.comFluxo?" · sem débito na conta":""}</div>
+          </div>
+          <button onClick={()=>abrirEdicao(e)} disabled={load} style={{background:"none",border:"none",fontSize:14,cursor:"pointer"}}>✏️</button>
+          <button onClick={()=>apagar(e)} disabled={load} style={{background:"none",border:"none",fontSize:14,cursor:"pointer"}}>🗑️</button>
+        </div>)}
+      {!impAberto
+        ?<button onClick={()=>setImpAberto(true)} style={{width:"100%",marginTop:8,background:"none",border:"1px dashed "+C.border,borderRadius:8,padding:"6px",fontSize:11,color:C.textSub,cursor:"pointer",fontFamily:"inherit"}}>📥 Importar aportes antigos (colar lista)</button>
+        :<div style={{marginTop:8}}>
+          <div style={{fontSize:10,color:C.textMuted,marginBottom:4}}>Uma por linha: <b>DD/MM/AAAA;valor;observação</b> (observação opcional). Entram sem lançar nada no Fluxo (já aconteceram antes do app).</div>
+          <textarea value={impTexto} onChange={e=>setImpTexto(e.target.value)} rows={7} placeholder={"08/05/2025;10.336,34\n17/06/2025;10.000,00"}
+            style={{...inp,width:"100%",fontFamily:"monospace"}}/>
+          <div style={{display:"flex",gap:6,marginTop:6}}>
+            <button onClick={importar} disabled={load} style={{flex:1,background:C.accent,color:"#fff",border:"none",borderRadius:6,padding:"7px",fontSize:12,fontWeight:700,cursor:"pointer"}}>{load?"Importando e recalculando…":"Importar"}</button>
+            <button onClick={()=>setImpAberto(false)} style={{background:"none",border:"1px solid "+C.border,borderRadius:6,padding:"7px 10px",fontSize:12,color:C.textMuted,cursor:"pointer"}}>Cancelar</button>
+          </div>
+        </div>}
+    </div>}
+  </div>;
+}
+
 function CardDividaPosFixada({divida,onUpdate,data}){
   const [valorAbate,setValorAbate]=useState("");
   const [loadAbate,setLoadAbate]=useState(false);
@@ -2091,6 +2194,14 @@ function CardDividaPosFixada({divida,onUpdate,data}){
     }catch(e){alert(e.message);}
     setLoadCDI(false);
   }
+  async function apagarDividaInteira(){
+    if(!confirm("Apagar a dívida "+divida.nome+" INTEIRA?\n\nIsso apaga o cadastro, todo o histórico e TODOS os lançamentos do Fluxo ligados a ela. Não dá pra desfazer.")) return;
+    if(!confirm("Tem certeza? Última confirmação: apagar "+divida.nome+" e os lançamentos ligados.")) return;
+    try{
+      const r=await api({action:"apagarDividaPosFixadaCompleta",nome:divida.nome,confirmar:true});
+      onUpdate&&onUpdate(r);
+    }catch(e){alert(e.message);}
+  }
   async function abater(){
     const valor=numBR(valorAbate);
     if(!valor||valor<=0){ alert("Informe um valor de pagamento válido."); return; }
@@ -2098,6 +2209,7 @@ function CardDividaPosFixada({divida,onUpdate,data}){
     try{
       const r=await api({action:"abaterSaldoDividaPosFixada",nome:divida.nome,valor});
       onUpdate&&onUpdate(r);
+      if(r&&r._avisosDivida&&r._avisosDivida.length) alert(r._avisosDivida.join("\n"));
       setValorAbate("");
     }catch(e){alert(e.message);}
     setLoadAbate(false);
@@ -2110,10 +2222,27 @@ function CardDividaPosFixada({divida,onUpdate,data}){
   // sempre negativo (e uma divida, representa quanto voce deve).
   const NOMES_EVENTO_DPF={ABATIMENTO:"Amortização",ESTORNO:"Estorno de amortização",CORRECAO_CDI:"Correção CDI",AJUSTE_MANUAL:"Ajuste manual"};
   const logDivida=(data.dividasPosFixadasLog||[]).filter(l=>l.divida===divida.nome).sort((a,b)=>String(a.data).localeCompare(String(b.data)));
-  const historicoDivida=[
-    {data:divida.dataAquisicao,tipo:"Dívida inicial",delta:-Math.abs(divida.saldoInicial),desc:"",saldoApos:-Math.abs(divida.saldoInicial)},
-    ...logDivida.map(l=>({data:l.data,tipo:NOMES_EVENTO_DPF[l.tipoEvento]||l.tipoEvento,delta:l.valor,desc:l.descricao,saldoApos:-Math.abs(l.saldoResultante)}))
-  ];
+  const ehEventos=divida.modo==="EVENTOS";
+  const eventosDiv=(data.dividasEventos||[]).filter(e=>e.divida===divida.nome);
+  let historicoDivida;
+  if(ehEventos){
+    // [NOVO 27/09] Historico derivado dos eventos: juros de cada trecho (calculados
+    // pelo backend com o CDI diario do BC) + a amortizacao, com o saldo depois.
+    historicoDivida=[{data:divida.dataAquisicao,tipo:"Dívida inicial",delta:-Math.abs(divida.saldoInicial),desc:"",saldoApos:-Math.abs(divida.saldoInicial)}];
+    eventosDiv.forEach(e=>{
+      if(Math.abs(e.juros)>=0.005) historicoDivida.push({data:e.data,tipo:"Correção CDI",delta:-e.juros,desc:fmtD(e.deData)+" a "+fmtD(e.data)+" · "+divida.percentualCdi+"% do CDI",saldoApos:-Math.abs(e.saldoAntes)});
+      if(e.tipo==="MARCO") historicoDivida.push({data:e.data,tipo:"Saldo real informado",delta:e.saldoAntes-e.valor,desc:"",saldoApos:-Math.abs(e.saldoApos)});
+      else historicoDivida.push({data:e.data,tipo:"Amortização",delta:e.valor,desc:(e.descricao||"")+(e.comFluxo?"":(e.descricao?" · ":"")+"sem débito na conta"),saldoApos:-Math.abs(e.saldoApos)});
+    });
+    const ult=eventosDiv.length?eventosDiv[eventosDiv.length-1]:null;
+    const jurosCauda=divida.saldoAtual-(ult?ult.saldoApos:divida.saldoInicial);
+    if(Math.abs(jurosCauda)>=0.005) historicoDivida.push({data:hoje(),tipo:"Correção CDI",delta:-jurosCauda,desc:fmtD(ult?ult.data:divida.dataAquisicao)+" até ontem · "+divida.percentualCdi+"% do CDI",saldoApos:-Math.abs(divida.saldoAtual)});
+  }else{
+    historicoDivida=[
+      {data:divida.dataAquisicao,tipo:"Dívida inicial",delta:-Math.abs(divida.saldoInicial),desc:"",saldoApos:-Math.abs(divida.saldoInicial)},
+      ...logDivida.map(l=>({data:l.data,tipo:NOMES_EVENTO_DPF[l.tipoEvento]||l.tipoEvento,delta:l.valor,desc:l.descricao,saldoApos:-Math.abs(l.saldoResultante)}))
+    ];
+  }
   // [25/07] Antes ficava sempre vazio ("amortizacao e sempre imediata") --
   // agora projeta a correcao CDI estimada pros proximos 12 ciclos, mesma
   // logica do Cofre (Divida Pos-Fixada so tem o tipo CDI por enquanto).
@@ -2170,7 +2299,12 @@ function CardDividaPosFixada({divida,onUpdate,data}){
         Reduz o saldo e já lança a saída no Fluxo (categoria Passivo), hoje.
       </div>
     </div>
+    {ehEventos&&<EventosDivida divida={divida} eventos={eventosDiv} onUpdate={onUpdate}/>}
     <TimelineSaldo historico={historicoDivida} futuro={futuroDivida} corPositivo={C.green} corNegativo={C.red}/>
+    <button onClick={apagarDividaInteira}
+      style={{width:"100%",marginTop:10,background:"none",border:"none",color:C.textMuted,fontSize:10,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>
+      🗑️ Apagar esta dívida e os lançamentos ligados a ela
+    </button>
   </div>;
 }
 function FormCriarEmprestimo({onSalvo,onClose,data}){
@@ -9094,6 +9228,14 @@ function BotaoLancar({data,onUpdate,onIrPara}){
   // direto no "+" -- antes so redirecionava pra aba propria.
   const [cofreEscolhido,setCofreEscolhido]=useState("");
   const [dividaEscolhida,setDividaEscolhida]=useState("");
+  // [NOVO 27/09, pedido do Marcus] Abatimento de Dívida Pós-Fixada sem
+  // saída de caixa real -- caso da propria cota de heranca que se
+  // extingue por confusao (é credor e devedor da mesma quantia ao mesmo
+  // tempo), sem nenhum Pix de verdade pra representar. Sem isso, so dava
+  // pra abater a divida criando SEMPRE um lancamento no Fluxo junto,
+  // mesmo quando nenhum dinheiro saiu de fato.
+  const [semFluxoAmort,setSemFluxoAmort]=useState(false);
+  const [descAmort,setDescAmort]=useState("");
   // [NOVO 01/08] Fase 5 -- qual conta recebe o lancamento (Gastos Semanais/
   // Extraordinario/Avulso/Receita via "+"). Default: primeira conta ativa.
   const contasAtivasLanc=useMemo(()=>(data.contas||[]).filter(c=>c.ativa!==false),[data.contas]);
@@ -9185,7 +9327,7 @@ function BotaoLancar({data,onUpdate,onIrPara}){
     setDest("conta");setCat("");setDesc("");setValor("");setParc("1");setData_(hoje());
     setEnvelopeId("");setApelido("");setVNeg(true);setVencAlvo("");
     setModoEspId("");setBruto("");setPercDescReceita("");setValorEstavel("");setPlantoesEsp("");
-    setEmpEscolhido("");setCofreEscolhido("");setDividaEscolhida("");
+    setEmpEscolhido("");setCofreEscolhido("");setDividaEscolhida("");setSemFluxoAmort(false);setDescAmort("");
   }
   function voltarTrilha(){
     if(formAberto){setFormAberto(false);return;}
@@ -9312,8 +9454,10 @@ function BotaoLancar({data,onUpdate,onIrPara}){
       if(!dividaEscolhida||!numBR(valor))return;
       setLoad(true);
       try{
-        const r=await api({action:"abaterSaldoDividaPosFixada",nome:dividaEscolhida,valor:Math.abs(numBR(valor)),data:data_});
+        const r=await api({action:"abaterSaldoDividaPosFixada",nome:dividaEscolhida,valor:Math.abs(numBR(valor)),data:data_,
+          semFluxo:semFluxoAmort,descricao:descAmort.trim()||undefined});
         onUpdate(r);fecharTudo();
+        if(r&&r._avisosDivida&&r._avisosDivida.length) alert(r._avisosDivida.join("\n"));
       }catch(e){alert(e.message);}
       setLoad(false);
       return;
@@ -9587,6 +9731,18 @@ function BotaoLancar({data,onUpdate,onIrPara}){
           <input type="date" value={data_} onChange={e=>setData_(e.target.value)}
             style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",marginBottom:6,boxSizing:"border-box"}}/>
           <div style={{fontSize:10,color:C.textMuted,marginBottom:10}}>Amortização é sempre imediata (não dá pra agendar pro futuro).</div>
+          <input type="text" value={descAmort} onChange={e=>setDescAmort(e.target.value)} placeholder="Observação (opcional -- ex: nome de quem recebeu)"
+            style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",marginBottom:10,boxSizing:"border-box"}}/>
+          {/* [NOVO 27/09] Cobre o caso de uma fracao do abatimento que reduz a
+              divida de verdade mas nao teve saida de caixa nenhuma -- ex:
+              cota de heranca que se extingue por confusao (credor e devedor
+              da mesma quantia ao mesmo tempo). Marcado, o abatimento entra
+              no historico da divida normalmente, so nao cria lancamento no
+              Fluxo. */}
+          <label style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:12,color:C.textSub,marginBottom:12,cursor:"pointer"}}>
+            <input type="checkbox" checked={semFluxoAmort} onChange={e=>setSemFluxoAmort(e.target.checked)} style={{marginTop:2}}/>
+            <span>Sou devedor e credor dessa amortização (CC Art 381-384). Sem débito na conta</span>
+          </label>
         </>;
       })()}
       <button onClick={salvar} disabled={load||!dividaEscolhida||!numBR(valor)}
@@ -11691,7 +11847,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260925.1930 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260927.1200 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -11805,7 +11961,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260925.1930
+      // HTML v3.20260927.1200
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
