@@ -1271,11 +1271,34 @@ async function api(payload){
     j=await r.json();
   }catch(e){
     tocarSom("erro");
-    throw e;
+    // [NOVO 29/09] Achado real com o Marcus: o servidor GRAVAVA e a resposta falhava
+    // depois (pagina de erro do Google em vez de JSON) -- o erro cru ("Unexpected
+    // token...") nao dizia isso. err.incerto = "pode ter gravado mesmo assim".
+    const err=new Error("Sem resposta válida do servidor ("+((e&&e.message)||"erro de rede")+"). A operação PODE ter sido gravada mesmo assim.");
+    err.incerto=true;
+    throw err;
   }
-  if(!j.ok){ tocarSom("erro"); throw new Error(j.error||"Erro"); }
+  if(!j.ok){
+    tocarSom("erro");
+    const err=new Error(j.error||"O servidor devolveu um erro sem descrição. A operação PODE ter sido gravada mesmo assim.");
+    if(!j.error) err.incerto=true;
+    throw err;
+  }
   tocarSom("sucesso");
   return j;
+}
+
+// [NOVO 29/09] Depois de uma falha "incerta" (a resposta nao veio, mas o servidor
+// pode ter gravado): busca os dados de novo pra tela mostrar o que esta gravado
+// de verdade -- assim ninguem refaz um lancamento que ja existe.
+async function falhaDeMutacao(e,onUpdate){
+  let atualizou=false;
+  if(e&&e.incerto){
+    try{ const r=await api({action:"getData"}); onUpdate&&onUpdate(r); atualizou=true; }catch(_){}
+  }
+  alert((e&&e.message||"Erro")+(e&&e.incerto?("\n\n"+(atualizou
+    ?"Atualizei a tela com o que está gravado agora. Confira a lista antes de lançar de novo."
+    :"Toque em Atualizar e confira a lista antes de lançar de novo.")):""));
 }
 
 // ── GRÁFICO escala híbrida + Bézier ──────────────────────────────────────────
@@ -2104,14 +2127,14 @@ function PlanoAmortizacaoDivida({divida,planos,data,onUpdate}){
       const r=await api({action:"criarPlanoDivida",...payload()});
       onUpdate&&onUpdate(r);
       setPrev(null);setValorP("");setNP("");setDiaP("");setObsP("");
-    }catch(e){alert(e.message);}
+    }catch(e){ await falhaDeMutacao(e,onUpdate); }
     setLoad(false);
   }
   async function cancelar(){
     if(!confirm("Cancelar o plano? As parcelas programadas ainda não pagas serão apagadas do Fluxo. As já executadas continuam.")) return;
     setLoad(true);
     try{ const r=await api({action:"cancelarPlanoDivida",id:planoAtivo.id}); onUpdate&&onUpdate(r); }
-    catch(e){alert(e.message);}
+    catch(e){ await falhaDeMutacao(e,onUpdate); }
     setLoad(false);
   }
   const resumo=(x)=>{
@@ -2200,14 +2223,14 @@ function EventosDivida({divida,eventos,onUpdate,data}){
     try{
       const r=await api({action:"editarEventoDivida",id:editId,data:eData,valor:v,descricao:eDesc,conta:eConta||undefined});
       onUpdate&&onUpdate(r); avisar(r); setEditId("");
-    }catch(e){alert(e.message);}
+    }catch(e){ await falhaDeMutacao(e,onUpdate); }
     setLoad(false);
   }
   async function apagar(e){
     if(!confirm("Apagar "+(e.tipo==="MARCO"?"esse marco de saldo real":"essa amortização de "+fmt(e.valor)+" ("+fmtD(e.data)+")")+"?"+(e.comFluxo?" A linha ligada no Fluxo também será apagada.":"")+" O saldo da dívida será recalculado.")) return;
     setLoad(true);
     try{ const r=await api({action:"apagarEventoDivida",id:e.id}); onUpdate&&onUpdate(r); avisar(r); }
-    catch(err){alert(err.message);}
+    catch(err){ await falhaDeMutacao(err,onUpdate); }
     setLoad(false);
   }
   async function importar(){
@@ -2228,7 +2251,7 @@ function EventosDivida({divida,eventos,onUpdate,data}){
       const res=r._resultadoImportacao;
       if(res) alert("Importados: "+res.importados+(res.ignorados?" · já existiam (ignorados): "+res.ignorados:""));
       setImpTexto(""); setImpAberto(false);
-    }catch(e){alert(e.message);}
+    }catch(e){ await falhaDeMutacao(e,onUpdate); }
     setLoad(false);
   }
   return <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #FDBA74"}}>
@@ -2294,6 +2317,9 @@ function FormAmortizarDivida({data,divida,onUpdate,onDone}){
   const [obsAm,setObsAm]=useState("");
   const [semDebito,setSemDebito]=useState(false);
   const [loadAm,setLoadAm]=useState(false);
+  // chave anti-duplicacao: uma por intencao; so muda depois de um sucesso (repetir
+  // depois de uma falha reaproveita a mesma) e vai junto com o conteudo do formulario
+  const nonceRef=useRef("");
   const dividaAlvo=divida||dividasAtivas.find(d=>d.nome===nomeSel);
   // conta padrao: a da propria divida; senao a primeira ativa
   useEffect(()=>{
@@ -2305,14 +2331,18 @@ function FormAmortizarDivida({data,divida,onUpdate,onDone}){
   async function amortizar(){
     if(!pronto) return;
     setLoadAm(true);
+    if(!nonceRef.current) nonceRef.current="K"+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+    const chave=nonceRef.current+"|"+[dividaAlvo.nome,numBR(valorAm),dataAm,semDebito?"":contaAm,obsAm.trim(),semDebito?1:0].join("~");
     try{
       const r=await api({action:"abaterSaldoDividaPosFixada",nome:dividaAlvo.nome,valor:Math.abs(numBR(valorAm)),data:dataAm,
-        conta:semDebito?undefined:(contaAm||undefined),semFluxo:semDebito,descricao:obsAm.trim()||undefined});
+        conta:semDebito?undefined:(contaAm||undefined),semFluxo:semDebito,descricao:obsAm.trim()||undefined,chave});
       onUpdate&&onUpdate(r);
-      if(r&&r._avisosDivida&&r._avisosDivida.length) alert(r._avisosDivida.join("\n"));
+      if(r&&r._jaExistia) alert("Esse lançamento já estava gravado (a tentativa anterior tinha funcionado). Não dupliquei.");
+      else if(r&&r._avisosDivida&&r._avisosDivida.length) alert(r._avisosDivida.join("\n"));
+      nonceRef.current="";
       setValorAm("");setObsAm("");setSemDebito(false);setDataAm(hoje());
       onDone&&onDone();
-    }catch(e){alert(e.message);}
+    }catch(e){ await falhaDeMutacao(e,onUpdate); }
     setLoadAm(false);
   }
   if(!divida&&!dividasAtivas.length) return <div style={{fontSize:12,color:C.textMuted,padding:"12px 0",textAlign:"center"}}>
@@ -2383,7 +2413,7 @@ function CardDividaPosFixada({divida,onUpdate,data}){
     try{
       const r=await api({action:"apagarDividaPosFixadaCompleta",nome:divida.nome,confirmar:true});
       onUpdate&&onUpdate(r);
-    }catch(e){alert(e.message);}
+    }catch(e){ await falhaDeMutacao(e,onUpdate); }
   }
   // [23/07] Historico real, direto do log que ja existe (CORRECAO_CDI,
   // ABATIMENTO, ESTORNO, AJUSTE_MANUAL) -- cada evento ja vem com o saldo
@@ -2437,7 +2467,9 @@ function CardDividaPosFixada({divida,onUpdate,data}){
     </button>
     {resultadoCDI&&<div style={{fontSize:11,color:resultadoCDI.atualizado?C.textSub:C.textMuted,marginTop:6,fontStyle:resultadoCDI.atualizado?"normal":"italic"}}>
       {resultadoCDI.atualizado
-        ?`${resultadoCDI.diasUteis} dia(s) útil(eis): +${fmt(resultadoCDI.jurosAcumulado)} de juros`
+        ?(resultadoCDI.recalculado
+          ?`Recalculada do zero com o CDI real (${resultadoCDI.diasUteis} dias úteis desde o início)`+(Math.abs(resultadoCDI.jurosAcumulado)>=0.005?` · saldo mudou ${fmt(resultadoCDI.jurosAcumulado)}`:" · sem mudança")
+          :`${resultadoCDI.diasUteis} dia(s) útil(eis): +${fmt(resultadoCDI.jurosAcumulado)} de juros`)
         :resultadoCDI.motivo}
     </div>}
     {!ajustando
@@ -11959,7 +11991,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260929.0830 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260929.1000 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12073,7 +12105,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260929.0830
+      // HTML v3.20260929.1000
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
