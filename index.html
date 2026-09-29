@@ -2158,7 +2158,7 @@ function PlanoAmortizacaoDivida({divida,planos,data,onUpdate}){
             {planoAtivo.fimEstimado?"fim estimado "+fmtD(planoAtivo.fimEstimado)+" ("+planoAtivo.nEstimado+" parcelas no total; última ≈ "+fmt(planoAtivo.ultimaEstimada)+")":""}
             {planoAtivo.restaEstimado>0.01?" · sobra estimada na dívida: "+fmt(planoAtivo.restaEstimado):""}
           </div>
-          <div style={{fontSize:10,color:C.textMuted,marginTop:6,fontStyle:"italic"}}>As próximas parcelas aparecem na Previsão (só as próximas 12, repostas conforme você paga). Estimativa com o último CDI mantido constante — reajusta a cada pagamento.</div>
+          <div style={{fontSize:10,color:C.textMuted,marginTop:6,fontStyle:"italic"}}>As próximas parcelas aparecem no Plano (só as próximas 12, repostas conforme você paga). Estimativa com o último CDI mantido constante — reajusta a cada pagamento.</div>
           <button onClick={cancelar} disabled={load} style={{marginTop:8,background:"none",border:"1px solid "+C.border,borderRadius:6,padding:"6px 10px",fontSize:12,color:C.red,cursor:"pointer",fontFamily:"inherit"}}>Cancelar plano</button>
         </div>
         :<div>
@@ -4107,7 +4107,7 @@ function CardCofre({cofre,onUpdate,data}){
       style={{width:"100%",marginTop:6,background:C.text,color:"#fff",border:"none",borderRadius:6,padding:"9px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
       {load?"…":"Confirmar"}
     </button>}
-    {!ehRV&&dataLanc>hoje()&&<div style={{fontSize:9,color:C.teal,fontWeight:700,marginTop:2}}>📅 Agendado pra {fmtD(dataLanc)} — só executa nessa data (aparece na Previsão até lá).</div>}
+    {!ehRV&&dataLanc>hoje()&&<div style={{fontSize:9,color:C.teal,fontWeight:700,marginTop:2}}>📅 Agendado pra {fmtD(dataLanc)} — só executa nessa data (aparece no Plano até lá).</div>}
 
     {/* [25/07] Secao "pesquisa e compra de novos ativos" -- separada da
         carteira (papeis + Atualizar carteira, la em cima) por uma linha
@@ -7438,23 +7438,50 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
         {isOpen&&<PainelEdicaoItem key={item.row} item={item} data={data} onUpdate={onUpdate} onClose={()=>setConf(null)} onIrPara={onIrPara}
           antecipar={!!(destaque&&destaque.antecipar&&destaque.row===item.row)}/>}
       </div>;})}
-      {cartaoExibir.map(c=><div key={"cart-"+c.cartao+"-"+c.row}
-        onClick={()=>onIrPara&&onIrPara({tab:"cartoes",row:c.row,cartao:c.cartao})}
-        style={{display:"flex",alignItems:"center",gap:8,padding:"8px 14px",borderBottom:"1px solid "+C.borderLight,
-          background:C.borderLight,opacity:0.8,cursor:onIrPara?"pointer":"default"}}>
-        <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:13,fontWeight:600,color:C.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontStyle:"italic"}}>{c.descricao}</div>
-          <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>🏷 Cartão {c.cartao} · não conta aqui, já está na fatura</div>
-          {c.dcpEnvelope&&<div style={{marginTop:3}}><TagEnvelopeDCP envelope={c.dcpEnvelope} futuro={true}/></div>}
-        </div>
-        <span style={{fontSize:13,fontWeight:700,color:C.textMuted,flexShrink:0}}>{fmt(c.valor)}</span>
-        <span style={{fontSize:12,color:C.textMuted,flexShrink:0}}>→</span>
-      </div>)}
+      {porCartao(cartaoExibir).map(g=><GrupoCartaoDia key={"gc-"+gdt+"-"+g.cartao} cartaoId={g.cartao} itens={g.itens} data={data} futuro={true} onIrPara={onIrPara}/>)}
     </div>;})}
     <BotaoLancar data={data} onUpdate={onUpdate} onIrPara={onIrPara}/>
   </div>;
 }
 
+
+// [NOVO 29/09, pedido do Marcus] Compras de cartao de um dia, agrupadas POR CARTAO:
+// uma linha com o nome do cartao e o total gasto; tocar abre as compras. Vale pro
+// Plano e pro Historico, pra qualquer conta e seus cartoes vinculados (o nome vem do
+// cadastro de cartoes). Continua puramente informativo: nao entra em saldo nenhum.
+function porCartao(lista){
+  const ordem=[],m={};
+  (lista||[]).forEach(c=>{ if(!m[c.cartao]){m[c.cartao]=[];ordem.push(c.cartao);} m[c.cartao].push(c); });
+  return ordem.map(cartao=>({cartao,itens:m[cartao]}));
+}
+function GrupoCartaoDia({cartaoId,itens,data,futuro,onIrPara}){
+  const [aberto,setAberto]=useState(false);
+  const total=itens.reduce((a,c)=>a+(Number(c.valor)||0),0);
+  const n=itens.length;
+  return <div>
+    <div onClick={()=>setAberto(a=>!a)}
+      style={{display:"flex",alignItems:"center",gap:8,padding:"8px 14px",borderBottom:"1px solid "+C.borderLight,
+        background:C.borderLight,opacity:0.85,cursor:"pointer"}}>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:13,fontWeight:600,color:C.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>💳 {nomeCartao(cartaoId,data)}</div>
+        <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{n} compra{n>1?"s":""} · não conta aqui, já está na fatura</div>
+      </div>
+      <span style={{fontSize:13,fontWeight:700,color:C.textMuted,flexShrink:0}}>{fmt(total)}</span>
+      <span style={{fontSize:12,color:C.textMuted,flexShrink:0}}>{aberto?"▾":"▸"}</span>
+    </div>
+    {aberto&&itens.map(c=><div key={"cart-"+c.cartao+"-"+c.row}
+      onClick={()=>onIrPara&&onIrPara({tab:"cartoes",row:c.row,cartao:c.cartao})}
+      style={{display:"flex",alignItems:"center",gap:8,padding:"7px 14px 7px 28px",borderBottom:"1px solid "+C.borderLight,
+        background:C.borderLight,opacity:0.8,cursor:onIrPara?"pointer":"default"}}>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:12,fontWeight:600,color:C.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontStyle:"italic"}}>{c.descricao}</div>
+        {c.dcpEnvelope&&<div style={{marginTop:3}}><TagEnvelopeDCP envelope={c.dcpEnvelope} futuro={!!futuro}/></div>}
+      </div>
+      <span style={{fontSize:12,fontWeight:700,color:C.textMuted,flexShrink:0}}>{fmt(c.valor)}</span>
+      <span style={{fontSize:12,color:C.textMuted,flexShrink:0}}>→</span>
+    </div>)}
+  </div>;
+}
 
 // ── HISTÓRICO ─────────────────────────────────────────────────────────────────
 function Historico({data,onUpdate,destaque,onIrPara}){
@@ -7611,18 +7638,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
           </div>
           {isOpen&&<PainelEdicaoItem key={item.row} item={item} data={data} onUpdate={onUpdate} onClose={()=>setConf(null)} onIrPara={onIrPara}/>}
         </div>;})}
-        {(cartaoPorDataFiltrado[gdt]||[]).map(c=><div key={"cart-"+c.cartao+"-"+c.row}
-          onClick={()=>onIrPara&&onIrPara({tab:"cartoes",row:c.row,cartao:c.cartao})}
-          style={{display:"flex",alignItems:"center",gap:8,padding:"8px 14px",borderBottom:"1px solid "+C.borderLight,
-            background:C.borderLight,opacity:0.8,cursor:onIrPara?"pointer":"default"}}>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:13,fontWeight:600,color:C.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontStyle:"italic"}}>{c.descricao}</div>
-            <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>🏷 Cartão {c.cartao} · não conta aqui, já está na fatura</div>
-            {c.dcpEnvelope&&<div style={{marginTop:3}}><TagEnvelopeDCP envelope={c.dcpEnvelope} futuro={false}/></div>}
-          </div>
-          <span style={{fontSize:13,fontWeight:700,color:C.textMuted,flexShrink:0}}>{fmt(c.valor)}</span>
-          <span style={{fontSize:12,color:C.textMuted,flexShrink:0}}>→</span>
-        </div>)}
+        {porCartao(cartaoPorDataFiltrado[gdt]).map(g=><GrupoCartaoDia key={"gc-"+gdt+"-"+g.cartao} cartaoId={g.cartao} itens={g.itens} data={data} futuro={false} onIrPara={onIrPara}/>)}
       </div>;
     })}
     {filtrados.length>limite&&<div style={{padding:"14px",textAlign:"center"}}>
@@ -7931,7 +7947,7 @@ function Timeline({data,onUpdate,onIrPara}){
           style={{flex:1,padding:"7px 13px",border:"1px solid "+C.border,borderRadius:24,fontSize:13,fontFamily:"inherit"}}/>
       </div>
       <div style={{display:"flex",gap:6,marginTop:7}}>
-        {[["todos","Todos"],["previsao","Só Previsão"],["historico","Só Histórico"]].map(([id,l])=>
+        {[["todos","Todos"],["previsao","Só Plano"],["historico","Só Histórico"]].map(([id,l])=>
           <button key={id} onClick={()=>setFiltro(id)} style={{flex:1,padding:"6px 4px",borderRadius:20,border:"none",cursor:"pointer",
             fontFamily:"inherit",fontSize:11,fontWeight:700,
             background:filtro===id?C.accentLight:C.borderLight,color:filtro===id?C.accent:C.textSub}}>{l}</button>)}
@@ -11971,7 +11987,7 @@ function Tesouraria(){
   function goChat(txt){setChatInit(txt);navegar("conversar");}
 
   const TABS=timelineExpandida
-    ? [{id:"dashboard",l:"Dashboard"},{id:"timeline",l:"🧪 Timeline"},{id:"fluxo",l:"Previsão"},{id:"historico",l:"Histórico"},{id:"ferramentas",l:"Ferramentas"}]
+    ? [{id:"dashboard",l:"Dashboard"},{id:"timeline",l:"🧪 Timeline"},{id:"fluxo",l:"Plano"},{id:"historico",l:"Histórico"},{id:"ferramentas",l:"Ferramentas"}]
     : [{id:"dashboard",l:"Dashboard"},{id:"timeline",l:"🧪 Timeline"},{id:"ferramentas",l:"Ferramentas"}];
   const TAB_CORES={
     dashboard:{cor:C.blue,bg:C.blueLight},
@@ -11991,7 +12007,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260929.1000 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260929.1300 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12105,7 +12121,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260929.1000
+      // HTML v3.20260929.1300
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
