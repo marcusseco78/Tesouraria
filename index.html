@@ -5715,6 +5715,7 @@ function ConciliarExtratoTab({data,onUpdate}){
   const [selecionadoPar,setSelecionadoPar]=useState(null);
   const [proximoNumeroPar,setProximoNumeroPar]=useState(1);
   const [mesclando,setMesclando]=useState(false);
+  const [corrigindo,setCorrigindo]=useState(null); // [NOVO 29/09] row do item sendo corrigido, pro botao "Corrigir para X" mostrar "…"
   const mesclandoRef=useRef(false);
   // idOfx -> {apelido,categoria,envelope,pagFatura,vincularRegra,criarEspelho,intencaoEspelho,contaEspelho}
   const [previasApp,setPreviasApp]=useState({});
@@ -6230,9 +6231,24 @@ function ConciliarExtratoTab({data,onUpdate}){
             <div style={{fontSize:11,color:"#92400E",marginBottom:8}}>
               Está como <b>{CAT_LABEL[c.avisoClassificacao.categoriaAtual]||c.avisoClassificacao.categoriaAtual}</b>, mas o texto bate com uma regra que espera <b>{CAT_LABEL[c.avisoClassificacao.categoriaEsperada]||c.avisoClassificacao.categoriaEsperada}</b>.
             </div>
-            <button onClick={async()=>{setLoad(true);try{onUpdate(await api({action:"editar",row:c.row,campo:"CATEGORIA",valor:c.avisoClassificacao.categoriaEsperada}));}catch(e){alert(e.message);}setLoad(false);}} disabled={load}
-              style={{width:"100%",padding:"7px",borderRadius:6,background:"#B45309",color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-              Corrigir para {CAT_LABEL[c.avisoClassificacao.categoriaEsperada]||c.avisoClassificacao.categoriaEsperada}
+            <button onClick={async()=>{
+              setCorrigindo(c.row); // [NOVO 29/09] feedback proprio, nao o "load" global (que nao mudava o texto do botao)
+              try{
+                const novaCategoria=c.avisoClassificacao.categoriaEsperada;
+                onUpdate(await api({action:"editar",row:c.row,campo:"CATEGORIA",valor:novaCategoria}));
+                // [NOVO 29/09, bug real achado com o Marcus] O aviso e o badge "Extra/Fixa"
+                // vinham do retrato congelado de "resultado" (tirado na hora em que o extrato
+                // foi processado) -- editar so atualiza "data", nunca esse retrato, entao o
+                // aviso ficava na tela pra sempre e o item continuava mostrando a categoria
+                // antiga ate o usuario subir o extrato de novo. Atualiza os dois aqui, igual
+                // o resto da tela ja faz pros outros botoes desta mesma tela.
+                setResultado(res=>res?{...res,confirmados:(res.confirmados||[]).map(x=>
+                  x.row===c.row?{...x,categoria:novaCategoria,avisoClassificacao:null}:x)}:res);
+              }catch(e){ alert(e.message); }
+              setCorrigindo(null);
+            }} disabled={corrigindo===c.row}
+              style={{width:"100%",padding:"7px",borderRadius:6,background:"#B45309",color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:corrigindo===c.row?"default":"pointer",fontFamily:"inherit",opacity:corrigindo===c.row?.7:1}}>
+              {corrigindo===c.row?"…":"Corrigir para "+(CAT_LABEL[c.avisoClassificacao.categoriaEsperada]||c.avisoClassificacao.categoriaEsperada)}
             </button>
           </div>)}
         </div>;
@@ -12007,7 +12023,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260929.1300 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260929.1400 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12121,7 +12137,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260929.1300
+      // HTML v3.20260929.1400
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
