@@ -5716,6 +5716,7 @@ function ConciliarExtratoTab({data,onUpdate}){
   const [proximoNumeroPar,setProximoNumeroPar]=useState(1);
   const [mesclando,setMesclando]=useState(false);
   const [corrigindo,setCorrigindo]=useState(null); // [NOVO 29/09] row do item sendo corrigido, pro botao "Corrigir para X" mostrar "…"
+  const [desvinculando,setDesvinculando]=useState(null); // [NOVO 30/09] row sendo desvinculado
   const mesclandoRef=useRef(false);
   // idOfx -> {apelido,categoria,envelope,pagFatura,vincularRegra,criarEspelho,intencaoEspelho,contaEspelho}
   const [previasApp,setPreviasApp]=useState({});
@@ -6337,15 +6338,38 @@ function ConciliarExtratoTab({data,onUpdate}){
             const c=linha.c;
             return <React.Fragment key={"cf_"+c.row}>
               {cabecalhoData}
-              <SeloPar
-                ofx={{desc:c.descBanco||c.desc, valor:c.valorBanco??c.valor}}
-                app={{desc:c.desc, valor:c.valor, categoria:c.categoria||""}}
-                forca="exato"
-                confirmando={false}
-                onConfirmar={null}
-                row={c.row} onUpdate={onUpdate} tipo="extrato"
-                data={data} despesasFixas={despesasFixas} dataItem={c.dataBanco||c.data} formaConta={contaExtrato}
-              />
+              <div style={{position:"relative"}}>
+                <SeloPar
+                  ofx={{desc:c.descBanco||c.desc, valor:c.valorBanco??c.valor}}
+                  app={{desc:c.desc, valor:c.valor, categoria:c.categoria||""}}
+                  forca="exato"
+                  confirmando={false}
+                  onConfirmar={null}
+                  row={c.row} onUpdate={onUpdate} tipo="extrato"
+                  data={data} despesasFixas={despesasFixas} dataItem={c.dataBanco||c.data} formaConta={contaExtrato}
+                />
+                {/* [NOVO 30/09, pedido do Marcus] Desfaz um pareamento errado (ex: duas
+                    ocorrências com o mesmo valor, casou com a errada) sem apagar o
+                    lançamento nem o histórico -- só solta o par pra refazer certo. */}
+                <button onClick={async()=>{
+                  if(!confirm('Desvincular "'+(c.desc||c.descBanco)+'" ('+fmt(c.valor)+') dessa transação do banco? Volta a aparecer como pendente dos dois lados, pra você parear de novo com a ocorrência certa.')) return;
+                  setDesvinculando(c.row);
+                  try{
+                    const r=await api({action:"desconciliarLinha",row:c.row});
+                    onUpdate(r);
+                    setResultado(res=>res?{...res,
+                      confirmados:(res.confirmados||[]).filter(x=>x.row!==c.row),
+                      novos:[...(res.novos||[]),{data:c.dataBanco||c.data,valor:c.valorBanco??c.valor,descricao:c.descBanco||c.desc,identificador:c.identificador||null,sugestao:{categoria:"",descricaoSugerida:"",ignorar:false,motivo:null},candidatosVinculo:[]}],
+                      aguardando:[...(res.aguardando||[]),{row:c.row,data:c.data,desc:c.desc,valor:c.valor,categoria:c.categoria||"",status:"EXECUTADO",extratoId:null,alias:[]}]
+                    }:res);
+                  }catch(e){ await falhaDeMutacao(e,onUpdate); }
+                  setDesvinculando(null);
+                }} disabled={desvinculando===c.row} title="Desvincular -- desfaz o pareamento sem apagar nada"
+                  style={{position:"absolute",top:4,right:4,width:22,height:22,borderRadius:999,border:"none",
+                    background:"rgba(255,255,255,.85)",color:C.textMuted,fontSize:12,cursor:desvinculando===c.row?"default":"pointer",zIndex:2}}>
+                  {desvinculando===c.row?"…":"🔓"}
+                </button>
+              </div>
             </React.Fragment>;
           });
         })()}
@@ -12023,7 +12047,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260929.1400 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260930.0900 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12137,7 +12161,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260929.1400
+      // HTML v3.20260930.0900
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
