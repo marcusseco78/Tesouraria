@@ -6040,8 +6040,17 @@ function ConciliarExtratoTab({data,onUpdate}){
             let obsNovo={};
             if(n.identificador) obsNovo.extratoId=n.identificador;
             if(previa.envelope) obsNovo.envelope=previa.envelope;
-            if(previa.apelido) obsNovo.apelido=previa.apelido.trim().toUpperCase();
-            itensLote.push({data:n.data,descricao:n.descricao,valor:Number(n.valor),tipo:previa.categoria,
+            // [CORRIGIDO 30/09, bug real achado com o Marcus] O nome digitado em
+            // "Nome pra esse lançamento" ia só pra obs.apelido -- a DESCRICAO
+            // gravada era sempre o texto cru do banco. Como nenhuma tela desta
+            // lista (SeloPar aqui na conciliação) lê o apelido pra decidir o
+            // título, o texto do Pix aparecia sempre, mesmo com o apelido
+            // "salvo" por baixo. Agora o apelido vira a própria DESCRICAO --
+            // continua indo pra obs.apelido também, só que agora reforça (não
+            // substitui) o mesmo texto, então nenhuma tela mais pode discordar.
+            const descFinal=(previa.apelido||"").trim()?previa.apelido.trim().toUpperCase():n.descricao;
+            if(previa.apelido&&previa.apelido.trim()) obsNovo.apelido=previa.apelido.trim().toUpperCase();
+            itensLote.push({data:n.data,descricao:descFinal,valor:Number(n.valor),tipo:previa.categoria,
               categoria:previa.categoria,forma:contaExtrato||"CONTA",status:"EXECUTADO",
               obs:Object.keys(obsNovo).length?JSON.stringify(obsNovo):""});
             if(previa.vincularRegra) regrasParaAprender.push({descricao:n.descricao,categoria:previa.categoria,apelido:previa.apelido||""});
@@ -6338,38 +6347,39 @@ function ConciliarExtratoTab({data,onUpdate}){
             const c=linha.c;
             return <React.Fragment key={"cf_"+c.row}>
               {cabecalhoData}
-              <div style={{position:"relative"}}>
-                <SeloPar
-                  ofx={{desc:c.descBanco||c.desc, valor:c.valorBanco??c.valor}}
-                  app={{desc:c.desc, valor:c.valor, categoria:c.categoria||""}}
-                  forca="exato"
-                  confirmando={false}
-                  onConfirmar={null}
-                  row={c.row} onUpdate={onUpdate} tipo="extrato"
-                  data={data} despesasFixas={despesasFixas} dataItem={c.dataBanco||c.data} formaConta={contaExtrato}
-                />
-                {/* [NOVO 30/09, pedido do Marcus] Desfaz um pareamento errado (ex: duas
-                    ocorrências com o mesmo valor, casou com a errada) sem apagar o
-                    lançamento nem o histórico -- só solta o par pra refazer certo. */}
-                <button onClick={async()=>{
-                  if(!confirm('Desvincular "'+(c.desc||c.descBanco)+'" ('+fmt(c.valor)+') dessa transação do banco? Volta a aparecer como pendente dos dois lados, pra você parear de novo com a ocorrência certa.')) return;
-                  setDesvinculando(c.row);
-                  try{
-                    const r=await api({action:"desconciliarLinha",row:c.row});
-                    onUpdate(r);
-                    setResultado(res=>res?{...res,
-                      confirmados:(res.confirmados||[]).filter(x=>x.row!==c.row),
-                      novos:[...(res.novos||[]),{data:c.dataBanco||c.data,valor:c.valorBanco??c.valor,descricao:c.descBanco||c.desc,identificador:c.identificador||null,sugestao:{categoria:"",descricaoSugerida:"",ignorar:false,motivo:null},candidatosVinculo:[]}],
-                      aguardando:[...(res.aguardando||[]),{row:c.row,data:c.data,desc:c.desc,valor:c.valor,categoria:c.categoria||"",status:"EXECUTADO",extratoId:null,alias:[]}]
-                    }:res);
-                  }catch(e){ await falhaDeMutacao(e,onUpdate); }
-                  setDesvinculando(null);
-                }} disabled={desvinculando===c.row} title="Desvincular -- desfaz o pareamento sem apagar nada"
-                  style={{position:"absolute",top:4,right:4,width:22,height:22,borderRadius:999,border:"none",
-                    background:"rgba(255,255,255,.85)",color:C.textMuted,fontSize:12,cursor:desvinculando===c.row?"default":"pointer",zIndex:2}}>
-                  {desvinculando===c.row?"…":"🔓"}
-                </button>
-              </div>
+              <SeloPar
+                ofx={{desc:c.descBanco||c.desc, valor:c.valorBanco??c.valor}}
+                app={{desc:c.desc, valor:c.valor, categoria:c.categoria||""}}
+                forca="exato"
+                confirmando={false}
+                onConfirmar={null}
+                row={c.row} onUpdate={onUpdate} tipo="extrato"
+                data={data} despesasFixas={despesasFixas} dataItem={c.dataBanco||c.data} formaConta={contaExtrato}
+              />
+              {/* [NOVO 30/09, pedido do Marcus; CORRIGIDO 30/09 -- a 1a versão ficava
+                  posicionada por cima do valor do SeloPar, cortando o texto] Desfaz um
+                  pareamento errado (ex: duas ocorrências com o mesmo valor, casou com a
+                  errada) sem apagar o lançamento nem o histórico -- linha própria, sem
+                  sobrepor nada, em vez de um botão flutuante em cima do card. */}
+              <button onClick={async()=>{
+                if(!confirm('Desvincular "'+(c.desc||c.descBanco)+'" ('+fmt(c.valor)+') dessa transação do banco? Volta a aparecer como pendente dos dois lados, pra você parear de novo com a ocorrência certa.')) return;
+                setDesvinculando(c.row);
+                try{
+                  const r=await api({action:"desconciliarLinha",row:c.row});
+                  onUpdate(r);
+                  setResultado(res=>res?{...res,
+                    confirmados:(res.confirmados||[]).filter(x=>x.row!==c.row),
+                    novos:[...(res.novos||[]),{data:c.dataBanco||c.data,valor:c.valorBanco??c.valor,descricao:c.descBanco||c.desc,identificador:c.identificador||null,sugestao:{categoria:"",descricaoSugerida:"",ignorar:false,motivo:null},candidatosVinculo:[]}],
+                    aguardando:[...(res.aguardando||[]),{row:c.row,data:c.data,desc:c.desc,valor:c.valor,categoria:c.categoria||"",status:"EXECUTADO",extratoId:null,alias:[]}]
+                  }:res);
+                }catch(e){ await falhaDeMutacao(e,onUpdate); }
+                setDesvinculando(null);
+              }} disabled={desvinculando===c.row}
+                style={{display:"block",width:"100%",textAlign:"right",padding:"3px 12px 8px",margin:0,
+                  background:"none",border:"none",color:C.textMuted,fontSize:10,fontWeight:600,
+                  cursor:desvinculando===c.row?"default":"pointer"}}>
+                {desvinculando===c.row?"desvinculando…":"🔓 desvincular"}
+              </button>
             </React.Fragment>;
           });
         })()}
@@ -10695,9 +10705,16 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
             // estorno/crédito (item.amount negativo, categoria Receita/
             // Depósito Avulso escolhida) precisa entrar positivo na
             // planilha, não como se fosse mais uma despesa.
+            // [CORRIGIDO 30/09, mesmo bug e mesma correção do extrato de conta --
+            // pedido do Marcus: a regra vale pra qualquer coisa que nasça de um item
+            // do OFX/CSV sem par, não só Pix] DESCRICAO gravada era sempre o texto
+            // cru do banco -- ninguém nesta tela (nem a lista de compras agrupadas
+            // por cartão) lê obs.apelido pra decidir o título, então o apelido digitado
+            // nunca aparecia em lugar nenhum. Agora o apelido vira a própria DESCRICAO.
+            const descFinalCartao=previa.apelido.trim()?previa.apelido.trim().toUpperCase():item.title;
             const r=await api({action:"lancarCartao",cartao,data_compra:item.date,
               parcelas:parcelaTotalNum,parcelaAtual:parcelaAtualNum,
-              descricao:item.title,valor:-item.amount,categoria:previa.categoria,
+              descricao:descFinalCartao,valor:-item.amount,categoria:previa.categoria,
               dcp:previa.categoria==="DCP"?"S":"N",apelido:previa.apelido.trim().toUpperCase(),
               envelopeId:previa.envelope||undefined,origemCSV:true});
             onUpdate(r);
@@ -12047,7 +12064,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260930.0900 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260930.1200 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12161,7 +12178,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260930.0900
+      // HTML v3.20260930.1200
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
