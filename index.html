@@ -4950,7 +4950,7 @@ function fmtCentro(v){ return fmt(v); }
  *   deve reprocessar (mesmo mecanismo de confirmadoOfx/beneficio da duvida
  *   que ja existe no motor). Desprotegido = volta a ser reavaliado do zero.
  */
-function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,data,envelopeAtual,despesasFixas,dataItem,formaConta}){
+function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,data,envelopeAtual,despesasFixas,dataItem,formaConta,onItemAtualizado}){
   const [editando,setEditando]=useState(false);
   const [apelidoEdit,setApelidoEdit]=useState(app.desc);
   const [categoriaEdit,setCategoriaEdit]=useState(app.categoria);
@@ -4997,11 +4997,13 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
     setSalvando(true);
     try{
       let r;
+      const patchLocal={};
       if(mudou){
         if(apelidoEdit.trim().toUpperCase()!==app.desc.toUpperCase()){
           r=tipo==="cartao"
             ?await api({action:"editarApelidoItem",aba,row,apelido:apelidoEdit.trim().toUpperCase()})
             :await api({action:"editar",row,campo:"DESCRICAO",valor:apelidoEdit.trim().toUpperCase()});
+          patchLocal.desc=apelidoEdit.trim().toUpperCase();
         }
         if(categoriaEdit!==app.categoria){
           if(tipo==="cartao"){
@@ -5010,11 +5012,21 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
           }else{
             r=await api({action:"editar",row,campo:"CATEGORIA",valor:categoriaEdit});
           }
+          patchLocal.categoria=categoriaEdit;
         }
         if(envelopeEdit!==(envelopeAtual||"")){
           r=await api({action:"classificarEnvelope",aba:abaReal,row,envelopeId:envelopeEdit||null});
         }
         if(r&&onUpdate) onUpdate(r);
+        // [CORRIGIDO 30/09, bug real achado com o Marcus] onUpdate só atualiza o
+        // "data" geral do app -- a tela de conciliação (extrato) guarda sua
+        // própria foto da consulta (resultado.confirmados), e essa foto nunca
+        // era avisada da edição. O título continuava mostrando o texto antigo
+        // até o usuário subir o extrato de novo; só a caixinha de baixo (que
+        // usa o estado local do próprio input, por acidente) mostrava o nome
+        // certo. onItemAtualizado deixa quem desenhou este SeloPar manter a
+        // própria foto em dia.
+        if(Object.keys(patchLocal).length&&onItemAtualizado) onItemAtualizado(patchLocal);
       }
       // [NOVO 06/09] Vínculo com despesa fixa/criar nova -- aprende o alias
       // (ou cadastra a recorrência nova) além do que já foi salvo acima.
@@ -6355,6 +6367,8 @@ function ConciliarExtratoTab({data,onUpdate}){
                 onConfirmar={null}
                 row={c.row} onUpdate={onUpdate} tipo="extrato"
                 data={data} despesasFixas={despesasFixas} dataItem={c.dataBanco||c.data} formaConta={contaExtrato}
+                onItemAtualizado={patch=>setResultado(res=>res?{...res,
+                  confirmados:(res.confirmados||[]).map(x=>x.row===c.row?{...x,...patch}:x)}:res)}
               />
               {/* [NOVO 30/09, pedido do Marcus; CORRIGIDO 30/09 -- a 1a versão ficava
                   posicionada por cima do valor do SeloPar, cortando o texto] Desfaz um
@@ -12064,7 +12078,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260930.1200 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20260930.1300 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12178,7 +12192,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260930.1200
+      // HTML v3.20260930.1300
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
