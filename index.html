@@ -5728,6 +5728,7 @@ function ConciliarExtratoTab({data,onUpdate}){
   const [proximoNumeroPar,setProximoNumeroPar]=useState(1);
   const [mesclando,setMesclando]=useState(false);
   const [corrigindo,setCorrigindo]=useState(null); // [NOVO 29/09] row do item sendo corrigido, pro botao "Corrigir para X" mostrar "…"
+  const [confirmandoCerto,setConfirmandoCerto]=useState(null); // [NOVO 01/10] row do item sendo marcado como "está certo assim"
   const [desvinculando,setDesvinculando]=useState(null); // [NOVO 30/09] row sendo desvinculado
   const mesclandoRef=useRef(false);
   // idOfx -> {apelido,categoria,envelope,pagFatura,vincularRegra,criarEspelho,intencaoEspelho,contaEspelho}
@@ -6079,9 +6080,35 @@ function ConciliarExtratoTab({data,onUpdate}){
       for(const regra of regrasParaAprender){
         onUpdate(await api({action:"vincularCategoriaRegra",descricao:regra.descricao,categoria:regra.categoria,apelido:regra.apelido}));
       }
+      // [CORRIGIDO 01/10, bug real achado com o Marcus] Tirava os itens de
+      // "novos"/"aguardando" (por isso "os antigos somem"), mas nunca colocava
+      // nada em "confirmados" -- então o item mesclado não aparecia em lugar
+      // nenhum até o Marcus subir o extrato de novo. `data` aqui dentro é uma
+      // foto capturada no começo da função (antes de qualquer chamada acima),
+      // nunca fica fresca sozinha -- por isso busca os dados de novo explicitamente
+      // em vez de confiar nela. Reencontra cada linha pelo extratoId (o mesmo
+      // "carimbo" que toda linha nascida de um item do extrato já carrega),
+      // então funciona igual pra item novo, pareamento com linha existente,
+      // despesa fixa nova/vinculada -- qualquer caminho que passou por aqui.
+      const frescoPosMerge=await api({action:"getData"});
+      onUpdate(frescoPosMerge);
+      const porExtratoIdPosMerge={};
+      (frescoPosMerge.fluxo||[]).forEach(it=>{
+        if(!it.obs) return;
+        try{ const o=JSON.parse(it.obs); if(o.extratoId) porExtratoIdPosMerge[o.extratoId]=it; }catch(e){}
+      });
+      const novosConfirmadosPosMerge=[];
+      itensUsados.forEach(n=>{
+        if(!n.identificador) return;
+        const item=porExtratoIdPosMerge[n.identificador];
+        if(!item) return; // pagamento de fatura/transferência espelhada não carregam extratoId -- fica como estava
+        novosConfirmadosPosMerge.push({row:item.row,desc:item.descricao,valor:item.valor,data:item.data,categoria:item.categoria,
+          descBanco:n.descricao,valorBanco:n.valor,dataBanco:n.data,identificador:n.identificador});
+      });
       setResultado(res=>res?{...res,
         novos:(res.novos||[]).filter(x=>!itensUsados.some(u=>chaveNovo(u)===chaveNovo(x))),
-        aguardando:(res.aguardando||[]).filter(a=>!rowsAppUsados.includes(a.row))}:res);
+        aguardando:(res.aguardando||[]).filter(a=>!rowsAppUsados.includes(a.row)),
+        confirmados:[...(res.confirmados||[]),...novosConfirmadosPosMerge]}:res);
       setParesPorNumero({}); setParIdParaNumero({}); setPreviasApp({});
     }catch(e){ alert(e.message); }
     mesclandoRef.current=false;
@@ -6253,6 +6280,7 @@ function ConciliarExtratoTab({data,onUpdate}){
             <div style={{fontSize:11,color:"#92400E",marginBottom:8}}>
               Está como <b>{CAT_LABEL[c.avisoClassificacao.categoriaAtual]||c.avisoClassificacao.categoriaAtual}</b>, mas o texto bate com uma regra que espera <b>{CAT_LABEL[c.avisoClassificacao.categoriaEsperada]||c.avisoClassificacao.categoriaEsperada}</b>.
             </div>
+            <div style={{display:"flex",gap:6}}>
             <button onClick={async()=>{
               setCorrigindo(c.row); // [NOVO 29/09] feedback proprio, nao o "load" global (que nao mudava o texto do botao)
               try{
@@ -6268,10 +6296,27 @@ function ConciliarExtratoTab({data,onUpdate}){
                   x.row===c.row?{...x,categoria:novaCategoria,avisoClassificacao:null}:x)}:res);
               }catch(e){ alert(e.message); }
               setCorrigindo(null);
-            }} disabled={corrigindo===c.row}
-              style={{width:"100%",padding:"7px",borderRadius:6,background:"#B45309",color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:corrigindo===c.row?"default":"pointer",fontFamily:"inherit",opacity:corrigindo===c.row?.7:1}}>
+            }} disabled={corrigindo===c.row||confirmandoCerto===c.row}
+              style={{flex:1,padding:"7px",borderRadius:6,background:"#B45309",color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:(corrigindo===c.row||confirmandoCerto===c.row)?"default":"pointer",fontFamily:"inherit",opacity:corrigindo===c.row?.7:1}}>
               {corrigindo===c.row?"…":"Corrigir para "+(CAT_LABEL[c.avisoClassificacao.categoriaEsperada]||c.avisoClassificacao.categoriaEsperada)}
             </button>
+            {/* [NOVO 01/10, pedido do Marcus] Essa transação específica pode estar
+                certa mesmo divergindo da regra geral (que continua valendo pras
+                outras) -- só marca esta linha como revisada, não muda nada nela. */}
+            <button onClick={async()=>{
+              setConfirmandoCerto(c.row);
+              try{
+                const r=await api({action:"confirmarClassificacaoCorreta",row:c.row});
+                onUpdate(r);
+                setResultado(res=>res?{...res,confirmados:(res.confirmados||[]).map(x=>
+                  x.row===c.row?{...x,avisoClassificacao:null}:x)}:res);
+              }catch(e){ await falhaDeMutacao(e,onUpdate); }
+              setConfirmandoCerto(null);
+            }} disabled={corrigindo===c.row||confirmandoCerto===c.row}
+              style={{flex:1,padding:"7px",borderRadius:6,background:"none",border:"1px solid #B45309",color:"#B45309",fontSize:11,fontWeight:700,cursor:(corrigindo===c.row||confirmandoCerto===c.row)?"default":"pointer",fontFamily:"inherit",opacity:confirmandoCerto===c.row?.7:1}}>
+              {confirmandoCerto===c.row?"…":"✓ Está certa assim"}
+            </button>
+            </div>
           </div>)}
         </div>;
       })()}
@@ -12078,7 +12123,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20260930.1300 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261001.1000 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12192,7 +12237,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20260930.1300
+      // HTML v3.20261001.1000
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
