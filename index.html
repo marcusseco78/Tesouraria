@@ -10294,6 +10294,7 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido, onVinculado, onNovaLinh
 
 function ConciliarCartao({cartao, data, onResultado, onUpdate}){
   const [load,setLoad]=useState(false);
+  const [desvinculandoCartao,setDesvinculandoCartao]=useState(null); // [NOVO 01/10, pedido do Marcus] row sendo desvinculado
   const fileRef=useRef(null);
 
   async function conciliar(file){
@@ -11723,6 +11724,30 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
                   data={data} envelopeAtual={_obsEnvelopeId(_obsCartaoRaw(r))}
                   despesasFixas={despesasFixasCartao} dataItem={r[0]}
                 />
+                {/* [NOVO 01/10, pedido do Marcus: "preciso também do botão de
+                    desconciliar no cartão... como na conciliação de extrato"]
+                    O cadeado de proteger/desproteger já existia, mas só
+                    aparecia depois de entrar no modo de edição -- quase
+                    invisível. Vira um botão igual ao do extrato: sempre à
+                    vista, sem precisar abrir nada. Desproteger (🔓) é o
+                    suficiente pra "desconciliar" um item de cartão: sem
+                    isso marcado, a próxima conciliação reavalia essa linha
+                    do zero -- não existe aqui um extratoId separado como no
+                    extrato de conta, então não precisa de uma 2a ação. */}
+                {confirmado&&<button onClick={async()=>{
+                  if(!confirm('Desvincular "'+(apelidoAtual||r[1])+'" ('+fmt(r[2])+') dessa transação do banco? Fica pendente de novo, pra você parear com a ocorrência certa.')) return;
+                  setDesvinculandoCartao(linhaR);
+                  try{
+                    const r2=await api({action:"desconfirmarItemCartao",aba:abaCartao,row:linhaR});
+                    onUpdate(r2);
+                  }catch(e){ await falhaDeMutacao(e,onUpdate); }
+                  setDesvinculandoCartao(null);
+                }} disabled={desvinculandoCartao===linhaR}
+                  style={{display:"block",width:"100%",textAlign:"right",padding:"3px 12px 8px",margin:0,
+                    background:"none",border:"none",color:C.textMuted,fontSize:10,fontWeight:600,
+                    cursor:desvinculandoCartao===linhaR?"default":"pointer"}}>
+                  {desvinculandoCartao===linhaR?"desvinculando…":"🔓 desvincular"}
+                </button>}
               </div>
             </React.Fragment>;
           }
@@ -11776,7 +11801,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         </div></React.Fragment>;});
       })()}
       {Object.keys(paresPorNumero).length>0&&<button onClick={mesclarParesCartao} disabled={mesclando}
-        style={{width:"100%",padding:"10px",borderRadius:8,background:C.accent,color:"#fff",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit",marginTop:10}}>
+        style={{width:"100%",padding:"10px",borderRadius:8,background:C.accent,color:"#fff",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit",marginTop:10,position:"sticky",bottom:8}}>
         {mesclando?"…":`Mesclar ${Object.keys(paresPorNumero).length} par(es) marcado(s)`}
       </button>}
     </div>}
@@ -12158,7 +12183,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261001.1300 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261001.1500 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12272,7 +12297,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261001.1300
+      // HTML v3.20261001.1500
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
