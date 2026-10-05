@@ -5889,6 +5889,19 @@ function ConciliarExtratoTab({data,onUpdate}){
     return null;
   }
   const [lancandoRendimento,setLancandoRendimento]=useState(false);
+  // [CORRIGIDO 01/10, bug real achado com o Marcus: "tava redondo, aí lancei
+  // o rendimento e o saldo passou a não bater"] onUpdate só atualiza "data" --
+  // o aviso "Saldo não bate" lê resultado.comparacaoSaldo, uma foto tirada na
+  // hora do upload do extrato, nunca avisada de que o rendimento acabou de
+  // ser lançado. O lançamento em si sempre funcionou certo; só o aviso
+  // continuava preso no número de antes, como se nada tivesse resolvido.
+  function _ajustarComparacaoSaldoPorRendimento(delta){
+    setResultado(res=>{
+      if(!res||!res.comparacaoSaldo) return res;
+      const novaDif=_round2(Number(res.comparacaoSaldo.diferenca||0)-delta);
+      return {...res,comparacaoSaldo:{...res.comparacaoSaldo,diferenca:novaDif,bate:Math.abs(novaDif)<=0.01}};
+    });
+  }
   async function lancarRendimento(valorParaLancar,dataFim){
     setLancandoRendimento(true);
     try{
@@ -5898,19 +5911,21 @@ function ConciliarExtratoTab({data,onUpdate}){
         tipo:"DEPOSITO_AVULSO",categoria:"DEPOSITO_AVULSO",forma:contaExtrato||"CONTA",
         status:"EXECUTADO",obs:obsJson});
       onUpdate(r);
-    }catch(e){ alert(e.message); }
+      _ajustarComparacaoSaldoPorRendimento(Math.abs(Number(valorParaLancar)));
+    }catch(e){ await falhaDeMutacao(e,onUpdate); }
     setLancandoRendimento(false);
   }
   // [NOVO 07/09] O mesmo mês pode fechar de novo com um valor DIFERENTE
   // (Nubank recalculou, ou o Marcus subiu um OFX mais completo do mesmo
   // fechamento) -- nesse caso não lança um segundo, corrige o mesmo
   // lançamento. Preserva tudo (data, descrição, marcador) e só troca VALOR.
-  async function atualizarRendimento(row,valorNovo){
+  async function atualizarRendimento(row,valorNovo,valorAntigo){
     setLancandoRendimento(true);
     try{
       const r=await api({action:"editar",row,campo:"VALOR",valor:Math.abs(Number(valorNovo))});
       onUpdate(r);
-    }catch(e){ alert(e.message); }
+      _ajustarComparacaoSaldoPorRendimento(Math.abs(Number(valorNovo))-Math.abs(Number(valorAntigo||0)));
+    }catch(e){ await falhaDeMutacao(e,onUpdate); }
     setLancandoRendimento(false);
   }
 
@@ -6257,7 +6272,7 @@ function ConciliarExtratoTab({data,onUpdate}){
             {!precisaAtualizar&&<div style={{fontSize:11,color:C.textSub,marginBottom:8}}>
               {fmtD(dataFim)} é o último dia do mês -- lançar o rendimento total do mês como Depósito Avulso.
             </div>}
-            <button onClick={precisaAtualizar?(()=>atualizarRendimento(jaDoMes.row,valor)):(()=>lancarRendimento(valor,dataFim))} disabled={lancandoRendimento}
+            <button onClick={precisaAtualizar?(()=>atualizarRendimento(jaDoMes.row,valor,jaDoMes.valor)):(()=>lancarRendimento(valor,dataFim))} disabled={lancandoRendimento}
               style={{width:"100%",padding:"8px",borderRadius:6,background:cor,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
               {lancandoRendimento?"…":precisaAtualizar?("Atualizar valor lançado para "+fmt(valor)):("Lançar rendimento do mês ("+fmt(valor)+")")}
             </button>
@@ -12123,7 +12138,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261001.1000 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261001.1100 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12237,7 +12252,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261001.1000
+      // HTML v3.20261001.1100
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
