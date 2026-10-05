@@ -4969,6 +4969,11 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
   // escolhida aqui é semanal.
   const [intervaloSemanasNovaEdit,setIntervaloSemanasNovaEdit]=useState("1");
   const [dataAncoraSemanaNovaEdit,setDataAncoraSemanaNovaEdit]=useState("");
+  // [NOVO 01/10, pedido do Marcus] Mesmo "lembrar esse nome pra sempre" que
+  // a prévia de item novo já tem (vincularRegra lá no mesclar) -- faltava
+  // aqui, pra editar um item JÁ confirmado e ensinar a regra pro texto do
+  // banco de uma vez, sem precisar que o item nasça de novo pra oferecer.
+  const [vincularRegraEdit,setVincularRegraEdit]=useState(false);
   const ehMesclado=!onConfirmar; // ja confirmado ha tempo, sem toque pendente
   const abaReal=aba||"FLUXO";
   const label=forca==="exato"?"confirmado":forca==="forte"?"confirmado (forte)":forca==="semclass"?"sem classificação":forca==="fraco"?"⚠ sugestão fraca -- confira":"mesclado";
@@ -5016,6 +5021,14 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
         }
         if(envelopeEdit!==(envelopeAtual||"")){
           r=await api({action:"classificarEnvelope",aba:abaReal,row,envelopeId:envelopeEdit||null});
+        }
+        if(vincularRegraEdit){
+          // [NOVO 01/10, pedido do Marcus] Mesmo texto do banco (ofx.desc) que
+          // o motor de casamento usa pra reconhecer -- precisa ser o lado do
+          // BANCO (estável entre ocorrências futuras), nunca o apelido (o que
+          // a gente ESCOLHE mostrar). Categoria é obrigatória no backend;
+          // manda a atual mesmo quando só o apelido mudou.
+          r=await api({action:"vincularCategoriaRegra",descricao:ofx.desc,categoria:categoriaEdit,apelido:apelidoEdit.trim().toUpperCase()});
         }
         if(r&&onUpdate) onUpdate(r);
         // [CORRIGIDO 30/09, bug real achado com o Marcus] onUpdate só atualiza o
@@ -5136,6 +5149,16 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
     {editando&&<div style={{border:"1px solid "+C.blue,borderTop:"none",borderRadius:"0 0 8px 8px",padding:"7px 10px",background:"#EFF6FF"}}>
       <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
         {categoriasPorSinal(app.valor).map(c=><Pilula key={c} grande editavel ativa={categoriaEdit===c} onClick={()=>setCategoriaEdit(c)}>{rotuloCategoriaPillGrande(c)}</Pilula>)}
+      </div>
+      {/* [NOVO 01/10, pedido do Marcus: "tinha que ter aquele checkbox de
+          identificar os próximos como este, pelo menos o apelido"] Mesmo
+          "lembrar esse nome pra sempre" que a prévia de item novo já tinha
+          -- faltava aqui, editando um item JÁ confirmado. */}
+      <label style={{display:"flex",alignItems:"flex-start",gap:6,fontSize:10.5,color:C.textSub,margin:"6px 0 2px",cursor:"pointer"}}>
+        <input type="checkbox" checked={vincularRegraEdit} onChange={e=>setVincularRegraEdit(e.target.checked)} style={{marginTop:2}}/>
+        <span>Lembrar esse nome pra sempre (reconhece sozinho da próxima vez)</span>
+      </label>
+      <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:4}}>
         <div style={{flex:1}}/>
         {ehMesclado&&(tipo==="cartao"||tipo==="extrato")&&<button onClick={toggleProtecao} disabled={salvando} title={protegido
           ?"Protegido -- a próxima conciliação sabe que isso já é essa mescla e não mexe"
@@ -7377,7 +7400,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
     const add=(r,cartao)=>{
       const dataCompra=r[0];
       if(!dataCompra||dataCompra<=hj) return; // so estritamente futuro -- hoje ja e "aconteceu", mora no Historico
-      (m[dataCompra]=m[dataCompra]||[]).push({row:_linhaCartao(r),descricao:r[1],valor:r[2],cartao,status:r[7],dcpEnvelope:r[9]||null,dcpEnvelopeData:r[10]||null});
+      (m[dataCompra]=m[dataCompra]||[]).push({row:_linhaCartao(r),descricao:_obsApelidoCartao(_obsCartaoRaw(r))||r[1],valor:r[2],cartao,status:r[7],dcpEnvelope:r[9]||null,dcpEnvelopeData:r[10]||null});
     };
     Object.keys(data.cartaoItens||{}).forEach(cid=>(data.cartaoItens[cid]||[]).forEach(r=>add(r,cid)));
     return m;
@@ -7692,7 +7715,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
     const add=(r,cartao)=>{
       const dataCompra=r[0];
       if(!dataCompra||dataCompra>hj) return;
-      (m[dataCompra]=m[dataCompra]||[]).push({row:_linhaCartao(r),descricao:r[1],valor:r[2],cartao,status:r[7],dcpEnvelope:r[9]||null,dcpEnvelopeData:r[10]||null});
+      (m[dataCompra]=m[dataCompra]||[]).push({row:_linhaCartao(r),descricao:_obsApelidoCartao(_obsCartaoRaw(r))||r[1],valor:r[2],cartao,status:r[7],dcpEnvelope:r[9]||null,dcpEnvelopeData:r[10]||null});
     };
     Object.keys(data.cartaoItens||{}).forEach(cid=>(data.cartaoItens[cid]||[]).forEach(r=>add(r,cid)));
     return m;
@@ -9099,7 +9122,13 @@ function Recorrencias({data,onUpdate}){
     setTolerancia(item.tolerancia!=null&&item.tolerancia!==""?String(item.tolerancia):"");
     setAlias(item.alias||"");
     setEnvelopePadrao(item.envelopePadrao||"");
-    setDestinoEdit(String(item.destino||"FLUXO").toUpperCase().replace(/[^A-Z0-9_]/g,""));
+    // [CORRIGIDO 02/10, mesmo bug do backend, achado real com o Marcus] Essa
+    // limpeza tirava ponto e hífen -- pra um cartão com ID no formato novo
+    // (ex: "INT.CC.NU-MC.MCB"), o valor lido nunca batia com a pílula
+    // correspondente (que usa "CARTAO_"+id SEM essa limpeza), então nenhuma
+    // pílula ficava marcada ao reabrir a edição, mesmo com o destino salvo
+    // certo por baixo.
+    setDestinoEdit(String(item.destino||"FLUXO").toUpperCase().replace(/[^A-Z0-9_.\-]/g,""));
     setFormaEdit(item.forma||"CONTA");
     setIntervaloSemanasEdit(String(item.intervaloSemanas||1));
     setDataAncoraSemanaEdit(item.ancoraSemana||"");
@@ -10800,16 +10829,22 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
             // estorno/crédito (item.amount negativo, categoria Receita/
             // Depósito Avulso escolhida) precisa entrar positivo na
             // planilha, não como se fosse mais uma despesa.
-            // [CORRIGIDO 30/09, mesmo bug e mesma correção do extrato de conta --
-            // pedido do Marcus: a regra vale pra qualquer coisa que nasça de um item
-            // do OFX/CSV sem par, não só Pix] DESCRICAO gravada era sempre o texto
-            // cru do banco -- ninguém nesta tela (nem a lista de compras agrupadas
-            // por cartão) lê obs.apelido pra decidir o título, então o apelido digitado
-            // nunca aparecia em lugar nenhum. Agora o apelido vira a própria DESCRICAO.
-            const descFinalCartao=previa.apelido.trim()?previa.apelido.trim().toUpperCase():item.title;
+            // [REVERTIDO 01/10, achado real com o Marcus: "não precisa mudar o nome
+            // que vem no extrato na descrição abaixo"] A correção de 30/09 trocava a
+            // DESCRICAO pelo apelido -- resolvia o título em algumas telas, mas
+            // quebrava outra coisa: diferente do extrato de conta (cujo lado OFX
+            // vem recalculado na hora, direto do upload), o cartão não guarda o
+            // texto original do banco em separado -- um item confirmado sem
+            // divergência usa a MESMA DESCRICAO pros dois lados (ver SeloPar
+            // ofx={desc:r[1]} vs app={desc:apelidoAtual||r[1]}). Sobrescrever a
+            // DESCRICAO apagava esse texto original pra sempre, fazendo a caixinha
+            // "do banco" da conciliação mostrar o apelido repetido em vez do nome
+            // real do Pix/compra. Volta a gravar o texto cru em DESCRICAO (só o
+            // apelido, já salvo à parte, é quem muda) -- o título nas outras telas
+            // é resolvido por elas lendo o apelido, não reescrevendo o dado de base.
             const r=await api({action:"lancarCartao",cartao,data_compra:item.date,
               parcelas:parcelaTotalNum,parcelaAtual:parcelaAtualNum,
-              descricao:descFinalCartao,valor:-item.amount,categoria:previa.categoria,
+              descricao:item.title,valor:-item.amount,categoria:previa.categoria,
               dcp:previa.categoria==="DCP"?"S":"N",apelido:previa.apelido.trim().toUpperCase(),
               envelopeId:previa.envelope||undefined,origemCSV:true});
             onUpdate(r);
@@ -12183,7 +12218,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261001.1600 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261002.1000 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12297,7 +12332,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261001.1600
+      // HTML v3.20261002.1000
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
