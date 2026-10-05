@@ -5896,11 +5896,19 @@ function ConciliarExtratoTab({data,onUpdate}){
   // ser lançado. O lançamento em si sempre funcionou certo; só o aviso
   // continuava preso no número de antes, como se nada tivesse resolvido.
   function _ajustarComparacaoSaldoPorRendimento(delta){
+    let csAtualizado=null;
     setResultado(res=>{
       if(!res||!res.comparacaoSaldo) return res;
       const novaDif=_round2(Number(res.comparacaoSaldo.diferenca||0)-delta);
-      return {...res,comparacaoSaldo:{...res.comparacaoSaldo,diferenca:novaDif,bate:Math.abs(novaDif)<=0.01}};
+      csAtualizado={...res.comparacaoSaldo,diferenca:novaDif,bate:Math.abs(novaDif)<=0.01};
+      return {...res,comparacaoSaldo:csAtualizado};
     });
+    // [NOVO 01/10] Esse caminho não passa de novo pelo conciliarExtrato (que é
+    // quem grava o saldo confirmado sozinho) -- se o lançamento do rendimento
+    // fechou a conta, grava aqui também, senão a marca nunca avançava.
+    if(csAtualizado&&csAtualizado.bate){
+      api({action:"confirmarSaldoConciliado",conta:contaExtrato,data:csAtualizado.data,saldo:csAtualizado.saldoBanco}).catch(()=>{});
+    }
   }
   async function lancarRendimento(valorParaLancar,dataFim){
     setLancandoRendimento(true);
@@ -5945,7 +5953,13 @@ function ConciliarExtratoTab({data,onUpdate}){
         categoria:"EXTRAORDINARIA",forma:contaExtrato||"CONTA",status:"EXECUTADO",obs:""});
       onUpdate(r);
       setResultado(res=>({...res,comparacaoSaldo:{...res.comparacaoSaldo,bate:true,ajustado:true}}));
-    }catch(e){ alert(e.message); }
+      // [NOVO 01/10] Mesmo motivo do rendimento -- esse caminho também não
+      // passa de novo pelo conciliarExtrato, então grava o saldo confirmado
+      // direto, senão o ajuste resolvia a diferença mas a marca não avançava.
+      if(resultado&&resultado.comparacaoSaldo){
+        api({action:"confirmarSaldoConciliado",conta:contaExtrato,data:resultado.comparacaoSaldo.data,saldo:resultado.comparacaoSaldo.saldoBanco}).catch(()=>{});
+      }
+    }catch(e){ await falhaDeMutacao(e,onUpdate); }
     setLoad(false);
   }
 
@@ -6157,14 +6171,16 @@ function ConciliarExtratoTab({data,onUpdate}){
               background:contaExtrato===c.id?C.orange:C.borderLight,color:contaExtrato===c.id?"#fff":C.textSub}}>{c.nome}</button>)}
       </div>
     </div>}
-    {/* [NOVO 25/09, pedido do Marcus] Data da ultima vez que essa conta foi
-        conciliada -- gravada pelo backend (conciliarExtrato) toda vez que
-        um extrato e processado com sucesso, guardada em CONFIG por conta
-        (ULTIMA_CONCILIACAO_<contaId>), chega aqui via data.config. */}
+    {/* [SUBSTITUÍDO 01/10, pedido do Marcus] Antes mostrava a data da última
+        vez que a conciliação RODOU, batendo ou não -- trocado pelo "até
+        onde está tudo certificado": data + saldo da última vez que o saldo
+        do banco bateu com o do app. Uma conciliação que rodou depois e não
+        bateu não conta pra essa marca (ver _gravarSaldoConfirmado). */}
     {(()=>{
-      const ultConc=(resultado&&resultado.ultimaConciliacao)||(data&&data.config&&data.config["ULTIMA_CONCILIACAO_"+contaExtrato]);
+      const dataConf=data&&data.config&&data.config["ULTIMO_SALDO_CONFIRMADO_"+contaExtrato+"_DATA"];
+      const valorConf=data&&data.config&&data.config["ULTIMO_SALDO_CONFIRMADO_"+contaExtrato+"_VALOR"];
       return <div style={{fontSize:11,color:C.textMuted,marginBottom:10}}>
-        {ultConc?("Última conciliação desta conta: "+fmtD(ultConc)):"Essa conta ainda não foi conciliada."}
+        {dataConf?("Último saldo confirmado em "+fmtD(dataConf)+": "+fmt(Number(valorConf)||0)):"Essa conta ainda não teve um saldo confirmado."}
       </div>;
     })()}
     <input ref={fileRef} type="file" accept=".csv,.ofx" style={{display:"none"}}
@@ -12138,7 +12154,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261001.1100 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261001.1200 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12252,7 +12268,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261001.1100
+      // HTML v3.20261001.1200
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
