@@ -186,6 +186,17 @@ function nomeCartao(sigla,data){
   if(cad&&cad.nome&&cad.nome.trim())return cad.nome.trim();
   return "Cartão "+sigla;
 }
+// [NOVO 03/10, pedido do Marcus -- a lista de recorrências mostrava "CARTAO"
+// ou "CONTA" genérico, igual pra qualquer uma das contas/cartões, sem dizer
+// qual] Resolve o rótulo certo (ex: "Nubank INTENSIVA!", "Conta Croma") a
+// partir do destino (fonte da verdade) e, quando é conta, cai pro texto cru
+// de "forma" só se não achar nenhuma conta cadastrada com esse id (legado).
+function nomeDestinoRecorrencia(item,data){
+  const destino=String(item.destino||"").toUpperCase();
+  if(destino.indexOf("CARTAO_")===0) return nomeCartao(destino.slice(7),data);
+  const conta=(data&&data.contas||[]).find(c=>c.id===String(item.forma||"").toUpperCase());
+  return (conta&&conta.nome&&conta.nome.trim())||item.forma||"—";
+}
 // [NOVO 20/07] Fechamento e vencimento de fatura configuraveis, desacoplados
 // um do outro -- mesmo raciocinio do backend (_configFatura/_calcVencimentoFatura
 // em Tesouraria_v3.txt). Padrao sem config: fechamento=31 (ultimo dia real do
@@ -8844,7 +8855,7 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
             <span style={{fontSize:11,background:C.borderLight,borderRadius:5,padding:"2px 7px",color:C.textSub,fontWeight:600}}>{fmtDia(item.diaVenc,ehCartao(item))}</span>
             {item.parcTotal>0&&<span style={{fontSize:11,color:C.textMuted}}>{item.parcAtual}/{item.parcTotal} parcelas</span>}
-            <span style={{fontSize:10,color:C.textMuted}}>{item.forma}</span>
+            <span style={{fontSize:10,color:C.textMuted}}>{nomeDestinoRecorrencia(item,data)}</span>
             {item.tolerancia!=null&&item.tolerancia!==""&&<span style={{fontSize:10,background:"#FEF3C7",color:"#92400E",borderRadius:5,padding:"2px 6px",fontWeight:600}}>
               {Number(item.tolerancia)===0?"não posterga":"posterga até "+item.tolerancia+"d"}
             </span>}
@@ -12218,7 +12229,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261002.1000 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261003.1200 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12332,7 +12343,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261002.1000
+      // HTML v3.20261003.1200
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
