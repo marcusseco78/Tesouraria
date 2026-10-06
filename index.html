@@ -8851,7 +8851,9 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
         style={{display:"flex",alignItems:"center",gap:10,padding:"13px 16px",
           borderBottom:"1px solid "+C.borderLight,background:isOpen?bg:C.surface,cursor:"pointer"}}>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:14,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginBottom:4}}>{item.desc}</div>
+          <div style={{fontSize:14,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginBottom:4}}>
+            {item.desc}{String(item.ativo).toUpperCase()==="N"&&<span style={{marginLeft:6,fontSize:10,fontWeight:700,color:C.red,background:C.redLight,borderRadius:4,padding:"1px 5px"}}>DESATIVADA</span>}
+          </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
             <span style={{fontSize:11,background:C.borderLight,borderRadius:5,padding:"2px 7px",color:C.textSub,fontWeight:600}}>{fmtDia(item.diaVenc,ehCartao(item))}</span>
             {item.parcTotal>0&&<span style={{fontSize:11,color:C.textMuted}}>{item.parcAtual}/{item.parcTotal} parcelas</span>}
@@ -9028,6 +9030,12 @@ function Recorrencias({data,onUpdate}){
   const [showForm,setShowForm]=useState(false);
   const [loadTolerancia,setLoadTolerancia]=useState(false);
   const [verTodas,setVerTodas]=useState(false);
+  // [NOVO 03/10, pedido do Marcus] Recorrência desativada some da lista --
+  // sem acesso de volta a ela, não tem como abrir o "Apagar esta
+  // recorrência" e escolher limpar os lançamentos futuros que já tinham
+  // sido gerados antes dela ser desativada. Esse toggle só muda o que
+  // aparece aqui; não muda nada sozinho.
+  const [mostrarDesativadas,setMostrarDesativadas]=useState(false);
   const [rascunho,setRascunho]=useState({});
   const [loadTodas,setLoadTodas]=useState(false);
 
@@ -9045,7 +9053,9 @@ function Recorrencias({data,onUpdate}){
     ehSemanal:ehSemanalItem,
     intervaloSemanas:Math.max(1,parseInt(obsParsedRec.intervaloSemanas)||1),
     ancoraSemana:obsParsedRec.ancoraSemana||""
-  };}).filter(r=>String(r.ativo).toUpperCase()!=="N"&&r.ativo!==false&&r.ativo!==0);
+  };});
+  const itemsAtivos=items.filter(r=>String(r.ativo).toUpperCase()!=="N"&&r.ativo!==false&&r.ativo!==0);
+  const itemsParaExibir=mostrarDesativadas?items:itemsAtivos;
 
   // Emprestimos/passivos: qualquer recorrencia do FLUXO com numero de
   // parcelas definido (parcTotal>0) -- diferente de conta recorrente sem
@@ -9094,8 +9104,8 @@ function Recorrencias({data,onUpdate}){
     return parseInt(r.diaVenc)===2||parseInt(r.diaVenc)===6;
   };
 
-  const debitosTodos=items.filter(r=>r.valor<0);
-  const receitas=items.filter(r=>r.valor>=0).sort(sortDia);
+  const debitosTodos=itemsParaExibir.filter(r=>r.valor<0);
+  const receitas=itemsParaExibir.filter(r=>r.valor>=0).sort(sortDia);
   const debitosSemanais=debitosTodos.filter(r=>ehSemanal(r)&&!ehCartao(r)).sort(sortDia);
   const debitosCartao=debitosTodos.filter(ehCartao).sort(sortDia);
   const debitosConta=debitosTodos.filter(r=>!ehSemanal(r)&&!ehCartao(r)).sort(sortDia);
@@ -9283,8 +9293,18 @@ function Recorrencias({data,onUpdate}){
     try{
       let r=await api({action:"deletarRecorrencia",descricao:item.desc,row:item.idx+4});
       if(querApagarFuturos){
-        const destNorm=String(item.destino||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
-        const aba=destNorm==="CARTAOPJ"?"CARTAO_PJ":destNorm==="CARTAOPF"?"CARTAO_PF":"FLUXO";
+        // [CORRIGIDO 03/10, bug real achado com o Marcus: HBO Max e Apple TV
+        // desativadas, mas continuavam aparecendo em toda fatura futura]
+        // Usava os literais antigos "CARTAO_PF"/"CARTAO_PJ", de antes da
+        // reforma de nomenclatura -- o cartão de verdade se chama
+        // "CARTAO_PF.CC.NU-MC.PLT" (ou equivalente), então esses literais
+        // nunca batiam com aba nenhuma. deletarPorDescricao caía
+        // silenciosamente no FLUXO (sem erro), achava 0 linhas (porque a
+        // despesa estava no cartão, não na conta) e não apagava nada --
+        // mesmo você respondendo "sim" nessa pergunta. item.destino já tem
+        // o nome certo e completo da aba; usa ele direto.
+        const destinoReal=String(item.destino||"").toUpperCase();
+        const aba=destinoReal.indexOf("CARTAO_")===0?destinoReal:"FLUXO";
         r=await api({action:"deletarPorDescricao",aba,descricao:item.desc,apenasFuturas:false,apenasProgramadas:true});
       }
       onUpdate(r);
@@ -9296,7 +9316,17 @@ function Recorrencias({data,onUpdate}){
 
   const totalRecorr=(data.recorr||[]).length;
   return <div style={{paddingBottom:16}}>
-    <div style={{display:"flex",justifyContent:"flex-end",padding:"8px 16px 4px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 16px 4px",flexWrap:"wrap",gap:8}}>
+      {/* [NOVO 03/10, pedido do Marcus] Sem isso, uma recorrência desativada
+          sumia da lista pra sempre, sem jeito de abrir e escolher limpar os
+          lançamentos futuros que já tinham sido gerados antes dela ser
+          desativada -- eles ficavam órfãos, aparecendo pra sempre nas
+          faturas/previsões seguintes. */}
+      <button onClick={()=>setMostrarDesativadas(v=>!v)}
+        style={{background:"none",border:"1px dashed "+C.border,borderRadius:8,padding:"6px 12px",
+          fontSize:12,color:mostrarDesativadas?C.accent:C.textSub,cursor:"pointer",fontFamily:"inherit"}}>
+        {mostrarDesativadas?"👁 Ocultar desativadas":"👁 Mostrar desativadas"}
+      </button>
       <button onClick={()=>setShowForm(f=>!f)}
         style={{background:showForm?C.borderLight:C.accent,color:showForm?C.textSub:"#fff",
           borderRadius:8,padding:"6px 16px",fontSize:13,fontWeight:700,border:"none",cursor:"pointer"}}>
@@ -9403,7 +9433,7 @@ function Recorrencias({data,onUpdate}){
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
       load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
-    {totalRecorr>0&&!items.length&&<div style={{padding:"20px",textAlign:"center",color:C.textMuted,fontSize:13}}>
+    {totalRecorr>0&&!itemsAtivos.length&&<div style={{padding:"20px",textAlign:"center",color:C.textMuted,fontSize:13}}>
       {totalRecorr} itens, nenhum ativo.
     </div>}
   </div>;
@@ -12229,7 +12259,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261003.1200 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261003.1400 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12343,7 +12373,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261003.1200
+      // HTML v3.20261003.1400
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
