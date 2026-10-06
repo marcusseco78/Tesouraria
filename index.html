@@ -8846,7 +8846,7 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
       <span style={{fontSize:11,fontWeight:800,color:cor,textTransform:"uppercase",letterSpacing:".1em"}}>{titulo}</span>
       <span style={{fontSize:11,color:C.textMuted}}>{lista.length} itens · {fmt(lista.reduce((s,r)=>s+r.valor,0))}/ciclo</span>
     </div>
-    {lista.map(item=>{const isOpen=edit===item.desc;return <div key={item.desc}>
+    {lista.map(item=>{const isOpen=edit===item.idx;return <div key={item.idx}>
       <div onClick={()=>isOpen?setEdit(null):abrir(item)}
         style={{display:"flex",alignItems:"center",gap:10,padding:"13px 16px",
           borderBottom:"1px solid "+C.borderLight,background:isOpen?bg:C.surface,cursor:"pointer"}}>
@@ -9134,7 +9134,12 @@ function Recorrencias({data,onUpdate}){
   }
 
   function abrir(item){
-    setEdit(item.desc);
+    // [CORRIGIDO 03/10, bug real achado com o Marcus] Identificava qual
+    // item estava aberto pelo NOME (desc) -- com várias recorrências de
+    // nome idêntico (Claro, Cuidadora Pai, Reserva Imovision duplicadas),
+    // tocar em uma abria/fechava TODAS ao mesmo tempo, porque todas
+    // batiam a mesma comparação. idx é o número da linha -- sempre único.
+    setEdit(item.idx);
     setVal(formatarValorInicial(item.valor));
     setDia(String(item.diaVenc));
     setDiaTipoEdit(item.diaTipo);
@@ -12259,7 +12264,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261003.1400 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261003.1500 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12373,7 +12378,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261003.1400
+      // HTML v3.20261003.1500
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
