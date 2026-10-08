@@ -154,6 +154,7 @@ function _dataLocalSegura(v){
   if(m) return new Date(Number(m[1]),Number(m[2])-1,Number(m[3]));
   return new Date(v);
 }
+const _round2=n=>Math.round(n*100)/100;
 const fmtD=s=>{
   if(s instanceof Date){
     if(isNaN(s.getTime())) return "";
@@ -5679,6 +5680,8 @@ function ConciliarExtratoTab({data,onUpdate}){
   // roda DEPOIS do primeiro render, tarde demais pro useState inicial do
   // resultado ja ler a chave certa).
   const contasAtivasExt=useMemo(()=>(data.contas||[]).filter(c=>c.ativa!==false),[data.contas]);
+  const [verHistConc,setVerHistConc]=useState(false);
+  const [ordemHistConc,setOrdemHistConc]=useState("feita");
   const [contaExtrato,setContaExtrato]=useState(()=>{
     const ativas=(data.contas||[]).filter(c=>c.ativa!==false);
     return ativas.length?ativas[0].id:"";
@@ -5975,7 +5978,7 @@ function ConciliarExtratoTab({data,onUpdate}){
     // quem grava o saldo confirmado sozinho) -- se o lançamento do rendimento
     // fechou a conta, grava aqui também, senão a marca nunca avançava.
     if(csAtualizado&&csAtualizado.bate){
-      api({action:"confirmarSaldoConciliado",conta:contaExtrato,data:csAtualizado.data,saldo:csAtualizado.saldoBanco}).catch(()=>{});
+      api({action:"confirmarSaldoConciliado",conta:contaExtrato,data:csAtualizado.data,saldo:csAtualizado.saldoBanco,ini:(resultado&&resultado.periodo&&resultado.periodo.inicio)||"",fim:csAtualizado.data}).catch(()=>{});
       setResultado(res=>res?{...res,ultimoSaldoConfirmado:{data:csAtualizado.data,valor:csAtualizado.saldoBanco}}:res);
     }
   }
@@ -6233,6 +6236,39 @@ function ConciliarExtratoTab({data,onUpdate}){
       const valorConf=fresco?fresco.valor:(data&&data.config&&data.config["ULTIMO_SALDO_CONFIRMADO_"+contaExtrato+"_VALOR"]);
       return <div style={{fontSize:11,color:C.textMuted,marginBottom:10}}>
         {dataConf?("Último saldo confirmado em "+fmtD(dataConf)+": "+fmt(Number(valorConf)||0)):"Essa conta ainda não teve um saldo confirmado."}
+      </div>;
+    })()}
+    {/* [NOVO 08/10, pedido do Marcus] Histórico só das conciliações que
+        bateram: feita em, período do OFX, saldo ao final. Escondido. */}
+    {(()=>{
+      let lista=[];
+      try{
+        const fresco=resultado&&resultado.historicoConc;
+        lista=Array.isArray(fresco)?fresco:JSON.parse((data&&data.config&&data.config.HISTORICO_CONCILIACOES_JSON)||"[]");
+      }catch(e){lista=[];}
+      lista=(Array.isArray(lista)?lista:[]).filter(x=>x&&x.conta===contaExtrato);
+      const ord=[...lista].sort((a,b)=>ordemHistConc==="fim"?String(b.fim).localeCompare(String(a.fim)):String(b.feita).localeCompare(String(a.feita)));
+      const fmtFeita=f=>{const m=/^(\d{4})-(\d{2})-(\d{2}) ?(\d{2}:\d{2})?/.exec(String(f||""));return m?(m[3]+"/"+m[2]+"/"+m[1].slice(2)+(m[4]?" "+m[4]:"")):String(f||"");};
+      return <div style={{marginBottom:10}}>
+        <button onClick={()=>setVerHistConc(v=>!v)}
+          style={{fontSize:11,color:C.textMuted,background:"none",border:"none",padding:0,cursor:"pointer",textDecoration:"underline",fontFamily:"inherit"}}>
+          {verHistConc?"▾":"▸"} Histórico de conciliações ({lista.length})
+        </button>
+        {verHistConc&&<div style={{marginTop:6,border:"1px solid "+C.border,borderRadius:8,padding:8}}>
+          {lista.length===0?<div style={{fontSize:11,color:C.textMuted}}>Ainda não há conciliação que bateu registrada nessa conta.</div>:<>
+            <div style={{display:"flex",gap:6,marginBottom:6,flexWrap:"wrap"}}>
+              {[["feita","Por data da conciliação"],["fim","Por fim do período"]].map(([k,t])=>
+                <button key={k} onClick={()=>setOrdemHistConc(k)}
+                  style={{fontSize:10,padding:"3px 8px",borderRadius:12,cursor:"pointer",fontFamily:"inherit",
+                    border:"1px solid "+C.border,background:ordemHistConc===k?C.orange:"transparent",color:ordemHistConc===k?"#fff":C.textMuted}}>{t}</button>)}
+            </div>
+            {ord.map((x,i)=><div key={i} style={{fontSize:11,padding:"5px 0",borderTop:i?"1px solid "+C.border:"none"}}>
+              <div style={{fontWeight:700}}>Saldo {fmt(Number(x.saldo)||0)}</div>
+              <div style={{color:C.textMuted}}>Período do OFX: {x.ini?fmtD(x.ini)+" a ":"até "}{fmtD(x.fim)}</div>
+              <div style={{color:C.textMuted}}>Conciliado em {fmtFeita(x.feita)}</div>
+            </div>)}
+          </>}
+        </div>}
       </div>;
     })()}
     <input ref={fileRef} type="file" accept=".csv,.ofx" style={{display:"none"}}
@@ -12374,7 +12410,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261008.2000 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261008.2100 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12488,7 +12524,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261008.2000
+      // HTML v3.20261008.2100
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
