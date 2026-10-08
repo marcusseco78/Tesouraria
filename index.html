@@ -754,15 +754,27 @@ const DIAS_SEMANA_LABEL=["Domingo","Segunda","Terça","Quarta","Quinta","Sexta",
 // escolha so pro PAR inteiro: o sistema decide sozinho qual texto vai em
 // cada perna (ver lancarTransferenciaEspelhada no backend).
 const INTENCOES=[
+  // [NOVO 08/10, pedido do Marcus] "de"/"para" = tipo da conta que SAI / que ENTRA
+  // (PJ ou PF). So aparece a pilula que faz sentido pro sentido da operacao.
   {id:"MOVIMENTACAO",label:"Movimentação Entre Contas"},
-  {id:"LUCROS",label:"Distribuição/Recebimento de Lucros"},
-  {id:"EMPRESTIMO_SOCIO",label:"Empréstimo p/ Sócios (PJ empresta)"},
-  {id:"PAGAMENTO_EMPRESTIMO_SOCIO",label:"Pagamento Empréstimo p/ Sócio"},
-  {id:"EMPRESTIMO_PJ",label:"Empréstimo p/ PJ (sócio empresta)"},
-  {id:"PAGAMENTO_EMPRESTIMO_PJ",label:"Pagamento Empréstimo p/ PJ"},
-  {id:"RESSARCIMENTO",label:"Ressarcimento Despesa PJ"},
-  {id:"PROLABORE",label:"Pró-labore"},
+  {id:"LUCROS",label:"Distribuição/Recebimento de Lucros",de:"PJ",para:"PF"},
+  {id:"PROLABORE",label:"Pró-labore",de:"PJ",para:"PF"},
+  {id:"EMPRESTIMO_SOCIO",label:"Empréstimo p/ Sócios (PJ empresta)",de:"PJ",para:"PF"},
+  {id:"PAGAMENTO_EMPRESTIMO_PJ",label:"Pagamento Empréstimo p/ PJ (PJ paga o sócio)",de:"PJ",para:"PF"},
+  {id:"RESSARCIMENTO_SOCIO",label:"Ressarcimento gastos para o sócio",de:"PJ",para:"PF"},
+  {id:"EMPRESTIMO_PJ",label:"Empréstimo p/ PJ (sócio empresta)",de:"PF",para:"PJ"},
+  {id:"PAGAMENTO_EMPRESTIMO_SOCIO",label:"Pagamento Empréstimo p/ Sócio (sócio paga a PJ)",de:"PF",para:"PJ"},
+  {id:"RESSARCIMENTO",label:"Ressarcimento gastos para a PJ",de:"PF",para:"PJ"},
 ];
+function tipoDaConta(contas,id){
+  const c=(contas||[]).find(x=>x.id===id);
+  const t=String((c&&c.tipo)||"").toUpperCase();
+  return t==="PF"||t==="PJ"?t:null;
+}
+// Lado desconhecido (null) nao restringe -- so filtra pelo que ja se sabe.
+function intencoesPermitidas(tipoOrigem,tipoDestino){
+  return INTENCOES.filter(i=>(!i.de||!tipoOrigem||i.de===tipoOrigem)&&(!i.para||!tipoDestino||i.para===tipoDestino));
+}
 // [15/08, NOVO] Mesma tabela do backend (TEXTOS_INTENCAO em
 // Tesouraria_v3.txt) -- so pra montar a prévia no front antes de lançar.
 // "mesmo" = texto identico nos 2 lados; "origem"/"destino" = texto
@@ -776,6 +788,7 @@ const TEXTOS_INTENCAO_FRONT={
   EMPRESTIMO_PJ:{mesmo:"EMPRÉSTIMO P/ PJ"},
   PAGAMENTO_EMPRESTIMO_PJ:{mesmo:"PAGAMENTO EMPRÉSTIMO P/ PJ"},
   RESSARCIMENTO:{origem:"PAGAMENTO RESSARCIMENTO DESPESAS PJ",destino:"RESSARCIMENTO DESPESA PJ"},
+  RESSARCIMENTO_SOCIO:{origem:"PAGAMENTO RESSARCIMENTO DESPESAS SÓCIO",destino:"RESSARCIMENTO DESPESA SÓCIO"},
   PROLABORE:{origem:"PAGAMENTO PRÓ-LABORE",destino:"PRÓ-LABORE"},
 };
 function textoLadoIntencao(intencao,ehOrigem){
@@ -947,6 +960,10 @@ function parseOFX(texto){
   const fmtOfxData = s=>s?s.slice(0,4)+"-"+s.slice(4,6)+"-"+s.slice(6,8):null;
   const dtEnd = fmtOfxData(dtEndM&&dtEndM[1]);
   const dtServer = fmtOfxData(dtServerM&&dtServerM[1]);
+  // [NOVO 08/10] Total da fatura declarado pelo banco (LEDGERBAL, igual ao PDF).
+  // No OFX vem negativo; aqui devolve positivo (convencao do CSV de fatura).
+  const ledgerM = String(texto||"").match(/<LEDGERBAL>[\s\S]*?<BALAMT>([-\d.]+)/);
+  const totalDeclarado = ledgerM ? -parseFloat(ledgerM[1]) : null;
   const txns = [];
   const re = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/g;
   let m;
@@ -962,14 +979,14 @@ function parseOFX(texto){
     const amtOfx = parseFloat(amtM[1]);
     txns.push({data:dataISO, titulo:memoM[1].trim(), valor:-amtOfx, fitid:fitM?fitM[1].trim():""});
   }
-  return {acctid, txns, dtEnd, dtServer};
+  return {acctid, txns, dtEnd, dtServer, totalDeclarado};
 }
 
 // Converte um .ofx pro mesmo texto "date,title,amount" que o backend já lê
 // (_parsearCSVSimples) -- assim o parser real nunca precisa mudar, só ganha
 // um identificador de conta extra (acctid) que viaja separado.
 function ofxParaTextoCSV(texto){
-  const {acctid, txns, dtEnd, dtServer} = parseOFX(texto);
+  const {acctid, txns, dtEnd, dtServer, totalDeclarado} = parseOFX(texto);
   // [NOVO 08/10] 4a coluna = FITID (numero do banco pra cada transacao). O
   // backend casa por ele primeiro, entao o texto/data que o banco mudar
   // entre exportacoes nunca mais cria uma segunda linha.
@@ -979,7 +996,7 @@ function ofxParaTextoCSV(texto){
     const tituloEsc = '"'+t.titulo.replace(/"/g,'""')+'"';
     linhas.push(t.data+","+tituloEsc+",\""+valorFmt+"\","+(t.fitid||""));
   });
-  return {acctid, csv: linhas.join("\n"), dtEnd, dtServer};
+  return {acctid, csv: linhas.join("\n"), dtEnd, dtServer, totalDeclarado};
 }
 
 // Lê um arquivo de fatura (.csv OU .ofx) e devolve sempre {csv, acctid, nome}
@@ -992,8 +1009,8 @@ function lerArquivoFatura(file){
       const texto=e.target.result;
       const ehOFX=/\.ofx$/i.test(file.name)||/<OFX>/i.test(String(texto).slice(0,200));
       if(ehOFX){
-        const {acctid,csv,dtEnd,dtServer}=ofxParaTextoCSV(texto);
-        resolve({csv, acctid, nome:file.name, dtEnd, dtServer});
+        const {acctid,csv,dtEnd,dtServer,totalDeclarado}=ofxParaTextoCSV(texto);
+        resolve({csv, acctid, nome:file.name, dtEnd, dtServer, totalDeclarado});
       }else{
         resolve({csv:texto, acctid:null, nome:file.name, dtEnd:null, dtServer:null});
       }
@@ -3207,7 +3224,7 @@ function FormModo({modo,onChange,onRemover,podeRemover,onLancarAvulso,contas,con
         <div>
           <label style={{fontSize:9,color:C.textMuted}}>FINALIDADE</label>
           <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:2}}>
-            {INTENCOES.map(o=>{
+            {intencoesPermitidas(tipoDaConta(contas,contaFonte||"CONTA"),tipoDaConta(contas,tv.contaDestino)).map(o=>{
               const ativoI=(tv.intencao||"LUCROS")===o.id;
               return <button key={o.id} onClick={()=>updTv("intencao",o.id)}
                 style={{padding:"5px 10px",borderRadius:8,border:"1px solid "+(ativoI?C.teal:C.border),
@@ -5428,7 +5445,7 @@ function PreviaAppCartao({item,previa,numero,envelopes,despesasFixas,ocorrencias
 // dentro do componente do cartão arriscaria quebrar o que já funciona lá
 // só pra acomodar campos que ele nunca usa. Mesmo contrato de "nunca salva
 // sozinha" -- só grava quando Mesclar roda.
-function PreviaAppExtrato({n,previa,numero,envelopes,contas,cartoes,data,despesasFixas,ocorrenciasProgramadasDe,onMudar,onDesvincular}){
+function PreviaAppExtrato({n,previa,numero,envelopes,contas,cartoes,data,despesasFixas,ocorrenciasProgramadasDe,onMudar,onDesvincular,contaExtrato}){
   const cor=numero?PALETA_PARES[(numero-1)%PALETA_PARES.length]:{cor:C.blue,bg:"#EFF6FF"};
   return <div style={{width:"90%",marginLeft:"auto",marginBottom:6}}>
     <div style={{
@@ -5555,7 +5572,7 @@ function PreviaAppExtrato({n,previa,numero,envelopes,contas,cartoes,data,despesa
           </label>
           {previa.criarEspelho&&<>
             <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:5,marginBottom:5}}>
-              {INTENCOES.map(i=>
+              {intencoesPermitidas(n.valor<0?tipoDaConta(contas,contaExtrato):tipoDaConta(contas,previa.contaEspelho),n.valor<0?tipoDaConta(contas,previa.contaEspelho):tipoDaConta(contas,contaExtrato)).map(i=>
                 <button key={i.id} onClick={()=>onMudar({...previa,intencaoEspelho:i.id})}
                   style={{padding:"4px 8px",borderRadius:12,border:"1px solid "+(previa.intencaoEspelho===i.id?C.purple:C.border),
                     background:previa.intencaoEspelho===i.id?C.purple:"#fff",color:previa.intencaoEspelho===i.id?"#fff":C.textMuted,
@@ -5565,7 +5582,7 @@ function PreviaAppExtrato({n,previa,numero,envelopes,contas,cartoes,data,despesa
             </div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
               {contas.map(c2=>
-                <button key={c2.id} onClick={()=>onMudar({...previa,contaEspelho:c2.id})}
+                <button key={c2.id} onClick={()=>onMudar({...previa,contaEspelho:c2.id,intencaoEspelho:(intencoesPermitidas(n.valor<0?tipoDaConta(contas,contaExtrato):tipoDaConta(contas,c2.id),n.valor<0?tipoDaConta(contas,c2.id):tipoDaConta(contas,contaExtrato)).some(i=>i.id===previa.intencaoEspelho)?previa.intencaoEspelho:null)})}
                   style={{padding:"4px 9px",borderRadius:6,border:"1px solid "+(previa.contaEspelho===c2.id?C.purple:C.border),
                     background:previa.contaEspelho===c2.id?C.purple:"#fff",color:previa.contaEspelho===c2.id?"#fff":C.text,
                     fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
@@ -6068,6 +6085,7 @@ function ConciliarExtratoTab({data,onUpdate}){
     mesclandoRef.current=true;
     setMesclando(true);
     const itensUsados=[]; const rowsAppUsados=[]; const itensLote=[]; const regrasParaAprender=[];
+    let deltaSaldoApp=0; // [NOVO 08/10] soma do que virou lançamento EXECUTADO NOVO na conta (pro aviso de saldo)
     try{
       for(const num of Object.keys(paresPorNumero)){
         const {ofxId,appId}=paresPorNumero[num];
@@ -6083,11 +6101,16 @@ function ConciliarExtratoTab({data,onUpdate}){
             const row=abertaAntiga?abertaAntiga.row:acharFaturaRow(previa.pagFatura,vencimentoFaturaDoMes(n.data));
             if(!row){ const venc=vencimentoFaturaDoMes(n.data); alert("Não achei a fatura "+previa.pagFatura+" com vencimento "+fmtD(venc)+" pra \""+n.descricao.slice(0,40)+"\" -- pulei esse, os outros continuam."); continue; }
             onUpdate(await api({action:"pagarFaturaAvulso",row,valorPago:Math.abs(Number(n.valor)),data:n.data}));
+            deltaSaldoApp+=Number(n.valor);
           }else if(previa.criarEspelho&&previa.contaEspelho){
             const origem=n.valor<0?(contaExtrato||"CONTA"):previa.contaEspelho;
             const destino=n.valor<0?previa.contaEspelho:(contaExtrato||"CONTA");
             onUpdate(await api({action:"lancarTransferenciaEspelhada",data:n.data,valor:Math.abs(Number(n.valor)),
-              contaOrigem:origem,contaDestino:destino,intencao:previa.intencaoEspelho||"MOVIMENTACAO",apelido:previa.apelido||""}));
+              contaOrigem:origem,contaDestino:destino,intencao:previa.intencaoEspelho||"MOVIMENTACAO",
+              // [NOVO 08/10] Se o "nome" ainda e o texto cru do banco, nao usa como apelido -- cairia igual nos 2 lados (ex: "RECEBIDA" tambem na conta que enviou). Sem apelido, o app usa o texto padrao de cada lado.
+              apelido:(previa.apelido&&String(previa.apelido).trim().toUpperCase()!==String(n.descricao||"").trim().toUpperCase())?previa.apelido:"",
+              extratoId:n.identificador||"",extratoLado:n.valor<0?"ORIGEM":"DESTINO"}));
+            deltaSaldoApp+=Number(n.valor);
           }else if(previa.despesaFixaVinculo){
             // [CORRIGIDO 05/09, bug real achado com o Marcus] Antes procurava
             // sozinho em resultado.aguardando por texto exato -- um acento ou
@@ -6159,6 +6182,7 @@ function ConciliarExtratoTab({data,onUpdate}){
         itensUsados.push(n);
       }
       if(itensLote.length) onUpdate(await api({action:"lancarLote",itens:itensLote}));
+      itensLote.forEach(it=>{ if(it.status==="EXECUTADO") deltaSaldoApp+=Number(it.valor); });
       for(const regra of regrasParaAprender){
         onUpdate(await api({action:"vincularCategoriaRegra",descricao:regra.descricao,categoria:regra.categoria,apelido:regra.apelido}));
       }
@@ -6192,6 +6216,7 @@ function ConciliarExtratoTab({data,onUpdate}){
         aguardando:(res.aguardando||[]).filter(a=>!rowsAppUsados.includes(a.row)),
         confirmados:[...(res.confirmados||[]),...novosConfirmadosPosMerge]}:res);
       setParesPorNumero({}); setParIdParaNumero({}); setPreviasApp({});
+      if(Math.abs(deltaSaldoApp)>0.001) _ajustarComparacaoSaldoPorRendimento(_round2(deltaSaldoApp));
     }catch(e){ alert(e.message); }
     mesclandoRef.current=false;
     setMesclando(false);
@@ -6440,7 +6465,7 @@ function ConciliarExtratoTab({data,onUpdate}){
                   onClick={()=>tocarPareamento(idOfx,"ofx")}
                   onCriarPrevia={()=>criarPrevia(n,idOfx)}
                 />
-                {previa&&<PreviaAppExtrato n={n} previa={previa}
+                {previa&&<PreviaAppExtrato contaExtrato={contaExtrato} n={n} previa={previa}
                   numero={parIdParaNumero[idOfx]}
                   envelopes={parseEnvelopesCustom(data)}
                   contas={(data.contas||[]).filter(c=>c.ativa!==false&&c.id!==contaExtrato)}
@@ -6566,6 +6591,8 @@ function TransferenciaEspelhada({data,onUpdate}){
   },[contasAtivas]);
 
   // INTENCOES agora é constante global (topo do arquivo) -- compartilhada com ConciliarExtratoTab.
+  const intencoesOk=intencoesPermitidas(tipoDaConta(data.contas,origem),tipoDaConta(data.contas,destino));
+  useEffect(()=>{ if(intencao&&!intencoesOk.some(i=>i.id===intencao)) setIntencao(""); },[origem,destino]);
 
   async function lancarPar(){
     const v=Number(String(valor).replace(",","."));
@@ -6606,7 +6633,7 @@ function TransferenciaEspelhada({data,onUpdate}){
 
       <div style={{fontSize:10,fontWeight:700,color:C.textMuted,marginBottom:6}}>INTENÇÃO</div>
       <div style={{marginBottom:12}}>
-        {INTENCOES.map(i=><Pilula key={i.id} ativo={intencao===i.id} onClick={()=>setIntencao(i.id)}>{i.label}</Pilula>)}
+        {intencoesOk.map(i=><Pilula key={i.id} ativo={intencao===i.id} onClick={()=>setIntencao(i.id)}>{i.label}</Pilula>)}
       </div>
 
       <div style={{fontSize:10,fontWeight:700,color:C.textMuted,marginBottom:6}}>SAI DE</div>
@@ -6903,6 +6930,11 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
   const [intencaoVincular,setIntencaoVincular]=useState("");
   async function vincularComoEspelho(contaAlvo){
     if(!intencaoVincular){ alert("Escolha a finalidade da transferência antes de vincular."); return; }
+    {
+      const saiAqui=item.valor<0;
+      const ok=intencoesPermitidas(saiAqui?tipoDaConta(data.contas,item.forma):tipoDaConta(data.contas,contaAlvo),saiAqui?tipoDaConta(data.contas,contaAlvo):tipoDaConta(data.contas,item.forma));
+      if(!ok.some(i=>i.id===intencaoVincular)){ alert("Essa finalidade não combina com o sentido dessa transferência entre essas contas. Escolha outra."); return; }
+    }
     setLoadPar(true);
     try{ onUpdate(await api({action:"vincularComoEspelho",row:item.row,contaFaltante:contaAlvo,intencao:intencaoVincular})); }
     catch(e){ alert(e.message); }
@@ -7064,7 +7096,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
           {it.label} — vincular como transferência espelhada?
         </div>
         <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:6}}>
-          {INTENCOES.map(i=>
+          {intencoesPermitidas(item.valor<0?tipoDaConta(data.contas,item.forma):null,item.valor<0?null:tipoDaConta(data.contas,item.forma)).map(i=>
             <button key={i.id} onClick={()=>setIntencaoVincular(i.id)}
               style={{padding:"3px 8px",borderRadius:12,border:"1px solid "+(intencaoVincular===i.id?C.purple:C.border),
                 background:intencaoVincular===i.id?C.purple:"#fff",color:intencaoVincular===i.id?"#fff":C.textMuted,
@@ -7226,8 +7258,8 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
         </label>}
       </div>;
     })()}
-    {!ehFatura&&!parInfo&&(data.contas||[]).filter(c=>c.ativa!==false).length>1&&<div style={{marginTop:8,marginBottom:8}}>
-      <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CONTA</span>
+    {!parInfo&&(data.contas||[]).filter(c=>c.ativa!==false).length>1&&(!ehFatura||item.status!=="EXECUTADO")&&<div style={{marginTop:8,marginBottom:8}}>
+      <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>{ehFatura?"CONTA DE PAGAMENTO DA FATURA":"CONTA"}</span>
       <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:5}}>
         {(data.contas||[]).filter(c=>c.ativa!==false).map(c=>{
           const ehAtual=(item.forma||"CONTA")===c.id;
@@ -10419,7 +10451,7 @@ function ConciliarCartao({cartao, data, onResultado, onUpdate}){
         if(!confirm(msg)){ setLoad(false); return; }
       }
 
-      const res=await api({action:"conciliarFatura",cartao,csv:lido.csv,nomeArquivo:lido.nome,acctid:lido.acctid||"",dtEnd:lido.dtEnd||"",dtServer:lido.dtServer||""});
+      const res=await api({action:"conciliarFatura",cartao,csv:lido.csv,nomeArquivo:lido.nome,acctid:lido.acctid||"",dtEnd:lido.dtEnd||"",dtServer:lido.dtServer||"",totalDeclarado:(lido.totalDeclarado!=null?lido.totalDeclarado:"")});
       onResultado({...res,cartao});
       onUpdate&&onUpdate(res);
       if(res.travouAgora){
@@ -11634,12 +11666,14 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
       // agora sao recalculados AO VIVO com o total real da fatura na tela,
       // entao apagar/lancar/parear refletem na hora, sem reenviar o OFX.
       const cf={...cf0,totalApp:totalFatura,diferenca:Math.round((totalFatura-cf0.totalBanco)*100)/100};
-      cf.batem=Math.abs(cf.diferenca)<=0.05;
+      cf.batem=Math.abs(cf.diferenca)<=0.05&&cf0.arquivoIntegro!==false;
       const bate=cf.batem;
       return <Card style={{marginBottom:10,padding:"12px 16px",background:bate?"#F0FDF4":"#FEF2F2",border:"1px solid "+(bate?"#BBF7D0":"#FECACA")}}>
         <div style={{fontSize:11,fontWeight:800,color:bate?"#166534":"#B91C1C",marginBottom:6}}>
           {bate?"✅ Total confere com o banco":"⚠️ Total do app diferente do banco"}
         </div>
+        {cf0.fechadaConfiavel&&<div style={{fontSize:10,color:C.textSub,marginBottom:6}}>🔒 Fatura fechada pelo banco (arquivo gerado depois do fechamento — não muda mais).</div>}
+        {cf0.arquivoIntegro===false&&<div style={{fontSize:10,color:"#B91C1C",marginBottom:6}}>O total declarado pelo banco ({fmt(cf0.totalDeclarado)}) não bate com a soma das linhas do arquivo ({fmt(cf0.totalLinhasBanco)}): arquivo incompleto ou fatura ainda aberta.</div>}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,textAlign:"center",marginBottom:cf.confirmadosSemPar&&cf.confirmadosSemPar.length&&!bate?10:0}}>
           <div><div style={{fontSize:9,color:C.textMuted,marginBottom:3}}>BANCO</div><div style={{fontSize:13,fontWeight:800,color:C.text}}>{fmt(cf.totalBanco)}</div></div>
           <div><div style={{fontSize:9,color:C.textMuted,marginBottom:3}}>APP</div><div style={{fontSize:13,fontWeight:800,color:C.text}}>{fmt(cf.totalApp)}</div></div>
@@ -12357,7 +12391,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261008.0700 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261008.1800 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12471,7 +12505,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261008.0700
+      // HTML v3.20261008.1800
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
