@@ -5911,7 +5911,8 @@ function ConciliarExtratoTab({data,onUpdate}){
       const lido=await lerArquivoExtrato(file);
       if(!lido.transacoes.length){ alert("Não encontrei transações nesse arquivo."); setLoad(false); return; }
       const r=await api({action:"conciliarExtrato",transacoes:lido.transacoes,acctid:lido.acctid||"",
-        saldoBanco:lido.saldoFinal,dataSaldoBanco:lido.dataSaldoFinal,conta:contaExtrato});
+        saldoBanco:lido.saldoFinal,dataSaldoBanco:lido.dataSaldoFinal,conta:contaExtrato,
+        rendimento:(lido.rendimento&&lido.rendimento>0)?lido.rendimento:0,dataInicio:lido.dataInicioPeriodo||""});
       // [NOVO 07/09] Rendimento do período (ver parseOFXExtrato) -- puramente
       // client-side, não passa pelo backend na leitura (só quando lançar de
       // verdade). Guardado junto do resultado pra sobreviver a troca de aba.
@@ -6003,34 +6004,6 @@ function ConciliarExtratoTab({data,onUpdate}){
       _ajustarComparacaoSaldoPorRendimento(Math.abs(Number(valorNovo))-Math.abs(Number(valorAntigo||0)));
     }catch(e){ await falhaDeMutacao(e,onUpdate); }
     setLancandoRendimento(false);
-  }
-
-  async function criarAjuste(){
-    if(!resultado||!resultado.comparacaoSaldo||resultado.comparacaoSaldo.bate) return;
-    // [NOVO 10/09] Mesmo ajuste do rendimento pendente que já aparece no
-    // botão -- usa o valor consistente com o que foi mostrado, nunca o
-    // valor cru de antes de contar o rendimento do mês.
-    const rd=resultado.rendimentoDetectado;
-    const jaLancadoEsseMes=rd&&_rendimentoDoMes(rd.dataFim);
-    const ajusteRend=(rd&&!jaLancadoEsseMes)?Math.abs(Number(rd.valor)):0;
-    const diferenca=Number(resultado.comparacaoSaldo.diferenca)-ajusteRend;
-    const {data}=resultado.comparacaoSaldo;
-    setLoad(true);
-    try{
-      const r=await api({action:"lancar",data,descricao:"AJUSTE",valor:diferenca,tipo:"EXTRAORDINARIA",
-        categoria:"EXTRAORDINARIA",forma:contaExtrato||"CONTA",status:"EXECUTADO",obs:""});
-      onUpdate(r);
-      setResultado(res=>({...res,comparacaoSaldo:{...res.comparacaoSaldo,bate:true,ajustado:true}}));
-      // [NOVO 01/10] Mesmo motivo do rendimento -- esse caminho também não
-      // passa de novo pelo conciliarExtrato, então grava o saldo confirmado
-      // direto, senão o ajuste resolvia a diferença mas a marca não avançava.
-      if(resultado&&resultado.comparacaoSaldo){
-        const {data:dataAjuste,saldoBanco:saldoAjuste}=resultado.comparacaoSaldo;
-        api({action:"confirmarSaldoConciliado",conta:contaExtrato,data:dataAjuste,saldo:saldoAjuste}).catch(()=>{});
-        setResultado(res=>res?{...res,ultimoSaldoConfirmado:{data:dataAjuste,valor:saldoAjuste}}:res);
-      }
-    }catch(e){ await falhaDeMutacao(e,onUpdate); }
-    setLoad(false);
   }
 
   async function confirmarBaixa(item){
@@ -6316,17 +6289,27 @@ function ConciliarExtratoTab({data,onUpdate}){
           <div style={{fontSize:11,color:"#78350F",marginBottom:8}}>
             Banco: {fmt(cs.saldoBanco)} · App: {fmt(saldoAppAj)}{ajusteRend>0&&" (já com o rendimento do mês)"} · Diferença: {fmt(diferencaAj)}
           </div>
-          {cs.candidatos&&cs.candidatos.length>0&&<div style={{marginBottom:8}}>
-            <div style={{fontSize:10,fontWeight:700,color:"#92400E",marginBottom:4,letterSpacing:".05em"}}>CANDIDATOS MAIS PROVÁVEIS</div>
-            {cs.candidatos.map(c=><div key={c.row} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"3px 0"}}>
-              <span style={{color:"#78350F"}}>{fmtD(c.data)} · {c.desc}</span>
-              <span style={{fontWeight:600,color:"#92400E"}}>{fmt(c.valor)}</span>
-            </div>)}
-          </div>}
-          <button onClick={criarAjuste} disabled={load}
-            style={{width:"100%",padding:"8px",borderRadius:6,background:"#D97706",color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-            Criar lançamento de ajuste ({fmt(diferencaAj)})
-          </button>
+          {(()=>{
+            // [NOVO 08/10, pedido do Marcus] Diagnóstico pelo saldo do banco --
+            // nunca cria lançamento. Substitui "candidatos" e o botão de ajuste.
+            const dg=cs.diagnostico;
+            const diaAntes=(iso)=>{ const d=_dataLocalSegura(iso); d.setDate(d.getDate()-1); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+            const caixa={fontSize:11,color:"#78350F",background:"#FFFBEB",borderRadius:6,padding:"8px 10px",lineHeight:1.5};
+            if(!dg||dg.arquivoIncompleto||!dg.abertura) return <div style={caixa}>Não consegui localizar a origem da diferença com esse arquivo (precisa ser um OFX completo).</div>;
+            if(dg.erroAnterior) return <div style={caixa}>
+              <b>A diferença já existia antes de {fmtD(dg.abertura.data)}.</b> Nessa data o banco tinha {fmt(dg.abertura.banco)} e o app {fmt(dg.abertura.app)} (diferença {fmt(dg.abertura.diferenca)}).
+              O erro está em lançamentos anteriores a este extrato. <b>Envie o extrato (OFX) do período anterior, terminando em {fmtD(diaAntes(dg.abertura.data))}.</b> Repita até a abertura bater.
+            </div>;
+            const pd=dg.primeiroDiaDivergente;
+            if(!pd) return <div style={caixa}>A abertura confere, mas não achei o dia exato da diferença. Confira os lançamentos do app que não têm linha no extrato.</div>;
+            return <div style={caixa}>
+              <b>A abertura confere. O saldo passa a divergir em {fmtD(pd.data)}</b> (diferença {fmt(pd.diferenca)} no fim do dia).
+              <div style={{marginTop:6,fontWeight:700}}>Banco nesse dia:</div>
+              {pd.banco.length?pd.banco.map((l,i)=><div key={"b"+i} style={{display:"flex",justifyContent:"space-between"}}><span>{l.desc||"—"}</span><span>{fmt(l.valor)}</span></div>):<div>nenhuma linha</div>}
+              <div style={{marginTop:6,fontWeight:700}}>App nesse dia:</div>
+              {pd.app.length?pd.app.map((l,i)=><div key={"a"+i} style={{display:"flex",justifyContent:"space-between"}}><span>{l.desc||"—"}</span><span>{fmt(l.valor)}</span></div>):<div>nenhum lançamento</div>}
+            </div>;
+          })()}
         </>}
       </div>;
       })()}
@@ -12391,7 +12374,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261008.1800 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261008.2000 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12505,7 +12488,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261008.1800
+      // HTML v3.20261008.2000
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
