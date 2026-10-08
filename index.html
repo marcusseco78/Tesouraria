@@ -955,11 +955,12 @@ function parseOFX(texto){
     const dtM = bloco.match(/<DTPOSTED>(\d{8})/);
     const amtM = bloco.match(/<TRNAMT>([-\d.]+)/);
     const memoM = bloco.match(/<MEMO>([^\r\n<]*)/);
+    const fitM = bloco.match(/<FITID>([^\r\n<]*)/);
     if(!dtM||!amtM||!memoM) continue;
     const dt = dtM[1];
     const dataISO = dt.slice(0,4)+"-"+dt.slice(4,6)+"-"+dt.slice(6,8);
     const amtOfx = parseFloat(amtM[1]);
-    txns.push({data:dataISO, titulo:memoM[1].trim(), valor:-amtOfx});
+    txns.push({data:dataISO, titulo:memoM[1].trim(), valor:-amtOfx, fitid:fitM?fitM[1].trim():""});
   }
   return {acctid, txns, dtEnd, dtServer};
 }
@@ -969,11 +970,14 @@ function parseOFX(texto){
 // um identificador de conta extra (acctid) que viaja separado.
 function ofxParaTextoCSV(texto){
   const {acctid, txns, dtEnd, dtServer} = parseOFX(texto);
-  const linhas = ["date,title,amount"];
+  // [NOVO 08/10] 4a coluna = FITID (numero do banco pra cada transacao). O
+  // backend casa por ele primeiro, entao o texto/data que o banco mudar
+  // entre exportacoes nunca mais cria uma segunda linha.
+  const linhas = ["date,title,amount,fitid"];
   txns.forEach(t=>{
     const valorFmt = t.valor.toFixed(2).replace(".", ",");
     const tituloEsc = '"'+t.titulo.replace(/"/g,'""')+'"';
-    linhas.push(t.data+","+tituloEsc+",\""+valorFmt+"\"");
+    linhas.push(t.data+","+tituloEsc+",\""+valorFmt+"\","+(t.fitid||""));
   });
   return {acctid, csv: linhas.join("\n"), dtEnd, dtServer};
 }
@@ -10219,7 +10223,7 @@ function BotaoLancar({data,onUpdate,onIrPara}){
 // Gemini em nenhum ponto deste caminho.
 function NovoDoCSV({item, cartao, onUpdate, onResolvido, onVinculado, onNovaLinhaConfirmada, candidatos, data, onSync}){
   const [desc,setDesc]=useState(item.title.toUpperCase());
-  const [valor,setValor]=useState(formatarValorInicial(-Math.abs(item.amount)));
+  const [valor,setValor]=useState(formatarValorInicial(-item.amount)); // [CORRIGIDO 08/10] sinal real: estorno entra positivo
   const [cat,setCat]=useState("");
   // [CORRIGIDO 04/08] parc = TOTAL de parcelas (denominador, ex: o "5" de
   // "4/5") -- so pro rotulo. parcelaAtual = numerador real (ex: "4") -- ANTES
@@ -10264,7 +10268,7 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido, onVinculado, onNovaLinh
     setLoad(true);
     try{
       const r=await api({action:"vincularCompraCartao",cartao,row:candidatoSel.row,
-        descricaoCsv:item.title,valorCsv:item.amount,dataCsv:item.date,parcelaCsv:item.parcela});
+        descricaoCsv:item.title,valorCsv:item.amount,dataCsv:item.date,parcelaCsv:item.parcela,fitid:item.fitid||""});
       onUpdate(r);
       onVinculado&&onVinculado(candidatoSel.row);
       onResolvido();
@@ -10283,8 +10287,9 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido, onVinculado, onNovaLinh
     setLoad(true);
     try{
       const r=await api({action:"lancarCartao",cartao,descricao:desc.toUpperCase(),
-        valor:(-1)*Math.abs(numBR(valor)),parcelas:parseInt(parc)||1,parcelaAtual:parseInt(parcelaAtual)||1,
-        categoria:cat,dcp:cat==="DCP"?"S":"N",data_compra:item.date,envelopeId,apelido,origemCSV:true});
+        valor:(item.amount<0?1:-1)*Math.abs(numBR(valor)),parcelas:parseInt(parc)||1,parcelaAtual:parseInt(parcelaAtual)||1,
+        categoria:cat,dcp:cat==="DCP"?"S":"N",data_compra:item.date,envelopeId,apelido,origemCSV:true,
+        fitid:item.fitid||"",valorBanco:item.amount,tituloBanco:item.title,parcelaBanco:item.parcela});
       onUpdate(r);
       // [NOVO 28/07] Item veio literalmente do OFX/CSV -- marca como
       // confirmado na hora, pra ganhar o mesmo selo verde de conciliado.
@@ -10841,7 +10846,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           if(previa.despesaFixaVinculo){
             if(previa.ocorrenciaEscolhida&&previa.ocorrenciaEscolhida!=="novo"){
               const r=await api({action:"vincularCompraCartao",cartao,row:previa.ocorrenciaEscolhida,
-                descricaoCsv:item.title,valorCsv:item.amount,dataCsv:item.date,parcelaCsv:item.parcela});
+                descricaoCsv:item.title,valorCsv:item.amount,dataCsv:item.date,parcelaCsv:item.parcela,fitid:item.fitid||""});
               onUpdate(r);
             }else{
               const nomeAlvo=previa.despesaFixaVinculo.toUpperCase();
@@ -10851,7 +10856,8 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
               const r=await api({action:"lancarCartao",cartao,data_compra:item.date,
                 parcelas:parcelaTotalNum,parcelaAtual:parcelaAtualNum,
                 descricao:previa.despesaFixaVinculo,valor:(-1)*Math.abs(item.amount),categoria:"DESPESA FIXA",
-                dcp:"N",apelido:previa.despesaFixaVinculo,origemCSV:true});
+                dcp:"N",apelido:previa.despesaFixaVinculo,origemCSV:true,
+                fitid:item.fitid||"",valorBanco:item.amount,tituloBanco:item.title,parcelaBanco:item.parcela});
               onUpdate(r);
             }
           }else if(previa.criarNova){
@@ -10872,7 +10878,8 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
             const r=await api({action:"lancarCartao",cartao,data_compra:item.date,
               parcelas:parcelaTotalNum,parcelaAtual:parcelaAtualNum,
               descricao:previa.apelido,valor:(-1)*Math.abs(item.amount),categoria:"DESPESA FIXA",
-              dcp:"N",apelido:previa.apelido.trim().toUpperCase(),origemCSV:true});
+              dcp:"N",apelido:previa.apelido.trim().toUpperCase(),origemCSV:true,
+              fitid:item.fitid||"",valorBanco:item.amount,tituloBanco:item.title,parcelaBanco:item.parcela});
             onUpdate(r);
           }else{
             // [NOVO 09/09, pedido do Marcus] Sinal real, não forçado -- um
@@ -10896,13 +10903,14 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
               parcelas:parcelaTotalNum,parcelaAtual:parcelaAtualNum,
               descricao:item.title,valor:-item.amount,categoria:previa.categoria,
               dcp:previa.categoria==="DCP"?"S":"N",apelido:previa.apelido.trim().toUpperCase(),
-              envelopeId:previa.envelope||undefined,origemCSV:true});
+              envelopeId:previa.envelope||undefined,origemCSV:true,
+              fitid:item.fitid||"",valorBanco:item.amount,tituloBanco:item.title,parcelaBanco:item.parcela});
             onUpdate(r);
           }
         }else{
           const rowApp=Number(appId.replace("app_",""));
           const r=await api({action:"vincularCompraCartao",cartao,row:rowApp,
-            descricaoCsv:item.title,valorCsv:item.amount,dataCsv:item.date,parcelaCsv:item.parcela});
+            descricaoCsv:item.title,valorCsv:item.amount,dataCsv:item.date,parcelaCsv:item.parcela,fitid:item.fitid||""});
           onUpdate(r);
           setConciliacao(c=>c?{...c,
             aguardandoFatura:(c.aguardandoFatura||[]).filter(a=>a.row!==rowApp),
@@ -11220,10 +11228,15 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
     let feito=0;
     for(const [chave,cfg] of marcadosNovosCartao){
       try{
+        // [NOVO 08/10] item original do banco: traz o FITID e o sinal real
+        // (estorno entra positivo, nao como mais uma despesa).
+        const itemCsvLote=novosDoCSV.find((item,i)=>item.date+"|"+item.title+"|"+item.amount+"|"+i===chave);
         const r=await api({action:"lancarCartao",cartao,descricao:cfg.desc.toUpperCase(),
-          valor:(-1)*Math.abs(numBR(cfg.valor)),parcelas:parseInt(cfg.parc)||1,parcelaAtual:parseInt(cfg.parcelaAtual)||1,
-          categoria:cfg.cat,dcp:cfg.cat==="DCP"?"S":"N",data_compra:novosDoCSV.find((item,i)=>item.date+"|"+item.title+"|"+item.amount+"|"+i===chave)?.date,
-          envelopeId:cfg.envelopeId,apelido:cfg.apelido,origemCSV:true});
+          valor:((itemCsvLote&&itemCsvLote.amount<0)?1:-1)*Math.abs(numBR(cfg.valor)),parcelas:parseInt(cfg.parc)||1,parcelaAtual:parseInt(cfg.parcelaAtual)||1,
+          categoria:cfg.cat,dcp:cfg.cat==="DCP"?"S":"N",data_compra:itemCsvLote?.date,
+          envelopeId:cfg.envelopeId,apelido:cfg.apelido,origemCSV:true,
+          fitid:(itemCsvLote&&itemCsvLote.fitid)||"",valorBanco:itemCsvLote?itemCsvLote.amount:undefined,
+          tituloBanco:itemCsvLote?itemCsvLote.title:undefined,parcelaBanco:itemCsvLote?itemCsvLote.parcela:undefined});
         onUpdate(r);
         if(r.novaLinha) linhasConfirmadas.push(r.novaLinha);
         chavesLancadas.push(chave);
@@ -11596,6 +11609,44 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
       {navBtn(1,idxInicial+fatIdx>=faturas.length-1)}
     </div>
 
+    {/* [NOVO 08/10, pedido do Marcus: "por que o fechamento do app e do banco
+        diferem?"] CONFERENCIA DE TOTAL depois de cada conciliacao: banco x
+        app. Quando difere, lista as linhas do app que o banco NAO trouxe
+        desta vez (as suspeitas de duplicata) com um botao pra apagar cada
+        uma. Apagar muda a numeracao das linhas, entao o resultado e
+        descartado e o OFX deve ser enviado de novo pra reconferir. */}
+    {concValida&&conciliacao.conferencia&&(()=>{
+      const cf=conciliacao.conferencia;
+      const bate=cf.batem;
+      return <Card style={{marginBottom:10,padding:"12px 16px",background:bate?"#F0FDF4":"#FEF2F2",border:"1px solid "+(bate?"#BBF7D0":"#FECACA")}}>
+        <div style={{fontSize:11,fontWeight:800,color:bate?"#166534":"#B91C1C",marginBottom:6}}>
+          {bate?"✅ Total confere com o banco":"⚠️ Total do app diferente do banco"}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,textAlign:"center",marginBottom:cf.confirmadosSemPar&&cf.confirmadosSemPar.length&&!bate?10:0}}>
+          <div><div style={{fontSize:9,color:C.textMuted,marginBottom:3}}>BANCO</div><div style={{fontSize:13,fontWeight:800,color:C.text}}>{fmt(cf.totalBanco)}</div></div>
+          <div><div style={{fontSize:9,color:C.textMuted,marginBottom:3}}>APP</div><div style={{fontSize:13,fontWeight:800,color:C.text}}>{fmt(cf.totalApp)}</div></div>
+          <div><div style={{fontSize:9,color:C.textMuted,marginBottom:3}}>DIFERENÇA</div><div style={{fontSize:13,fontWeight:800,color:bate?C.green:"#B91C1C"}}>{fmt(cf.diferenca)}</div></div>
+        </div>
+        {!bate&&cf.confirmadosSemPar&&cf.confirmadosSemPar.length>0&&<>
+          <div style={{fontSize:10,color:C.textSub,marginBottom:6}}>Linhas do app que o banco não trouxe desta vez (possíveis duplicatas). Confira antes de apagar:</div>
+          {cf.confirmadosSemPar.map(x=><div key={"cfsp-"+x.row} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:C.surface,borderRadius:8,padding:"7px 10px",marginBottom:4,fontSize:11}}>
+            <span style={{color:C.text,flex:1,minWidth:0}}>{fmtD(x.dataCompra)} · {x.desc} · <b>{fmt(x.valor)}</b></span>
+            <button onClick={async()=>{
+              if(!confirm('Apagar "'+x.desc+'" ('+fmt(x.valor)+', '+fmtD(x.dataCompra)+') do app? Use só se for duplicata de outra linha que o banco confirmou.')) return;
+              try{
+                await api({action:"desconfirmarItemCartao",aba:abaCartao,row:x.row});
+                onUpdate(await api({action:"deletarCartaoItem",aba:abaCartao,row:x.row}));
+                setConciliacao(null);
+                alert("Apagado. Envie o OFX de novo para reconferir o total.");
+              }catch(e){ await falhaDeMutacao(e,onUpdate); }
+            }} style={{padding:"3px 8px",borderRadius:6,background:"transparent",color:"#B91C1C",fontSize:10,fontWeight:700,border:"1px solid #B91C1C",cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Apagar</button>
+          </div>)}
+        </>}
+        {!bate&&(!cf.confirmadosSemPar||!cf.confirmadosSemPar.length)&&<div style={{fontSize:10,color:C.textSub}}>Nenhuma linha confirmada sobrando; veja os itens vermelhos/amarelos abaixo (não pareados) ou lançamentos manuais da fatura.</div>}
+        {!bate&&<div style={{fontSize:10,color:C.textMuted,marginTop:6}}>A fatura só trava sozinha quando o total confere.</div>}
+      </Card>;
+    })()}
+
     {/* [NOVO 18/07] Card "Fatura anterior" -- so aparece se existe uma fatura
         anterior de verdade (ja teve pelo menos 1 fatura antes desta). Mostra
         total, quanto ja foi pago (efetuado, ate o fechamento da fatura atual)
@@ -11825,6 +11876,17 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
                   try{
                     const r2=await api({action:"desconfirmarItemCartao",aba:abaCartao,row:linhaR});
                     onUpdate(r2);
+                    // [NOVO 08/10] Recoloca o lado do BANCO na lista de pendentes
+                    // (usa o retrato gravado no pareamento). Linhas antigas, sem
+                    // retrato, avisam em vez de sumir em silencio.
+                    const bo=r2&&r2.bancoOrigDesvinculado;
+                    if(bo){
+                      setConciliacao(c=>c?{...c,
+                        confirmadosFatura:(c.confirmadosFatura||[]).filter(x=>x.row!==linhaR),
+                        foraDaPlanilha:[...(c.foraDaPlanilha||[]),{date:bo.d,title:bo.t,amount:bo.v,parcela:bo.p||"1/1",fitid:bo.f||"",fitidK:bo.f?bo.f+"|"+Number(bo.v).toFixed(2):""}]}:c);
+                    }else{
+                      alert("Desvinculado. Esta linha é antiga e não guardou o lado do banco — para ele voltar à lista, envie o OFX de novo.");
+                    }
                   }catch(e){ await falhaDeMutacao(e,onUpdate); }
                   setDesvinculandoCartao(null);
                 }} disabled={desvinculandoCartao===linhaR}
@@ -12268,7 +12330,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261003.1800 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261008.0100 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12382,7 +12444,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261003.1800
+      // HTML v3.20261008.0100
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
