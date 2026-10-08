@@ -4972,6 +4972,18 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
   const [envelopeEdit,setEnvelopeEdit]=useState(envelopeAtual||"");
   const [protegido,setProtegido]=useState(true);
   const [salvando,setSalvando]=useState(false);
+  // [CORRIGIDO 08/10, achado real do Marcus: apelidos "trocados" na tela depois
+  // de apagar/mesclar linhas] O apelido/categoria exibidos vinham de estado
+  // local iniciado UMA vez a partir das props. Como a lista usa o numero da
+  // linha como chave, apagar uma linha desloca as de baixo e o componente
+  // reaproveitado seguia mostrando o texto da linha anterior. Agora o estado
+  // acompanha as props sempre que nao ha edicao em andamento.
+  useEffect(()=>{
+    if(editando) return;
+    setApelidoEdit(app.desc);
+    setCategoriaEdit(app.categoria);
+    setEnvelopeEdit(envelopeAtual||"");
+  },[row,app.desc,app.categoria,envelopeAtual]);
   // [NOVO 06/09] Mesmo recurso de vínculo com despesa fixa que a prévia de
   // item novo já tinha -- aqui a linha JÁ EXISTE (row conhecido), então é
   // mais simples: não precisa perguntar "qual ocorrência é essa", só
@@ -11616,7 +11628,13 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         uma. Apagar muda a numeracao das linhas, entao o resultado e
         descartado e o OFX deve ser enviado de novo pra reconferir. */}
     {concValida&&conciliacao.conferencia&&(()=>{
-      const cf=conciliacao.conferencia;
+      const cf0=conciliacao.conferencia;
+      // [CORRIGIDO 08/10, achado do Marcus: o quadro nao atualizava depois de
+      // criar o par do IOF] Banco = valor do arquivo (fixo); APP e DIFERENCA
+      // agora sao recalculados AO VIVO com o total real da fatura na tela,
+      // entao apagar/lancar/parear refletem na hora, sem reenviar o OFX.
+      const cf={...cf0,totalApp:totalFatura,diferenca:Math.round((totalFatura-cf0.totalBanco)*100)/100};
+      cf.batem=Math.abs(cf.diferenca)<=0.05;
       const bate=cf.batem;
       return <Card style={{marginBottom:10,padding:"12px 16px",background:bate?"#F0FDF4":"#FEF2F2",border:"1px solid "+(bate?"#BBF7D0":"#FECACA")}}>
         <div style={{fontSize:11,fontWeight:800,color:bate?"#166534":"#B91C1C",marginBottom:6}}>
@@ -11632,6 +11650,15 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           {cf.confirmadosSemPar.map(x=><div key={"cfsp-"+x.row} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:C.surface,borderRadius:8,padding:"7px 10px",marginBottom:4,fontSize:11}}>
             <span style={{color:C.text,flex:1,minWidth:0}}>{fmtD(x.dataCompra)} · {x.desc} · <b>{fmt(x.valor)}</b></span>
             <button onClick={async()=>{
+              // Seguranca: a lista vem da conciliacao; se alguma linha foi apagada
+              // desde entao os numeros deslocam. So apaga se a linha de hoje
+              // ainda for exatamente essa (mesmo texto e valor).
+              const rowsAtuais=(data.cartaoItens&&data.cartaoItens[cartao])||[];
+              const atual=rowsAtuais.find(rr=>_linhaCartao(rr)===x.row);
+              if(!atual||String(atual[1]).toUpperCase()!==String(x.desc).toUpperCase()||Math.abs(Number(atual[2])-Number(x.valor))>0.005){
+                alert("Esta lista ficou desatualizada (linhas mudaram desde a conciliação). Envie o OFX de novo para refazer a conferência.");
+                return;
+              }
               if(!confirm('Apagar "'+x.desc+'" ('+fmt(x.valor)+', '+fmtD(x.dataCompra)+') do app? Use só se for duplicata de outra linha que o banco confirmou.')) return;
               try{
                 await api({action:"desconfirmarItemCartao",aba:abaCartao,row:x.row});
@@ -12330,7 +12357,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261008.0500 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261008.0700 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12444,7 +12471,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261008.0500
+      // HTML v3.20261008.0700
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
