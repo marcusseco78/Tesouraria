@@ -11851,7 +11851,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
               <div id={"cart-item-"+linhaR}
                 style={{background:destacado?"#FEF3C7":"transparent",borderRadius:10,transition:"background 1s"}}>
                 <SeloPar
-                  ofx={{desc:divergencia?divergencia.csv.title:r[1], valor:divergencia?divergencia.csv.amount:r[2], parcela:divergencia?divergencia.csv.parcela:r[3]}}
+                  ofx={{desc:divergencia?divergencia.csv.title:((()=>{try{const bo=JSON.parse(_obsCartaoRaw(r)||"{}").bancoOrig;return bo&&bo.t;}catch(e){return null;}})()||r[1]), valor:divergencia?divergencia.csv.amount:r[2], parcela:divergencia?divergencia.csv.parcela:r[3]}}
                   app={{desc:apelidoAtual||r[1], valor:r[2], categoria:r[5], parcela:r[3]}}
                   forca={divergencia?(divergencia.forca||"forte"):(classificadoSeguro?"exato":"semclass")}
                   confirmando={eLoad}
@@ -12330,7 +12330,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261008.0100 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261008.0400 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12444,7 +12444,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261008.0100
+      // HTML v3.20261008.0400
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
