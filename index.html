@@ -7598,7 +7598,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
   </div>;
 
   return <div>
-    {estouro&&estouro.temProblema&&<div style={{padding:"10px 14px 0"}}><AvisoEstouroDCP estouro={estouro} onUpdate={onUpdate}/></div>}
+    {/* [REMOVIDO 09/10, pedido do Marcus] aviso de estouro do DCP fica só na Dashboard. */}
     <div style={{padding:"10px 14px"}}>
       <input type="text" value={busca} onChange={e=>setBusca(e.target.value.toUpperCase())} placeholder="🔍 Buscar por descrição ou categoria"
         style={{width:"100%",padding:"9px 14px",borderRadius:24,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
@@ -12377,7 +12377,10 @@ function Tesouraria(){
           const assinatura=r.piorData+"|"+Math.round((r.piorSaldo||0)*100);
           let jaVisto=null;
           try{ jaVisto=localStorage.getItem("tesouraria_dcp_estouro_dispensado"); }catch(e){}
-          if(jaVisto!==assinatura) setEstouroDialogAberto(true);
+          // [DESLIGADO 09/10, pedido do Marcus] O aviso em caixa atrapalhava
+          // no meio de mesclagens. O aviso + o botao de ajustar o DCP ficam
+          // so na Dashboard, pra quando ele quiser mexer.
+          // if(jaVisto!==assinatura) setEstouroDialogAberto(true);
         }
       }).catch(()=>{});
     },1500);
@@ -12439,7 +12442,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261009.0200 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261009.0230 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12553,7 +12556,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261009.0200
+      // HTML v3.20261009.0230
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
