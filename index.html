@@ -6332,10 +6332,15 @@ function ConciliarExtratoTab({data,onUpdate}){
             const diaAntes=(iso)=>{ const d=_dataLocalSegura(iso); d.setDate(d.getDate()-1); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
             const caixa={fontSize:11,color:"#78350F",background:"#FFFBEB",borderRadius:6,padding:"8px 10px",lineHeight:1.5};
             if(!dg||dg.arquivoIncompleto||!dg.abertura) return <div style={caixa}>Não consegui localizar a origem da diferença com esse arquivo (precisa ser um OFX completo).</div>;
-            if(dg.erroAnterior) return <div style={caixa}>
-              <b>A diferença já existia antes de {fmtD(dg.abertura.data)}.</b> Nessa data o banco tinha {fmt(dg.abertura.banco)} e o app {fmt(dg.abertura.app)} (diferença {fmt(dg.abertura.diferenca)}).
-              O erro está em lançamentos anteriores a este extrato. <b>Envie o extrato (OFX) do período anterior, terminando em {fmtD(diaAntes(dg.abertura.data))}.</b> Repita até a abertura bater.
-            </div>;
+            if(dg.erroAnterior){
+              const mudou=Math.abs(Math.abs(Number(diferencaAj)||0)-Math.abs(Number(dg.abertura.diferenca)||0))>0.06;
+              return <div style={caixa}>
+                {mudou
+                  ?<div><b>Há divergência dentro do período</b> ({fmtD(dg.abertura.data)} a {fmtD(cs.data)}): diferença de {fmt(dg.abertura.diferenca)} na abertura e {fmt(diferencaAj)} no fim.</div>
+                  :<div><b>✓ Sem erro nos lançamentos de {fmtD(dg.abertura.data)} a {fmtD(cs.data)}.</b></div>}
+                <div style={{marginTop:4}}>Próximo OFX a conferir: <b>até {fmtD(diaAntes(dg.abertura.data))}</b></div>
+              </div>;
+            }
             const pd=dg.primeiroDiaDivergente;
             if(!pd) return <div style={caixa}>A abertura confere, mas não achei o dia exato da diferença. Confira os lançamentos do app que não têm linha no extrato.</div>;
             return <div style={caixa}>
@@ -12410,7 +12415,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261008.2100 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261009.0030 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12524,7 +12529,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261008.2100
+      // HTML v3.20261009.0030
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
