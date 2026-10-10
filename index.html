@@ -11727,6 +11727,23 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           <div><div style={{fontSize:9,color:C.textMuted,marginBottom:3}}>APP</div><div style={{fontSize:13,fontWeight:800,color:C.text}}>{fmt(cf.totalApp)}</div></div>
           <div><div style={{fontSize:9,color:C.textMuted,marginBottom:3}}>DIFERENÇA</div><div style={{fontSize:13,fontWeight:800,color:bate?C.green:"#B91C1C"}}>{fmt(cf.diferenca)}</div></div>
         </div>
+        {/* [NOVO 10/10, pedido do Marcus] Explica a diferença pelos PREVISTOS:
+            se o app tem lançamentos previstos que o banco ainda não trouxe, a
+            diferença normalmente é a soma deles. */}
+        {!bate&&cf.diferenca>0.05&&previstos.length>0&&(()=>{
+          const dif=cf.diferenca, soma=Math.round(totalPrev*100)/100;
+          const ds=previstos.map(r=>{const d=r[0];if(d instanceof Date)return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");return String(d||"").slice(0,10);}).filter(Boolean).sort();
+          const faixa=ds.length?(" ("+fmtD(ds[0])+(ds[ds.length-1]!==ds[0]?" a "+fmtD(ds[ds.length-1]):"")+")"):"";
+          if(Math.abs(soma-dif)<=0.05) return <div style={{fontSize:11,color:"#166534",background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:8,padding:"7px 10px",marginTop:8}}>
+            ✓ A diferença é exatamente a soma dos <b>{previstos.length} lançamento(s) previsto(s)</b>{faixa} que ainda não aparecem no extrato. Não há erro: quando o banco lançar, o total fecha.
+          </div>;
+          if(dif>soma) return <div style={{fontSize:11,color:"#92400E",background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:8,padding:"7px 10px",marginTop:8}}>
+            Os {previstos.length} previsto(s) somam {fmt(soma)}, mas a diferença é {fmt(dif)}: sobram <b>{fmt(Math.round((dif-soma)*100)/100)}</b> sem explicação pelos previstos.
+          </div>;
+          return <div style={{fontSize:11,color:"#92400E",background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:8,padding:"7px 10px",marginTop:8}}>
+            Os {previstos.length} previsto(s) somam {fmt(soma)}, mais que a diferença ({fmt(dif)}): algum previsto talvez já tenha caído com outro valor ou nome.
+          </div>;
+        })()}
         {!bate&&cf.confirmadosSemPar&&cf.confirmadosSemPar.length>0&&<>
           <div style={{fontSize:10,color:C.textSub,marginBottom:6}}>Linhas do app que o banco não trouxe desta vez (possíveis duplicatas). Confira antes de apagar:</div>
           {cf.confirmadosSemPar.map(x=><div key={"cfsp-"+x.row} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:C.surface,borderRadius:8,padding:"7px 10px",marginBottom:4,fontSize:11}}>
@@ -12442,7 +12459,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261010.0200 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261010.0230 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12556,7 +12573,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261010.0200
+      // HTML v3.20261010.0230
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
