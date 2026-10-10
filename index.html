@@ -11722,26 +11722,69 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         </div>
         {cf0.fechadaConfiavel&&<div style={{fontSize:10,color:C.textSub,marginBottom:6}}>🔒 Fatura fechada pelo banco (arquivo gerado depois do fechamento — não muda mais).</div>}
         {cf0.arquivoIntegro===false&&<div style={{fontSize:10,color:"#B91C1C",marginBottom:6}}>O total declarado pelo banco ({fmt(cf0.totalDeclarado)}) não bate com a soma das linhas do arquivo ({fmt(cf0.totalLinhasBanco)}): arquivo incompleto ou fatura ainda aberta.</div>}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,textAlign:"center",marginBottom:cf.confirmadosSemPar&&cf.confirmadosSemPar.length&&!bate?10:0}}>
-          <div><div style={{fontSize:9,color:C.textMuted,marginBottom:3}}>BANCO</div><div style={{fontSize:13,fontWeight:800,color:C.text}}>{fmt(cf.totalBanco)}</div></div>
-          <div><div style={{fontSize:9,color:C.textMuted,marginBottom:3}}>APP</div><div style={{fontSize:13,fontWeight:800,color:C.text}}>{fmt(cf.totalApp)}</div></div>
-          <div><div style={{fontSize:9,color:C.textMuted,marginBottom:3}}>DIFERENÇA</div><div style={{fontSize:13,fontWeight:800,color:bate?C.green:"#B91C1C"}}>{fmt(cf.diferenca)}</div></div>
-        </div>
-        {/* [NOVO 10/10, pedido do Marcus] Explica a diferença pelos PREVISTOS:
-            se o app tem lançamentos previstos que o banco ainda não trouxe, a
-            diferença normalmente é a soma deles. */}
-        {!bate&&cf.diferenca>0.05&&previstos.length>0&&(()=>{
-          const dif=cf.diferenca, soma=Math.round(totalPrev*100)/100;
-          const ds=previstos.map(r=>{const d=r[0];if(d instanceof Date)return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");return String(d||"").slice(0,10);}).filter(Boolean).sort();
-          const faixa=ds.length?(" ("+fmtD(ds[0])+(ds[ds.length-1]!==ds[0]?" a "+fmtD(ds[ds.length-1]):"")+")"):"";
-          if(Math.abs(soma-dif)<=0.05) return <div style={{fontSize:11,color:"#166534",background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:8,padding:"7px 10px",marginTop:8}}>
-            ✓ A diferença é exatamente a soma dos <b>{previstos.length} lançamento(s) previsto(s)</b>{faixa} que ainda não aparecem no extrato. Não há erro: quando o banco lançar, o total fecha.
+        {/* [REDESENHADO 10/10, pedido do Marcus] Conferência em linguagem de
+            extrato: fatura prevista, confirmado pelo banco até a data do OFX,
+            previsto pra datas futuras, não confirmados pelo banco e não
+            lançados no app (esses dois com a lista e, no segundo, o + pra
+            criar a contraparte já pareada). */}
+        {(()=>{
+          const isoDe=d=>{ if(d instanceof Date) return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); return String(d||"").slice(0,10); };
+          const soltos=novosDoCSV||[];
+          let D=cf0.ultimaDataBanco||"";
+          if(!D){ soltos.forEach(it=>{const x=isoDe(it.date); if(x>D) D=x;}); faturaAtual.itens.forEach(r=>{ if(_obsConfirmadoOfx(_obsCartaoRaw(r))){ try{ const bo=JSON.parse(_obsCartaoRaw(r)||"{}").bancoOrig; const x=bo&&bo.d?String(bo.d).slice(0,10):""; if(x>D) D=x; }catch(e){} } }); }
+          const ehConf=r=>confirmadosRows.has(_linhaCartao(r))||_obsConfirmadoOfx(_obsCartaoRaw(r));
+          const abertos=faturaAtual.itens.filter(r=>!ehConf(r));
+          const futuros=abertos.filter(r=>D&&isoDe(r[0])>D);
+          const naoConf=abertos.filter(r=>!D||isoDe(r[0])<=D);
+          const soma=arr=>Math.round(arr.reduce((s,r)=>s+Math.abs(Number(r[2])||0),0)*100)/100;
+          const somaFut=soma(futuros), somaNaoConf=soma(naoConf);
+          const somaSoltos=Math.round(soltos.reduce((s,it)=>s+Math.abs(Number(it.amount)||0),0)*100)/100;
+          const dif=cf.diferenca;
+          const Linha=({rotulo,valor,sub,forte,cor})=><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8,padding:"4px 0"}}>
+            <span style={{fontSize:11,color:C.textSub,flex:1,minWidth:0}}>{rotulo}{sub&&<span style={{display:"block",fontSize:9,color:C.textMuted}}>{sub}</span>}</span>
+            <span style={{fontSize:forte?14:12,fontWeight:forte?800:700,color:cor||C.text,whiteSpace:"nowrap"}}>{valor}</span>
           </div>;
-          if(dif>soma) return <div style={{fontSize:11,color:"#92400E",background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:8,padding:"7px 10px",marginTop:8}}>
-            Os {previstos.length} previsto(s) somam {fmt(soma)}, mas a diferença é {fmt(dif)}: sobram <b>{fmt(Math.round((dif-soma)*100)/100)}</b> sem explicação pelos previstos.
+          const Sec=({titulo,total,n,cor,children})=><details style={{borderTop:"1px solid "+C.border,padding:"6px 0"}}>
+            <summary style={{cursor:"pointer",fontSize:11,color:C.textSub,display:"flex",justifyContent:"space-between",gap:8,listStyle:"none"}}>
+              <span style={{flex:1,minWidth:0}}>▸ {titulo} <span style={{color:C.textMuted}}>({n})</span></span>
+              <b style={{color:cor||C.text,whiteSpace:"nowrap"}}>{fmt(total)}</b>
+            </summary>
+            <div style={{marginTop:6}}>{n===0?<div style={{fontSize:10,color:C.textMuted}}>Nenhum.</div>:children}</div>
+          </details>;
+          const linhaItem=(r,i)=><div key={"ci-"+i} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:11,padding:"3px 0"}}>
+            <span style={{color:C.text,flex:1,minWidth:0}}>{fmtD(r[0])} · {_obsApelidoCartao(_obsCartaoRaw(r))||r[1]}{r[3]&&r[3]!=="1/1"&&r[3]!=="MENSAL"?" ("+r[3]+")":""}</span>
+            <b>{fmt(Math.abs(Number(r[2])||0))}</b>
           </div>;
-          return <div style={{fontSize:11,color:"#92400E",background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:8,padding:"7px 10px",marginTop:8}}>
-            Os {previstos.length} previsto(s) somam {fmt(soma)}, mais que a diferença ({fmt(dif)}): algum previsto talvez já tenha caído com outro valor ou nome.
+          return <div>
+            <Linha rotulo="Fatura prevista (app)" valor={fmt(cf.totalApp)} forte/>
+            <Linha rotulo={"Confirmado pelo banco"+(D?" até "+fmtD(D):"")} sub={cf0.fechadaConfiavel?"fatura fechada pelo banco":null} valor={fmt(cf.totalBanco)} forte/>
+            <div style={{height:4}}/>
+            <Sec titulo={"Previsto para datas futuras"+(D?" (após "+fmtD(D)+")":"")} total={somaFut} n={futuros.length}>
+              {futuros.map(linhaItem)}
+            </Sec>
+            <Sec titulo={"Lançamentos"+(D?" até "+fmtD(D):"")+" não confirmados pelo banco"} total={somaNaoConf} n={naoConf.length} cor={naoConf.length?"#B45309":undefined}>
+              {naoConf.map(linhaItem)}
+            </Sec>
+            <Sec titulo={"Lançamentos"+(D?" até "+fmtD(D):"")+" não lançados no app"} total={somaSoltos} n={soltos.length} cor={soltos.length?"#B45309":undefined}>
+              {soltos.map((it,i)=>{ const idOfx=_idOfxSolto(it); const jaPrev=!!previasApp[idOfx]; return <div key={"cs-"+i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,fontSize:11,padding:"3px 0"}}>
+                <span style={{color:C.text,flex:1,minWidth:0}}>{fmtD(it.date)} · {it.title}</span>
+                <b>{fmt(Math.abs(Number(it.amount)||0))}</b>
+                <button disabled={jaPrev} onClick={()=>criarPrevia(it,idOfx)}
+                  style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:6,border:"1px solid "+C.accent,background:jaPrev?C.borderLight:"transparent",color:C.accent,cursor:jaPrev?"default":"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                  {jaPrev?"criado":"+ lançar"}
+                </button>
+              </div>; })}
+              {soltos.length>0&&<div style={{fontSize:9,color:C.textMuted,marginTop:4}}>O "+ lançar" cria a contraparte já pareada com a linha do banco; depois é só mesclar na lista abaixo.</div>}
+            </Sec>
+            <div style={{borderTop:"1px solid "+C.border,paddingTop:6,marginTop:2}}>
+              <Linha rotulo="Diferença (app − banco)" sub={bate?null:"= não confirmados + futuros − não lançados"} valor={fmt(dif)} forte cor={bate?C.green:"#B91C1C"}/>
+              {!bate&&dif>0.05&&Math.abs(somaFut-dif)<=0.05&&<div style={{fontSize:11,color:"#166534",background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:8,padding:"7px 10px",marginTop:4}}>
+                ✓ A diferença é exatamente a soma dos {futuros.length} previsto(s) para datas futuras. Não há erro: quando o banco lançar, o total fecha.
+              </div>}
+              {!bate&&!(dif>0.05&&Math.abs(somaFut-dif)<=0.05)&&Math.abs(Math.round((somaNaoConf+somaFut-somaSoltos-dif)*100)/100)<=0.05&&<div style={{fontSize:11,color:"#92400E",background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:8,padding:"7px 10px",marginTop:4}}>
+                A diferença se explica pelos grupos acima. Resolva os não confirmados / não lançados (parear, lançar ou apagar) e o total fecha.
+              </div>}
+            </div>
           </div>;
         })()}
         {!bate&&cf.confirmadosSemPar&&cf.confirmadosSemPar.length>0&&<>
@@ -12459,7 +12502,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261010.0230 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261010.1300 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12573,7 +12616,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261010.0230
+      // HTML v3.20261010.1300
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
