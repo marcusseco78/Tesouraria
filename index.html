@@ -1477,10 +1477,10 @@ function BarraDCP({semanas,base}){
 
 function Card({children,style}){return <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:20,padding:"18px 20px",boxShadow:"none",...style}}>{children}</div>;}
 function Label({c,children}){return <span style={{fontSize:10,color:c||C.textMuted,textTransform:"uppercase",letterSpacing:".08em"}}>{children}</span>;}
-function KPI({label,value,sub,color,bg,raw}){const neg=typeof raw==="number"&&raw<0;const solido=neg?C.red:(color||null);return <div style={{background:solido||C.borderLight,borderRadius:16,padding:"14px 14px",overflow:"hidden"}}>
-  <Label c={solido?"rgba(255,255,255,.82)":undefined}>{label}</Label>
-  <div style={{fontSize:neg?17:18,fontWeight:800,color:solido?"#FFFFFF":C.text,marginTop:5,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{value}</div>
-  {sub&&<div style={{fontSize:10,color:neg||color?"rgba(255,255,255,.82)":C.textMuted,marginTop:2}}>{sub}</div>}
+function KPI({label,value,sub,color,bg,raw}){const neg=typeof raw==="number"&&raw<0;const numCor=neg?C.red:(color||C.text);return <div style={{background:C.bg,borderRadius:16,padding:"14px 14px",overflow:"hidden"}}>
+  <Label>{label}</Label>
+  <div style={{fontSize:neg?17:18,fontWeight:800,color:numCor,marginTop:5,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{value}</div>
+  {sub&&<div style={{fontSize:10,color:C.textMuted,marginTop:2}}>{sub}</div>}
 </div>;}
 
 // ── CICLO CARD ────────────────────────────────────────────────────────────────
@@ -1565,28 +1565,31 @@ function AvisoEstouroDCP({estouro,onUpdate}){
     setAplicandoEstouro(false);
   }
   if(!estouro||!estouro.temProblema) return null;
-  return <div style={{border:"1px solid "+C.red,borderRadius:10,padding:"10px 12px",background:C.redLight}}>
-    <div style={{fontSize:11,fontWeight:700,color:C.red,marginBottom:6}}>
-      ⚠️ Saldo projetado fica negativo em {fmtD(estouro.dataProblema)} — faltam {fmt(estouro.deficit)}
-    </div>
+  return <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:20,padding:"18px 18px"}}>
+    <span style={{display:"inline-block",fontSize:11,fontWeight:800,color:C.red,background:C.redLight,padding:"4px 11px",borderRadius:12}}>
+      Saldo negativo em {fmtD(estouro.dataProblema)}
+    </span>
+    <div style={{fontSize:24,fontWeight:800,color:C.text,marginTop:10,letterSpacing:"-.02em",fontVariantNumeric:"tabular-nums"}}>Faltam {fmt(estouro.deficit)}</div>
     {estouro.semanas.length>0&&<>
-      <div style={{fontSize:10,color:C.textSub,marginBottom:6}}>
-        Cobre reduzindo estas semanas do DCP, sem passar do Mínimo Vital de nenhuma:
+      <div style={{fontSize:13,color:C.textSub,marginTop:6,marginBottom:12,lineHeight:1.45}}>
+        Dá para cobrir reduzindo estas semanas do DCP, sem passar do Mínimo Vital de nenhuma.
       </div>
       {estouro.semanas.map((s,idx)=>{
         const cc=CORES_NIVEL_DCP[s.cor]||{cor:C.textSub,bg:"#fff"};
-        return <div key={idx} style={{background:cc.bg,borderRadius:8,padding:"7px 10px",marginBottom:idx<estouro.semanas.length-1?4:0,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <span style={{fontSize:11,color:C.text}}>{s.desc||fmtD(s.data)}</span>
-          <span style={{fontSize:11,fontWeight:700,color:cc.cor}}>{fmt(s.valorAtual)} → {fmt(s.valorNovo)}</span>
+        return <div key={idx} style={{background:C.bg,borderRadius:14,padding:"12px 14px",marginBottom:idx<estouro.semanas.length-1?8:0,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+          <span style={{display:"flex",alignItems:"center",gap:8,fontSize:14,fontWeight:700,color:C.text,minWidth:0}}>
+            <span style={{width:8,height:8,borderRadius:"50%",background:cc.cor,flexShrink:0}}/>{s.desc||fmtD(s.data)}
+          </span>
+          <span style={{fontSize:13,fontWeight:700,color:C.textSub,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{fmt(s.valorAtual)} → <b style={{color:C.text}}>{fmt(s.valorNovo)}</b></span>
         </div>;
       })}
       <button onClick={aplicarEstouro} disabled={aplicandoEstouro}
-        style={{width:"100%",marginTop:8,padding:"8px",borderRadius:6,background:C.red,color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+        style={{width:"100%",marginTop:12,padding:"14px",minHeight:44,borderRadius:14,background:C.accent,color:"#fff",fontSize:14,fontWeight:800,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
         {aplicandoEstouro?"…":"Aplicar essa redução"}
       </button>
     </>}
-    {estouro.sobra>0.01&&<div style={{fontSize:10,color:C.textSub,marginTop:8,fontStyle:"italic"}}>
-      Mesmo cortando até o Mínimo Vital de {estouro.semanas.length>0?"todas as semanas acima":"tudo"}, ainda falta {fmt(estouro.sobra)}.
+    {estouro.sobra>0.01&&<div style={{fontSize:12,color:C.textSub,marginTop:12,lineHeight:1.5}}>
+      Mesmo cortando até o Mínimo Vital de {estouro.semanas.length>0?"todas as semanas acima":"tudo"}, ainda falta <b style={{color:C.text}}>{fmt(estouro.sobra)}</b>.
       {estouro.reagendamento&&estouro.reagendamento.sugestoes&&estouro.reagendamento.sugestoes.length>0
         ?" Considere adiar \""+estouro.reagendamento.sugestoes[0].descricao+"\" (Ferramentas → Recorrências)."
         :" Nenhuma conta postergável cadastrada resolveria o resto sozinha."}
@@ -1642,22 +1645,22 @@ function Dashboard({data,onUpdate,estouro}){
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <AvisoEstouroDCP estouro={estouro} onUpdate={onUpdate}/>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-      <div style={{background:corZ(saldo),borderRadius:20,padding:"16px 16px"}}>
-        <Label c="rgba(255,255,255,.82)">Saldo em conta</Label>
+      <div style={{background:C.dark,borderRadius:20,padding:"16px 16px"}}>
+        <Label c="#A9B6DA">Saldo em conta</Label>
         <div style={{marginTop:6}}>
-          <span style={saldo<0?{fontSize:26,fontWeight:800,color:"#FFFFFF",fontVariantNumeric:"tabular-nums",letterSpacing:"-.02em",whiteSpace:"nowrap"}:{fontSize:26,fontWeight:800,color:"#FFFFFF",fontVariantNumeric:"tabular-nums",letterSpacing:"-.01em"}}>{fmt(saldo)}</span>
+          <span style={saldo<0?{fontSize:26,fontWeight:800,color:"#FFB4AC",fontVariantNumeric:"tabular-nums",letterSpacing:"-.02em",whiteSpace:"nowrap"}:{fontSize:26,fontWeight:800,color:"#FFFFFF",fontVariantNumeric:"tabular-nums",letterSpacing:"-.01em"}}>{fmt(saldo)}</span>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:4,marginTop:8}}>
-          <div style={{width:8,height:8,borderRadius:"50%",background:"#FFFFFF"}}/>
-          <span style={{fontSize:12,color:"rgba(255,255,255,.92)",fontWeight:700}}>zona {saldo<0?"negativa":saldo<1000?"crítico":saldo<5000?"atenção":"saudável"}</span>
+        <div style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:10,background:"rgba(255,255,255,.10)",padding:"3px 10px",borderRadius:12}}>
+          <div style={{width:7,height:7,borderRadius:"50%",background:saldo<1000?"#FFB4AC":saldo<5000?"#F59E0B":"#7FE0B5"}}/>
+          <span style={{fontSize:11,color:saldo<1000?"#FFB4AC":saldo<5000?"#FFD9A0":"#7FE0B5",fontWeight:800}}>zona {saldo<0?"negativa":saldo<1000?"crítico":saldo<5000?"atenção":"saudável"}</span>
         </div>
       </div>
-      {ml&&<div style={{background:corZ(ml.saldoProjetado),borderRadius:20,padding:"16px 16px"}}>
-        <Label c="rgba(255,255,255,.82)">Próxima menor liquidez</Label>
+      {ml&&<div style={{background:C.dark,borderRadius:20,padding:"16px 16px"}}>
+        <Label c="#A9B6DA">Próxima menor liquidez</Label>
         <div style={{marginTop:6}}>
-          <span style={ml.saldoProjetado<0?{fontSize:22,fontWeight:800,color:"#FFFFFF",fontVariantNumeric:"tabular-nums",letterSpacing:"-.02em",whiteSpace:"nowrap"}:{fontSize:22,fontWeight:800,color:"#FFFFFF",fontVariantNumeric:"tabular-nums",letterSpacing:"-.01em"}}>{fmt(ml.saldoProjetado)}</span>
+          <span style={ml.saldoProjetado<0?{fontSize:22,fontWeight:800,color:"#FFB4AC",fontVariantNumeric:"tabular-nums",letterSpacing:"-.02em",whiteSpace:"nowrap"}:{fontSize:22,fontWeight:800,color:"#FFFFFF",fontVariantNumeric:"tabular-nums",letterSpacing:"-.01em"}}>{fmt(ml.saldoProjetado)}</span>
         </div>
-        <div style={{fontSize:12,color:"rgba(255,255,255,.88)",marginTop:6,fontWeight:600}}>{fmtD(ml.data)}</div>
+        <div style={{display:"inline-flex",marginTop:10,fontSize:11,fontWeight:800,color:ml.saldoProjetado<1000?"#FFB4AC":"#A9B6DA",background:"rgba(255,255,255,.10)",padding:"3px 10px",borderRadius:12}}>{fmtD(ml.data)}</div>
       </div>}
     </div>
     {dcpResumo.semanas.length>0&&<Card>
@@ -1675,9 +1678,9 @@ function Dashboard({data,onUpdate,estouro}){
         const tetoMes=dcpResumo.base*Math.max(dcpResumo.semanas.length,1);
         const gastoMes=dcpResumo.semanas.reduce((s,w)=>s+w.gasto,0);
         const dispMes=tetoMes-gastoMes;
-        const Bloco=({label,valor})=><div style={{flex:1,minWidth:0,background:valor<0?C.red:C.green,borderRadius:16,padding:"14px 8px",textAlign:"center",boxSizing:"border-box"}}>
-          <div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.85)",textTransform:"uppercase",letterSpacing:".03em",marginBottom:4,lineHeight:1.2}}>{label}</div>
-          <div style={{fontSize:22,fontWeight:800,color:"#FFFFFF",lineHeight:1.05,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fmt(valor)}</div>
+        const Bloco=({label,valor})=><div style={{flex:1,minWidth:0,background:C.bg,borderRadius:16,padding:"14px 8px",textAlign:"center",boxSizing:"border-box"}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.textSub,textTransform:"uppercase",letterSpacing:".03em",marginBottom:4,lineHeight:1.2}}>{label}</div>
+          <div style={{fontSize:22,fontWeight:800,color:valor<0?C.red:C.green,lineHeight:1.05,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fmt(valor)}</div>
         </div>;
         return <div style={{display:"flex",gap:8,marginBottom:12}}>
           {dispSemana!=null&&<Bloco label="Esta semana" valor={dispSemana}/>}
@@ -6701,32 +6704,44 @@ function TransferenciaEspelhada({data,onUpdate}){
 }
 
 function Ferramentas({onIrPara}){
-  const FERRAMENTAS=[
-    {id:"receitas",icone:"🏥",titulo:"Receitas",sub:"HSA, HSI e outras fontes",cor:"#0F766E"},
-    {id:"emprestimos",icone:"🏦",titulo:"Empréstimos",sub:"Dívidas e passivos",cor:"#C0352B"},
-    {id:"recorr",icone:"🔁",titulo:"Despesas Fixas",sub:"Gastos fixos e receitas",cor:"#2347C5"},
-    {id:"dcp",icone:"🗂",titulo:"Despesas Cotidianas",sub:"Envelope semanal",cor:"#0B7A56"},
-    {id:"cartoes",icone:"💳",titulo:"Cartões",sub:"Faturas PF e PJ",cor:"#B45309"},
-    {id:"parcelas",icone:"🛍️",titulo:"Parceladas",sub:"Compras no cartão",cor:"#8A5A00"},
-    {id:"cofres",icone:"🏦",titulo:"Cofres",sub:"Poupança pra projetos, tipo caixinha",cor:"#0E7490"},
-    {id:"envelopes",icone:"💌",titulo:"Envelopes",sub:"Metas por projeto",cor:"#6D3FD0"},
-    {id:"conciliacao",icone:"🔄",titulo:"Conciliação",sub:"Cartões e extrato",cor:"#C2570C"},
-    {id:"transferencias",icone:"↔️",titulo:"Movimentação Entre Contas",sub:"Transferência espelhada PF/PJ",cor:"#4338CA"},
-    {id:"perfil",icone:"👤",titulo:"Perfil & Apelidos",sub:"Contexto do Gemini, nomes de descrição",cor:"#0F1B3D"},
-    {id:"config",icone:"⚙️",titulo:"Configurações",sub:"Servidor, cartões, dados sensíveis",cor:"#475569"},
-    {id:"conversar",icone:"💬",titulo:"Conversar",sub:"Assistente do app",cor:"#5B3FC4"},
-  ];
-  return <div style={{padding:"4px 4px 16px"}}>
-    <div style={{fontSize:11,fontWeight:800,color:C.textMuted,letterSpacing:".1em",padding:"8px 12px"}}>FERRAMENTAS</div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,padding:"0 12px"}}>
-      {FERRAMENTAS.map(f=><div key={f.id} onClick={()=>onIrPara(f.id)}
-        style={{background:f.cor,borderRadius:20,padding:"16px 14px",cursor:"pointer",minHeight:120}}>
-        <div style={{width:40,height:40,borderRadius:12,background:"rgba(255,255,255,.18)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,marginBottom:12}}>{f.icone}</div>
-        <div style={{fontSize:15,fontWeight:800,color:"#FFFFFF"}}>{f.titulo}</div>
-        <div style={{fontSize:11,color:"rgba(255,255,255,.82)",marginTop:3,lineHeight:1.35}}>{f.sub}</div>
-      </div>)}
+  // [NOVO 11/10, pedido do Marcus] Visual "Mais usadas no topo": 3 atalhos numa caixa
+  // escura (como a da Plano) + o resto em grade compacta, em 4 grupos.
+  const IC={cot:"M3 7h18v12H3zM3 7l2-3h14l2 3M16 13h2",fix:"M17 2l4 4-4 4M3 11V9a3 3 0 013-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 01-3 3H3",
+    rec:"M12 3v12M7 10l5 5 5-5M4 20h16",chat:"M4 5h16v11H9l-5 4z",car:"M3 6h18v12H3zM3 10h18M7 15h4",par:"M12 3l9 5-9 5-9-5zM3 13l9 5 9-5",
+    emp:"M3 10l9-6 9 6M5 10v8M10 10v8M14 10v8M19 10v8M3 20h18",con:"M4 8h13l-3-3M20 16H7l3 3",cof:"M5 11h14v9H5zM8 11V8a4 4 0 018 0v3",
+    env:"M3 6h18v12H3zM3 7l9 6 9-6",tra:"M7 4l-4 4 4 4M3 8h14M17 12l4 4-4 4M21 16H7",per:"M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0",
+    cfg:"M4 7h10M18 7h2M4 17h2M10 17h10M16 5a2 2 0 100 4 2 2 0 000-4zM8 15a2 2 0 100 4 2 2 0 000-4z"};
+  const T={
+    cot:{id:"dcp",t:"Despesas Cotidianas",curto:"Cotidianas"},fix:{id:"recorr",t:"Despesas Fixas"},rec:{id:"receitas",t:"Receitas"},chat:{id:"conversar",t:"Conversar"},
+    car:{id:"cartoes",t:"Cartões",curto:"Cartões"},par:{id:"parcelas",t:"Parceladas"},emp:{id:"emprestimos",t:"Empréstimos"},con:{id:"conciliacao",t:"Conciliação",curto:"Conciliação"},
+    cof:{id:"cofres",t:"Cofres"},env:{id:"envelopes",t:"Envelopes"},tra:{id:"transferencias",t:"Entre contas"},per:{id:"perfil",t:"Perfil e Apelidos"},cfg:{id:"config",t:"Configurações"}};
+  const TOPO=["car","con","cot"];
+  const GRUPOS=[["Dia a dia",["cot","fix","rec","chat"]],["Cartões e dívidas",["car","par","emp","con"]],["Reservas e contas",["cof","env","tra"]],["Sistema",["per","cfg"]]];
+  const Ico=({k,cor,sz})=><svg width={sz||22} height={sz||22} viewBox="0 0 24 24" fill="none" stroke={cor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={IC[k]}/></svg>;
+  return <div style={{padding:"0 0 16px"}}>
+    <div style={{background:C.dark,borderRadius:20,padding:16,color:"#FFFFFF"}}>
+      <div style={{fontSize:11,fontWeight:700,letterSpacing:".06em",color:"#A9B6DA"}}>MAIS USADAS</div>
+      <div style={{display:"flex",gap:8,marginTop:12}}>
+        {TOPO.map(k=><div key={k} onClick={()=>onIrPara(T[k].id)} style={{flex:1,minWidth:0,background:"rgba(255,255,255,.10)",borderRadius:16,padding:"14px 8px",textAlign:"center",cursor:"pointer",minHeight:44}}>
+          <div style={{display:"flex",justifyContent:"center"}}><Ico k={k} cor="#FFFFFF" sz={24}/></div>
+          <div style={{fontSize:12,fontWeight:800,marginTop:8,lineHeight:1.25}}>{T[k].curto||T[k].t}</div>
+        </div>)}
+      </div>
     </div>
-    <div style={{padding:"14px 12px 0"}}>
+    {GRUPOS.map(([nome,ks])=>{
+      const resto=ks.filter(k=>!TOPO.includes(k));
+      if(!resto.length) return null;
+      return <div key={nome}>
+        <div style={{fontSize:11,fontWeight:800,letterSpacing:".06em",color:C.textMuted,textTransform:"uppercase",margin:"18px 4px 8px"}}>{nome}</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          {resto.map(k=><div key={k} onClick={()=>onIrPara(T[k].id)} style={{background:C.surface,border:"1px solid "+C.border,borderRadius:16,padding:"13px 12px",display:"flex",alignItems:"center",gap:10,minHeight:44,cursor:"pointer"}}>
+            <div style={{flexShrink:0,display:"flex"}}><Ico k={k} cor={C.accent} sz={22}/></div>
+            <div style={{fontSize:13,fontWeight:700,lineHeight:1.25,minWidth:0}}>{T[k].t}</div>
+          </div>)}
+        </div>
+      </div>;
+    })}
+    <div style={{padding:"14px 0 0"}}>
       <BotaoFaseCNomenclatura/>
     </div>
   </div>;
@@ -12570,7 +12585,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261011.1620 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261011.1800 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12684,7 +12699,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261011.1620
+      // HTML v3.20261011.1800
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
