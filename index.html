@@ -7498,10 +7498,10 @@ function FiltroTopo({busca,onBusca,placeholder,contasAtivas,contaSelecionada,onC
   return <div style={{marginBottom:12}}>
     <input type="text" value={busca} onChange={e=>onBusca(e.target.value.toUpperCase())} placeholder={placeholder}
       style={{width:"100%",padding:"13px 18px",minHeight:44,borderRadius:16,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",boxSizing:"border-box",background:C.surface,color:C.text}}/>
-    {contasAtivas.length>1&&<div style={{display:"flex",gap:4,marginTop:10,background:"#E7E9EE",borderRadius:14,padding:4}}>
+    {contasAtivas.length>1&&<div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:10,background:"#E7E9EE",borderRadius:14,padding:4}}>
       {contasAtivas.map(c=>{const at=contaSelecionada===c.id;
         return <button key={c.id} onClick={()=>onConta(c.id)}
-          style={{flex:1,minHeight:44,padding:"10px 6px",borderRadius:11,border:"none",cursor:"pointer",fontFamily:"inherit",fontSize:13,
+          style={{flex:"1 1 40%",minWidth:0,minHeight:44,padding:"10px 6px",borderRadius:11,border:"none",cursor:"pointer",fontFamily:"inherit",fontSize:13,
             fontWeight:at?800:700,background:at?"#FFFFFF":"transparent",color:at?C.text:C.textSub,boxShadow:at?"0 1px 3px rgba(15,23,42,.12)":"none"}}>{c.nome}</button>;})}
     </div>}
     {onSinal&&<div style={{display:"flex",justifyContent:"flex-end",gap:14,marginTop:8}}>
@@ -7514,17 +7514,33 @@ function FiltroTopo({busca,onBusca,placeholder,contasAtivas,contaSelecionada,onC
 function CaixaResumoPlano({destaqueDia,envelope}){
   if(!destaqueDia&&!envelope) return null;
   const neg=destaqueDia&&destaqueDia.negativo;
-  return <div style={{background:C.dark,borderRadius:20,padding:"18px 20px",color:"#FFFFFF",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:12}}>
-    {destaqueDia?<div>
-      <div style={{fontSize:11,fontWeight:700,letterSpacing:".04em",color:"#A9B6DA"}}>{neg?"PRIMEIRO DIA NEGATIVO":"MENOR SALDO PREVISTO"}</div>
-      <div style={{fontSize:30,fontWeight:800,letterSpacing:"-.03em",marginTop:4,color:neg?"#FFB4AC":"#7FE0B5",fontVariantNumeric:"tabular-nums"}}>{destaqueDia.dia}</div>
-      <div style={{fontSize:12,color:"#A9B6DA",fontWeight:600,marginTop:2}}>saldo {fmt(destaqueDia.saldo)}</div>
-    </div>:<div/>}
-    {envelope?<div style={{textAlign:"right"}}>
-      <div style={{fontSize:11,fontWeight:700,letterSpacing:".04em",color:"#A9B6DA"}}>ENVELOPE {periodoDCP(envelope.data)}</div>
-      <div style={{fontSize:22,fontWeight:800,marginTop:4,color:envelope.valor>0?"#FFB4AC":"#7FE0B5",fontVariantNumeric:"tabular-nums"}}>{fmt(Math.abs(envelope.valor))}</div>
-      <div style={{fontSize:12,color:"#A9B6DA",fontWeight:600,marginTop:2}}>{envelope.valor>0?"pior que a meta":"melhor que a meta"}</div>
-    </div>:null}
+  const env=envelope&&envelope.envelope;
+  const sobra=envelope?envelope.restante:0;
+  const cSobra=envelope?envelope.cicloRestante:0;
+  const pct=envelope&&envelope.cicloMeta>0?Math.max(0,Math.min(100,Math.round(envelope.cicloGasto/envelope.cicloMeta*100))):0;
+  return <div style={{background:C.dark,borderRadius:20,padding:"18px 20px",color:"#FFFFFF",marginBottom:12}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
+      {destaqueDia?<div>
+        <div style={{fontSize:11,fontWeight:700,letterSpacing:".04em",color:"#A9B6DA"}}>{neg?"PRIMEIRO DIA NEGATIVO":"MENOR SALDO PREVISTO"}</div>
+        <div style={{fontSize:30,fontWeight:800,letterSpacing:"-.03em",marginTop:4,color:neg?"#FFB4AC":"#7FE0B5",fontVariantNumeric:"tabular-nums"}}>{destaqueDia.dia}</div>
+        <div style={{fontSize:12,color:"#A9B6DA",fontWeight:600,marginTop:2}}>saldo {fmt(destaqueDia.saldo)}</div>
+      </div>:<div/>}
+      {env?<div style={{textAlign:"right"}}>
+        <div style={{fontSize:11,fontWeight:700,letterSpacing:".04em",color:"#A9B6DA"}}>{envelope.ehAtual?"DCP ATÉ "+periodoDCP(env.data).slice(-5):"PRÓXIMO DCP "+periodoDCP(env.data)}</div>
+        <div style={{fontSize:22,fontWeight:800,marginTop:4,color:sobra<0?"#FFB4AC":"#7FE0B5",fontVariantNumeric:"tabular-nums"}}>{fmt(Math.abs(sobra))}</div>
+        <div style={{fontSize:12,color:"#A9B6DA",fontWeight:600,marginTop:2}}>{envelope.fechado?(sobra<0?"estourou (semana fechada)":"sobrou (semana fechada)"):(sobra<0?"acima do envelope":"ainda pode gastar")}</div>
+      </div>:null}
+    </div>
+    {env&&envelope.cicloMeta>0&&<div style={{marginTop:14,paddingTop:12,borderTop:"1px solid rgba(255,255,255,.14)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
+        <div style={{fontSize:11,fontWeight:700,letterSpacing:".04em",color:"#A9B6DA"}}>CICLO {envelope.ciclo}</div>
+        <div style={{fontSize:12,fontWeight:700,color:cSobra<0?"#FFB4AC":"#7FE0B5"}}>{cSobra<0?"pior que a meta":"melhor que a meta"}</div>
+      </div>
+      <div style={{height:6,borderRadius:3,background:"rgba(255,255,255,.16)",marginTop:8,overflow:"hidden"}}>
+        <div style={{width:pct+"%",height:"100%",borderRadius:3,background:cSobra<0?"#FFB4AC":"#7FE0B5"}}/>
+      </div>
+      <div style={{fontSize:12,color:"#A9B6DA",fontWeight:600,marginTop:6,fontVariantNumeric:"tabular-nums"}}>gasto {fmt(envelope.cicloGasto)} de {fmt(envelope.cicloMeta)} · {cSobra<0?"estouro":"resta"} {fmt(Math.abs(cSobra))}</div>
+    </div>}
   </div>;
 }
 
@@ -7650,11 +7666,39 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
   // ainda sobra" (negativo) -- mostrado ao lado de todos os saldos, pedido
   // do Marcus 09/08, pra nunca mais confundir a devolucao contabil da
   // provisao com dinheiro de verdade entrando.
+  // [11/10, pedido do Marcus] O destaque do topo mostra o envelope DA SEMANA
+  // EM CURSO (a que contem hoje), nao o proximo. E o ciclo todo: quanto ja
+  // gastou da meta somada das semanas do ciclo. Semana aberta: meta=base+carry,
+  // gasto=valor+meta (valor = -(meta)+consumo). Semana fechada: obs.fx {m,g,d}.
   const envelopeAberto=useMemo(()=>{
-    const abertos=(data.fluxo||[]).filter(r=>r.categoria==="DCP_PROVISAO"&&r.status!=="EXECUTADO");
-    if(!abertos.length) return null;
-    return abertos.sort((a,b)=>a.data<b.data?-1:1)[0];
-  },[data.fluxo]);
+    const envs=(data.fluxo||[]).filter(r=>r.categoria==="DCP_PROVISAO").sort((a,b)=>a.data<b.data?-1:1);
+    if(!envs.length) return null;
+    const iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+    const base=Number((data.config||{}).DCP_VALOR_BASE)||1250;
+    const info=e=>{
+      let o={};try{o=JSON.parse(e.obs||"{}");}catch(x){}
+      if(e.status==="EXECUTADO"&&o.fx) return {meta:o.fx.m,gasto:o.fx.g,fechado:true};
+      const meta=base+(Number(o.c)||0);
+      return {meta,gasto:(e.valor||0)+meta,fechado:e.status==="EXECUTADO"};
+    };
+    let atual=envs.find(e=>{const {ini,fim}=_intervaloDCP(e.data);return hj>=iso(ini)&&hj<=iso(fim);});
+    const ehAtual=!!atual;
+    if(!atual) atual=envs.find(e=>e.status!=="EXECUTADO")||null;
+    if(!atual) return null;
+    // ciclo = grupo sequencial do mesmo nome (mesma regra da aba DCP)
+    const grupos=[];
+    envs.forEach(e=>{
+      const u=grupos[grupos.length-1];
+      const gapOk=u&&(new Date(e.data)-new Date(u[u.length-1].data))<=40*86400000;
+      if(u&&u[0].ciclo===e.ciclo&&gapOk) u.push(e); else grupos.push([e]);
+    });
+    const lista=grupos.find(g=>g.indexOf(atual)>=0)||[atual];
+    let meta=0,gasto=0;
+    lista.forEach(e=>{const i=info(e);meta+=i.meta||0;gasto+=i.gasto||0;});
+    const ia=info(atual);
+    return {envelope:atual,ehAtual,restante:Math.round(((ia.meta||0)-(ia.gasto||0))*100)/100,
+      fechado:ia.fechado,ciclo:atual.ciclo,cicloMeta:meta,cicloGasto:gasto,cicloRestante:Math.round((meta-gasto)*100)/100};
+  },[data.fluxo,data.config,hj]);
 
   // [13/07] Busca em Previsão, pedida junto com o conserto da busca do
   // Histórico. IMPORTANTE: filtra só na hora de EXIBIR, depois que
@@ -12588,7 +12632,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261011.1840 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261011.2010 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12702,7 +12746,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261011.1840
+      // HTML v3.20261011.2010
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
