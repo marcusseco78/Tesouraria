@@ -7518,28 +7518,23 @@ function CaixaResumoPlano({destaqueDia,envelope}){
   const sobra=envelope?envelope.restante:0;
   const cSobra=envelope?envelope.cicloRestante:0;
   const pct=envelope&&envelope.cicloMeta>0?Math.max(0,Math.min(100,Math.round(envelope.cicloGasto/envelope.cicloMeta*100))):0;
-  return <div style={{background:C.dark,borderRadius:20,padding:"18px 20px",color:"#FFFFFF",marginBottom:12}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
-      {destaqueDia?<div>
-        <div style={{fontSize:11,fontWeight:700,letterSpacing:".04em",color:"#A9B6DA"}}>{neg?"PRIMEIRO DIA NEGATIVO":"MENOR SALDO PREVISTO"}</div>
-        <div style={{fontSize:30,fontWeight:800,letterSpacing:"-.03em",marginTop:4,color:neg?"#FFB4AC":"#7FE0B5",fontVariantNumeric:"tabular-nums"}}>{destaqueDia.dia}</div>
-        <div style={{fontSize:12,color:"#A9B6DA",fontWeight:600,marginTop:2}}>saldo {fmt(destaqueDia.saldo)}</div>
-      </div>:<div/>}
-      {env?<div style={{textAlign:"right"}}>
-        <div style={{fontSize:11,fontWeight:700,letterSpacing:".04em",color:"#A9B6DA"}}>{envelope.ehAtual?"DCP ATÉ "+periodoDCP(env.data).slice(-5):"PRÓXIMO DCP "+periodoDCP(env.data)}</div>
-        <div style={{fontSize:22,fontWeight:800,marginTop:4,color:sobra<0?"#FFB4AC":"#7FE0B5",fontVariantNumeric:"tabular-nums"}}>{fmt(Math.abs(sobra))}</div>
-        <div style={{fontSize:12,color:"#A9B6DA",fontWeight:600,marginTop:2}}>{envelope.fechado?(sobra<0?"estourou (semana fechada)":"sobrou (semana fechada)"):(sobra<0?"acima do envelope":"ainda pode gastar")}</div>
-      </div>:null}
-    </div>
-    {env&&envelope.cicloMeta>0&&<div style={{marginTop:14,paddingTop:12,borderTop:"1px solid rgba(255,255,255,.14)"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
-        <div style={{fontSize:11,fontWeight:700,letterSpacing:".04em",color:"#A9B6DA"}}>CICLO {envelope.ciclo}</div>
-        <div style={{fontSize:12,fontWeight:700,color:cSobra<0?"#FFB4AC":"#7FE0B5"}}>{cSobra<0?"pior que a meta":"melhor que a meta"}</div>
-      </div>
-      <div style={{height:6,borderRadius:3,background:"rgba(255,255,255,.16)",marginTop:8,overflow:"hidden"}}>
-        <div style={{width:pct+"%",height:"100%",borderRadius:3,background:cSobra<0?"#FFB4AC":"#7FE0B5"}}/>
-      </div>
-      <div style={{fontSize:12,color:"#A9B6DA",fontWeight:600,marginTop:6,fontVariantNumeric:"tabular-nums"}}>gasto {fmt(envelope.cicloGasto)} de {fmt(envelope.cicloMeta)} · {cSobra<0?"estouro":"resta"} {fmt(Math.abs(cSobra))}</div>
+  const card={background:C.dark,borderRadius:20,padding:"16px 16px",color:"#FFFFFF",flex:1,minWidth:0};
+  return <div style={{display:"flex",gap:10,marginBottom:12,alignItems:"stretch"}}>
+    {destaqueDia&&<div style={card}>
+      <div style={{fontSize:10,fontWeight:700,letterSpacing:".04em",color:"#A9B6DA"}}>{neg?"PRIMEIRO DIA NEGATIVO":"MENOR SALDO PREVISTO"}</div>
+      <div style={{fontSize:30,fontWeight:800,letterSpacing:"-.03em",marginTop:4,color:neg?"#FFB4AC":"#7FE0B5",fontVariantNumeric:"tabular-nums"}}>{destaqueDia.dia}</div>
+      <div style={{fontSize:12,color:"#A9B6DA",fontWeight:600,marginTop:2}}>saldo {fmt(destaqueDia.saldo)}</div>
+    </div>}
+    {env&&<div style={card}>
+      <div style={{fontSize:10,fontWeight:700,letterSpacing:".04em",color:"#A9B6DA"}}>{envelope.ehAtual?"DCP ATÉ "+periodoDCP(env.data).slice(-5):"PRÓXIMO DCP "+periodoDCP(env.data)}</div>
+      <div style={{fontSize:24,fontWeight:800,letterSpacing:"-.02em",marginTop:4,color:sobra<0?"#FFB4AC":"#7FE0B5",fontVariantNumeric:"tabular-nums"}}>{fmt(Math.abs(sobra))}</div>
+      <div style={{fontSize:12,color:"#A9B6DA",fontWeight:600,marginTop:2}}>{envelope.fechado?(sobra<0?"estourou (fechada)":"sobrou (fechada)"):(sobra<0?"acima do envelope":"ainda pode gastar")}</div>
+      {envelope.cicloMeta>0&&<div style={{marginTop:10}}>
+        <div style={{height:5,borderRadius:3,background:"rgba(255,255,255,.16)",overflow:"hidden"}}>
+          <div style={{width:pct+"%",height:"100%",borderRadius:3,background:cSobra<0?"#FFB4AC":"#7FE0B5"}}/>
+        </div>
+        <div style={{fontSize:11,color:"#A9B6DA",fontWeight:600,marginTop:5,fontVariantNumeric:"tabular-nums"}}>ciclo {envelope.ciclo}: {cSobra<0?"estouro ":"resta "}{fmt(Math.abs(cSobra))}</div>
+      </div>}
     </div>}
   </div>;
 }
@@ -8509,6 +8504,20 @@ function buildPrompt(data){
   const cartoesListaTxt=cartoesAtivosPrompt.map(c=>'Cartão '+nomeCartao(c.id,data)+' = cartao="'+c.id+'"').join("\n");
   const cartoesNomesTxt=cartoesAtivosPrompt.map(c=>nomeCartao(c.id,data)).join(" ou ");
   const cartaoExemploId=cartoesAtivosPrompt[0]?cartoesAtivosPrompt[0].id:"PF";
+  // [11/10] Bloco de compras existentes de TODOS os cartoes ativos (antes so
+  // lia data.cartaoPF/PJ -- abas antigas, vazias pra cartao com ID novo).
+  const abaDe=id=>"CARTAO_"+String(id).toUpperCase();
+  const cartoesBlocosTxt=cartoesAtivosPrompt.map(c=>{
+    const its=(data.cartaoItens&&data.cartaoItens[c.id])||[];
+    const vs=[...new Set(its.map(r=>r[4]).filter(Boolean))].sort();
+    const corpo=vs.map(v=>{const gr=its.filter(r=>r[4]===v);return "Fatura "+v+" ("+gr.filter(r=>r[7]==="PENDENTE").length+"p/"+gr.filter(r=>r[7]==="PAGO").length+"pg):\n"+gr.map(r=>"["+r[7]+"] linha:"+_linhaCartao(r)+" "+r[0]+" "+r[1]+" "+fmt(r[2])+" parc:"+r[3]).join("\n");}).join("\n\n");
+    return "CARTÃO "+nomeCartao(c.id,data)+" — cartao=\""+c.id+"\" — aba "+abaDe(c.id)+" — por fatura (vencimento). Cada item mostra \"linha:N\" = numero real da linha na aba "+abaDe(c.id)+":\n"+(corpo||"(sem compras)");
+  }).join("\n\n");
+  const abasCartaoTxt=cartoesAtivosPrompt.map(c=>abaDe(c.id)).join(" | ")||"CARTAO_PF | CARTAO_PJ";
+  const abaExemplo=abaDe(cartaoExemploId);
+  const contasAtivasPrompt=(data.contas||[]).filter(c=>c.ativa!==false);
+  const contasListaTxt=contasAtivasPrompt.map(c=>'Conta "'+(c.nome||c.id)+'" = forma="'+c.id+'"').join("\n");
+  const contaExemploId=contasAtivasPrompt[0]?contasAtivasPrompt[0].id:"CONTA";
 
   const alertas=[];
   if(ml&&ml.saldoProjetado<0) alertas.push("⚠ LIQUIDEZ NEGATIVA: "+fmt(ml.saldoProjetado)+" em "+fmtD(ml.data)+" — checar se HSA cobre antes");
@@ -8541,16 +8550,12 @@ Executado = apenas o marcado manualmente. Nunca automático por data.
 RECORRÊNCIAS ATIVAS (dia_venc, valor, parcela atual/total, tolerância = quantos dias pode atrasar sem risco — 0 ou vazio = não pode atrasar; use isso pra responder sobre o que pode/não pode postergar, e trate cada parcela de empréstimo individualmente, nunca agrupada):
 ${(data.recorr||[]).filter(r=>r[6]==="S").map(r=>r[0]+" | dia_venc:"+r[3]+" | "+fmt(r[1])+" | parc:"+r[4]+"/"+r[5]+(r[10]!=null&&r[10]!==""?" | tolerancia:"+r[10]+"d":"")).join("\n")}
 
-CARTÃO PF — aba CARTAO_PF — por fatura (vencimento). Cada item mostra "linha:N" = numero real da linha na aba CARTAO_PF:
-${(()=>{const its=data.cartaoPF||[];const vs=[...new Set(its.map(r=>r[4]).filter(Boolean))].sort();return vs.map(v=>{const gr=its.filter(r=>r[4]===v);return "Fatura "+v+" ("+gr.filter(r=>r[7]==="PENDENTE").length+"p/"+gr.filter(r=>r[7]==="PAGO").length+"pg):\n"+gr.map(r=>"["+r[7]+"] linha:"+_linhaCartao(r)+" "+r[0]+" "+r[1]+" "+fmt(r[2])+" parc:"+r[3]).join("\n");}).join("\n\n");})()}
-
-CARTÃO PJ — aba CARTAO_PJ — por fatura (vencimento). Cada item mostra "linha:N" = numero real da linha na aba CARTAO_PJ:
-${(()=>{const its=data.cartaoPJ||[];const vs=[...new Set(its.map(r=>r[4]).filter(Boolean))].sort();return vs.map(v=>{const gr=its.filter(r=>r[4]===v);return "Fatura "+v+" ("+gr.filter(r=>r[7]==="PENDENTE").length+"p/"+gr.filter(r=>r[7]==="PAGO").length+"pg):\n"+gr.map(r=>"["+r[7]+"] linha:"+_linhaCartao(r)+" "+r[0]+" "+r[1]+" "+fmt(r[2])+" parc:"+r[3]).join("\n");}).join("\n\n");})()}
+${cartoesBlocosTxt}
 
 ATENÇÃO CRÍTICA — LINHAS DE ABAS DIFERENTES NUNCA SE MISTURAM:
 Os números "row:N" em ÚLTIMOS EXECUTADOS e PRÓXIMOS 30 DIAS pertencem à aba FLUXO.
-Os números "linha:N" dentro dos blocos CARTÃO PF/PJ acima pertencem à aba CARTAO_PF ou CARTAO_PJ.
-São numerações completamente independentes — o mesmo número pode existir nas duas abas ao mesmo tempo, apontando pra coisas diferentes. Pra editar ou apagar um ITEM DE CARTÃO (uma compra dentro de uma fatura), use SEMPRE editarCartaoItem/deletarCartaoItem com a "linha:N" exata do bloco do cartão certo e o campo "aba" (CARTAO_PF ou CARTAO_PJ) correspondente. NUNCA use editar/deletar comuns pra mexer num item de cartão — essas ações mexem na aba FLUXO e vão editar ou apagar o lançamento errado.
+Os números "linha:N" dentro dos blocos de CARTÃO acima pertencem à aba indicada no cabeçalho de cada bloco (${abasCartaoTxt}).
+São numerações completamente independentes — o mesmo número pode existir nas duas abas ao mesmo tempo, apontando pra coisas diferentes. Pra editar ou apagar um ITEM DE CARTÃO (uma compra dentro de uma fatura), use SEMPRE editarCartaoItem/deletarCartaoItem com a "linha:N" exata do bloco do cartão certo e o campo "aba" (${abasCartaoTxt}) correspondente. NUNCA use editar/deletar comuns pra mexer num item de cartão — essas ações mexem na aba FLUXO e vão editar ou apagar o lançamento errado.
 
 ÚLTIMOS EXECUTADOS:
 ${ultimos}
@@ -8603,7 +8608,9 @@ RECEITAS: sempre pelo valor líquido real (NF ou cálculo bruto − retenção).
 REGRAS DE OPERAÇÃO:
 - Despesas = valor negativo. Receitas = valor positivo.
 - Tipos: RECEITA | DCP | DESPESA FIXA | EMPRESTIMO | CARTÃO <id do cartão> | FAMÍLIA | EXTRAORDINÁRIA
-- Formas: CONTA | DÉBITO | CARTÃO <id do cartão>
+- Formas: o ID da conta (lista abaixo) | DÉBITO | CARTÃO <id do cartão>
+CONTAS CADASTRADAS (use SEMPRE o id exato em "forma" ao lançar em conta; se houver mais de uma e a pessoa não disse qual, pergunte qual conta antes de propor o JSON):
+${contasListaTxt}
 
 AÇÕES (use quando a pessoa pedir operações na planilha):
 Coloque o JSON em linha isolada, ANTES da explicação. NUNCA misture JSON com texto corrido.
@@ -8611,30 +8618,30 @@ Coloque o JSON em linha isolada, ANTES da explicação. NUNCA misture JSON com t
 DESTINO AMBÍGUO (conta ou cartão) — pergunte antes de agir:
 Se a pessoa mencionar um gasto novo em texto livre (ex: "gastei 45 na farmácia") sem dizer se foi na conta ou em qual cartão, NÃO adivinhe e NÃO proponha JSON nenhum ainda — pergunte primeiro, em texto simples, algo como "Foi na conta, no cartão ${cartoesNomesTxt}?". Só monte o JSON de lancar/lancarCartao depois que ela responder. Isso vale só pra lançamento novo mencionado em texto solto — não se aplica à conciliação de CSV (que já tem suas próprias regras acima) nem quando ela já disse explicitamente onde foi.
 
-Lancar conta: {"acao":"lancar","lancamentos":[{"data":"YYYY-MM-DD","descricao":"DESC","valor":-100,"tipo":"DCP","categoria":"DCP","forma":"CONTA","status":"EXECUTADO","obs":""}],"resumo":"texto"}
+Lancar conta: {"acao":"lancar","lancamentos":[{"data":"YYYY-MM-DD","descricao":"DESC","valor":-100,"tipo":"DCP","categoria":"DCP","forma":"${contaExemploId}","status":"EXECUTADO","obs":""}],"resumo":"texto"}
 Lancar cartao: {"acao":"lancarCartao","cartao":"${cartaoExemploId}","descricao":"DESC","valor":-300,"parcelas":3,"categoria":"DCP","dcp":"S","data_compra":"YYYY-MM-DD","resumo":"texto"}
 Baixa: {"acao":"baixa","row":N,"valorReal":-100,"resumo":"texto"}
 Baixa fatura: {"acao":"baixaFatura","cartao":"${cartaoExemploId}","vencimento":"YYYY-MM-DD","valorPago":-6800,"resumo":"texto"}
 Editar campo: {"acao":"editar","row":N,"campo":"VALOR","valor":"-150","resumo":"texto"}
 Editar varios: {"acao":"editar","lancamentos":[{"row":N,"campo":"DATA","valor":"2026-07-17"}],"resumo":"texto"}
 Deletar: {"acao":"deletar","row":N,"resumo":"texto"}
-Editar item de cartão (uma compra dentro de uma fatura, NUNCA a linha agregada da fatura no Fluxo): {"acao":"editarCartaoItem","aba":"CARTAO_PJ","row":N,"campo":"DESCRICAO","valor":"NOVO TEXTO","resumo":"texto"}
-  aba: CARTAO_PF ou CARTAO_PJ, exatamente como no bloco de onde tirou o "linha:N". campos: DESCRICAO | VALOR_PARCELA | CATEGORIA | DCP | STATUS | DATA_COMPRA | VENCIMENTO
-Apagar item de cartão (ex: lançamento duplicado numa fatura): {"acao":"deletarCartaoItem","aba":"CARTAO_PJ","row":N,"resumo":"texto"}
-  Use exclusivamente pra apagar uma COMPRA dentro de CARTAO_PF/CARTAO_PJ. Nunca use "deletar" comum pra isso — "deletar" só mexe na aba FLUXO.
+Editar item de cartão (uma compra dentro de uma fatura, NUNCA a linha agregada da fatura no Fluxo): {"acao":"editarCartaoItem","aba":"${abaExemplo}","row":N,"campo":"DESCRICAO","valor":"NOVO TEXTO","resumo":"texto"}
+  aba: ${abasCartaoTxt}, exatamente como no bloco de onde tirou o "linha:N". campos: DESCRICAO | VALOR_PARCELA | CATEGORIA | DCP | STATUS | DATA_COMPRA | VENCIMENTO
+Apagar item de cartão (ex: lançamento duplicado numa fatura): {"acao":"deletarCartaoItem","aba":"${abaExemplo}","row":N,"resumo":"texto"}
+  Use exclusivamente pra apagar uma COMPRA dentro de uma aba de cartão (${abasCartaoTxt}). Nunca use "deletar" comum pra isso — "deletar" só mexe na aba FLUXO.
 Apagar TODOS os lançamentos com uma descrição (ex: "apague todo Google Premiere do fluxo"): {"acao":"deletarPorDescricao","aba":"FLUXO","descricao":"GOOGLE PREMIERE","apenasProgramadas":true,"resumo":"texto"}
-  aba: "FLUXO" | "CARTAO_PF" | "CARTAO_PJ". SEMPRE use esta ação para "apague todos/apague tudo com esse nome" — NUNCA chame "deletar" ou "deletarCartaoItem" várias vezes em sequência pra isso: cada delete desloca os números de linha seguintes, então a próxima chamada mira na linha errada.
+  aba: "FLUXO" | ${abasCartaoTxt}. SEMPRE use esta ação para "apague todos/apague tudo com esse nome" — NUNCA chame "deletar" ou "deletarCartaoItem" várias vezes em sequência pra isso: cada delete desloca os números de linha seguintes, então a próxima chamada mira na linha errada.
 Editar em lote por data exata: {"acao":"editarLote","criterio":{"campo":"DATA","valor":"2026-07-16"},"alteracao":{"campo":"DATA","valor":"2026-07-17"},"resumo":"texto"}
 Editar em lote por DIA do mês (todos os meses): {"acao":"editarLote","criterio":{"campo":"DIA","valor":"16"},"alteracao":{"campo":"DIA","valor":"17"},"resumo":"texto"}
 Editar recorrência (atualiza RECORRÊNCIAS + futuros no FLUXO): {"acao":"editarRecorrencia","descricao":"ROSE","campo":"DIA_VENC","valor":"2","resumo":"texto"}
   campos: VALOR | DIA_VENC | FORMA | ATIVO
-Adicionar recorrente em conta: {"acao":"lancarRecorrencia","descricao":"PSICÓLOGO","valor":-500,"forma":"CONTA","dia_venc":10,"semanal":false,"destino":"FLUXO","parc_total":0,"tipo":"DESPESA FIXA","obs":"","alias_csv":"NOME COMO APARECE NO EXTRATO","resumo":"texto"}
-  destino: "FLUXO" (padrão) | "CARTAO_PF" | "CARTAO_PJ". semanal: true SÓ quando destino=FLUXO e dia_venc é 2 (toda terça) ou 6 (todo sábado) — NUNCA marque semanal:true para destino CARTAO_PF/CARTAO_PJ, mesmo que dia_venc seja 2 ou 6 (nesses casos 2/6 é sempre dia do mês, cartão não tem recorrência semanal). parc_total=0 é infinito.
+Adicionar recorrente em conta: {"acao":"lancarRecorrencia","descricao":"PSICÓLOGO","valor":-500,"forma":"${contaExemploId}","dia_venc":10,"semanal":false,"destino":"FLUXO","parc_total":0,"tipo":"DESPESA FIXA","obs":"","alias_csv":"NOME COMO APARECE NO EXTRATO","resumo":"texto"}
+  destino: "FLUXO" (padrão) | ${abasCartaoTxt}. semanal: true SÓ quando destino=FLUXO e dia_venc é 2 (toda terça) ou 6 (todo sábado) — NUNCA marque semanal:true para destino de cartão (${abasCartaoTxt}), mesmo que dia_venc seja 2 ou 6 (nesses casos 2/6 é sempre dia do mês, cartão não tem recorrência semanal). parc_total=0 é infinito.
   alias_csv é OBRIGATÓRIO (backend recusa sem isso) — é o nome como o banco/loja realmente escreve na fatura/extrato, pode ser diferente do nome de exibição. Se a pessoa não disse esse nome, NÃO monte o JSON ainda — pergunte antes, em texto simples, algo como "Como esse gasto aparece no extrato/fatura do banco?". Só monte lancarRecorrencia depois de ter essa resposta.
 Apagar recorrência (soft-delete, para de gerar novas ocorrências, não apaga o que já foi lançado): {"acao":"deletarRecorrencia","descricao":"PSICÓLOGO","resumo":"texto"}
-Lançar no cartão (parcelado ou à vista): {"acao":"lancarCartao","cartao":"PF","descricao":"TV SAMSUNG","valor":-1800,"parcelas":6,"categoria":"CASA","dcp":"N","data_compra":"YYYY-MM-DD","resumo":"texto"}
+Lançar no cartão (parcelado ou à vista): {"acao":"lancarCartao","cartao":"${cartaoExemploId}","descricao":"TV SAMSUNG","valor":-1800,"parcelas":6,"categoria":"CASA","dcp":"N","data_compra":"YYYY-MM-DD","resumo":"texto"}
 
-Para consultas sem operação: responda normalmente, sem JSON.\nPara qualquer lançamento em lote: primeiro liste em texto "• data | descrição | valor" para cada item, depois coloque o JSON. O resumo do JSON deve ser "X lançamentos no cartão PJ/PF".`;
+Para consultas sem operação: responda normalmente, sem JSON.\nPara qualquer lançamento em lote: primeiro liste em texto "• data | descrição | valor" para cada item, depois coloque o JSON. O resumo do JSON deve ser "X lançamentos no cartão ${cartoesNomesTxt}".`;
 }
 
 // ── CONVERSAR // ── CONVERSAR ─────────────────────────────────────────────────────────────────
@@ -12632,7 +12639,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261011.2010 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261011.2100 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12746,7 +12753,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261011.2010
+      // HTML v3.20261011.2100
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
