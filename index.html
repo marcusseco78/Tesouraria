@@ -25,7 +25,7 @@ button,input,select,textarea{font-family:inherit}
 </head>
 <body>
 <div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100dvh;flex-direction:column;gap:12px;color:#9CA3AF;font-size:13px">
-<div style="width:28px;height:28px;border:3px solid #E5E7EB;border-top-color:#D97706;border-radius:50%;animation:spin .8s linear infinite"></div>
+<div style="width:28px;height:28px;border:3px solid #E5E7EB;border-top-color:#B45309;border-radius:50%;animation:spin .8s linear infinite"></div>
 Carregando...</div></div>
 <script type="text/plain" id="app-source">
 // [NOVO 19/07] URL do Web App configuravel, pra permitir que uma copia deste
@@ -43,7 +43,7 @@ function getApiUrl(){
 const C={bg:"#F5F6F8",surface:"#FFF",border:"#E7E9EE",borderLight:"#EEF0F4",
   text:"#0F172A",textSub:"#4A5365",textMuted:"#6B7385",
   accent:"#2347C5",accentLight:"#E8EDFB",
-  red:"#C0352B",redLight:"#FDEEEC",orange:"#EA580C",orangeLight:"#FFF7ED",
+  red:"#C0352B",redLight:"#FDEEEC",orange:"#C2570C",orangeLight:"#FFF7ED",
   yellow:"#CA8A04",yellowLight:"#FEFCE8",purple:"#7C3AED",purpleLight:"#F5F3FF",
   blue:"#2347C5",blueLight:"#EEF2FD",blueFaint:"#F6F8FE",green:"#0B7A56",greenLight:"#E6F5EE",
   teal:"#0D9488",tealLight:"#F0FDFA",dark:"#0F1B3D"};
@@ -846,7 +846,7 @@ function SeletorEnvelopeItem({aba,row,obsAtual,data,onUpdate}){
 function TagEnvelopeDCP({envelope,futuro}){
   if(!envelope) return null;
   return <span style={{fontSize:10,fontWeight:800,marginLeft:6,padding:"2px 7px",borderRadius:5,
-    color:futuro?C.textMuted:"#B45309",background:futuro?C.borderLight:"#FEF3C7",
+    color:futuro?C.textMuted:"#B45309",background:futuro?C.borderLight:"#FEF3E2",
     border:futuro?"none":"1px solid #FCD34D",
     fontStyle:futuro?"italic":"normal"}}>{futuro?"→ ":"🧺 "}{envelope}</span>;
 }
@@ -901,7 +901,7 @@ function BadgeMetaDCP({valor}){
   const texto=fmt(Math.abs(valor))+(estourou?" pior que a meta":" melhor que a meta");
   return <span style={{fontSize:10,fontWeight:700,color:cor,whiteSpace:"nowrap"}}>{estourou?"⚠️ ":"✅ "}{texto}</span>;
 }
-const corZ=v=>v<1000?C.red:v<5000?C.orange:C.blue;
+const corZ=v=>v<1000?C.red:v<5000?C.orange:C.green;
 const bgZ=v=>v<1000?C.redLight:v<5000?C.orangeLight:C.blueLight;
 
 // Converte texto digitado (aceita virgula OU ponto decimal) para numero.
@@ -1254,7 +1254,7 @@ function corDoItem(item, hj){
   // a mesma borda lateral colorida que os outros selos já usam, mesmo sem
   // nenhum problema de status (vencido/reagendado). Nunca sobrescreve um
   // selo de status real -- só se aplica no caso "sem problema nenhum".
-  if(cat==="DCP") return {cor:"#D97706",selo:null,bg:bgCat,descCor,confirmadoExtrato};
+  if(cat==="DCP") return {cor:"#B45309",selo:null,bg:bgCat,descCor,confirmadoExtrato};
   return {cor:null,selo:null,bg:bgCat,descCor,confirmadoExtrato};
 }
 
@@ -1382,7 +1382,7 @@ function Chart({pts,zoomX}){
       <g transform={"translate("+PL+","+PT+")"}>
         <rect x={0} y={0}  width={W} height={toY(P2)} fill="#F8FAFF" opacity={0.8}/>
         <rect x={0} y={toY(P2)} width={W} height={toY(P1)-toY(P2)} fill="#EFF6FF" opacity={0.5}/>
-        <rect x={0} y={toY(P1)} width={W} height={iH-toY(P1)} fill="#F9FAFB" opacity={0.8}/>
+        <rect x={0} y={toY(P1)} width={W} height={iH-toY(P1)} fill="#F5F6F8" opacity={0.8}/>
         <rect x={0} y={y5} width={W} height={y1-y5} fill="#FFF7ED" opacity={0.4}/>
         <rect x={0} y={y1} width={W} height={iH-y1} fill="#FEF2F2" opacity={0.5}/>
         {(()=>{
@@ -1475,12 +1475,12 @@ function BarraDCP({semanas,base}){
   </div>;
 }
 
-function Card({children,style}){return <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:16,padding:"18px 20px",boxShadow:"0 2px 8px rgba(0,0,0,.06)",...style}}>{children}</div>;}
+function Card({children,style}){return <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:20,padding:"18px 20px",boxShadow:"none",...style}}>{children}</div>;}
 function Label({c,children}){return <span style={{fontSize:10,color:c||C.textMuted,textTransform:"uppercase",letterSpacing:".08em"}}>{children}</span>;}
-function KPI({label,value,sub,color,bg,raw}){const neg=typeof raw==="number"&&raw<0;return <div style={{background:neg?C.redLight:(bg||C.borderLight),borderRadius:12,padding:"12px 14px",overflow:"hidden"}}>
-  <Label>{label}</Label>
-  <div style={{fontSize:neg?17:18,fontWeight:neg?900:800,color:neg?C.red:(color||C.text),marginTop:5,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{value}</div>
-  {sub&&<div style={{fontSize:10,color:C.textMuted,marginTop:2}}>{sub}</div>}
+function KPI({label,value,sub,color,bg,raw}){const neg=typeof raw==="number"&&raw<0;const solido=neg?C.red:(color||null);return <div style={{background:solido||C.borderLight,borderRadius:16,padding:"14px 14px",overflow:"hidden"}}>
+  <Label c={solido?"rgba(255,255,255,.82)":undefined}>{label}</Label>
+  <div style={{fontSize:neg?17:18,fontWeight:800,color:solido?"#FFFFFF":C.text,marginTop:5,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{value}</div>
+  {sub&&<div style={{fontSize:10,color:neg||color?"rgba(255,255,255,.82)":C.textMuted,marginTop:2}}>{sub}</div>}
 </div>;}
 
 // ── CICLO CARD ────────────────────────────────────────────────────────────────
@@ -1642,22 +1642,22 @@ function Dashboard({data,onUpdate,estouro}){
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <AvisoEstouroDCP estouro={estouro} onUpdate={onUpdate}/>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-      <div style={{background:bgZ(saldo),border:"2px solid "+corZ(saldo),borderRadius:16,padding:"14px 14px"}}>
-        <Label>Saldo em conta</Label>
+      <div style={{background:corZ(saldo),borderRadius:20,padding:"16px 16px"}}>
+        <Label c="rgba(255,255,255,.82)">Saldo em conta</Label>
         <div style={{marginTop:6}}>
-          <span style={saldo<0?{fontSize:22,fontWeight:900,color:C.red,background:C.redLight,padding:"1px 6px",borderRadius:6,fontVariantNumeric:"tabular-nums",letterSpacing:"-.01em",whiteSpace:"nowrap"}:{fontSize:24,fontWeight:800,color:corZ(saldo),fontVariantNumeric:"tabular-nums",letterSpacing:"-.01em"}}>{fmt(saldo)}</span>
+          <span style={saldo<0?{fontSize:26,fontWeight:800,color:"#FFFFFF",fontVariantNumeric:"tabular-nums",letterSpacing:"-.02em",whiteSpace:"nowrap"}:{fontSize:26,fontWeight:800,color:"#FFFFFF",fontVariantNumeric:"tabular-nums",letterSpacing:"-.01em"}}>{fmt(saldo)}</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:4,marginTop:8}}>
-          <div style={{width:8,height:8,borderRadius:"50%",background:corZ(saldo)}}/>
-          <span style={{fontSize:12,color:corZ(saldo),fontWeight:700}}>zona {saldo<0?"negativa":saldo<1000?"crítico":saldo<5000?"atenção":"saudável"}</span>
+          <div style={{width:8,height:8,borderRadius:"50%",background:"#FFFFFF"}}/>
+          <span style={{fontSize:12,color:"rgba(255,255,255,.92)",fontWeight:700}}>zona {saldo<0?"negativa":saldo<1000?"crítico":saldo<5000?"atenção":"saudável"}</span>
         </div>
       </div>
-      {ml&&<div style={{background:bgZ(ml.saldoProjetado),border:"2px solid "+corZ(ml.saldoProjetado),borderRadius:16,padding:"14px 14px"}}>
-        <Label>Próxima menor liquidez</Label>
+      {ml&&<div style={{background:corZ(ml.saldoProjetado),borderRadius:20,padding:"16px 16px"}}>
+        <Label c="rgba(255,255,255,.82)">Próxima menor liquidez</Label>
         <div style={{marginTop:6}}>
-          <span style={ml.saldoProjetado<0?{fontSize:19,fontWeight:900,color:C.red,background:C.redLight,padding:"1px 6px",borderRadius:6,fontVariantNumeric:"tabular-nums",letterSpacing:"-.01em",whiteSpace:"nowrap"}:{fontSize:19,fontWeight:800,color:corZ(ml.saldoProjetado),fontVariantNumeric:"tabular-nums",letterSpacing:"-.01em"}}>{fmt(ml.saldoProjetado)}</span>
+          <span style={ml.saldoProjetado<0?{fontSize:22,fontWeight:800,color:"#FFFFFF",fontVariantNumeric:"tabular-nums",letterSpacing:"-.02em",whiteSpace:"nowrap"}:{fontSize:22,fontWeight:800,color:"#FFFFFF",fontVariantNumeric:"tabular-nums",letterSpacing:"-.01em"}}>{fmt(ml.saldoProjetado)}</span>
         </div>
-        <div style={{fontSize:12,color:C.textMuted,marginTop:6,fontWeight:500}}>{fmtD(ml.data)}</div>
+        <div style={{fontSize:12,color:"rgba(255,255,255,.88)",marginTop:6,fontWeight:600}}>{fmtD(ml.data)}</div>
       </div>}
     </div>
     {dcpResumo.semanas.length>0&&<Card>
@@ -1675,9 +1675,9 @@ function Dashboard({data,onUpdate,estouro}){
         const tetoMes=dcpResumo.base*Math.max(dcpResumo.semanas.length,1);
         const gastoMes=dcpResumo.semanas.reduce((s,w)=>s+w.gasto,0);
         const dispMes=tetoMes-gastoMes;
-        const Bloco=({label,valor})=><div style={{flex:1,minWidth:0,background:valor<0?C.redLight:"#FEF3C7",borderRadius:14,padding:"12px 8px",textAlign:"center",boxSizing:"border-box"}}>
-          <div style={{fontSize:10,fontWeight:700,color:valor<0?C.red:"#92400E",textTransform:"uppercase",letterSpacing:".03em",marginBottom:4,lineHeight:1.2}}>{label}</div>
-          <div style={{fontSize:22,fontWeight:900,color:valor<0?C.red:"#92400E",lineHeight:1.05,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fmt(valor)}</div>
+        const Bloco=({label,valor})=><div style={{flex:1,minWidth:0,background:valor<0?C.red:C.green,borderRadius:16,padding:"14px 8px",textAlign:"center",boxSizing:"border-box"}}>
+          <div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.85)",textTransform:"uppercase",letterSpacing:".03em",marginBottom:4,lineHeight:1.2}}>{label}</div>
+          <div style={{fontSize:22,fontWeight:800,color:"#FFFFFF",lineHeight:1.05,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fmt(valor)}</div>
         </div>;
         return <div style={{display:"flex",gap:8,marginBottom:12}}>
           {dispSemana!=null&&<Bloco label="Esta semana" valor={dispSemana}/>}
@@ -1740,7 +1740,7 @@ function DCPBaseEditor({data,onUpdate}){
     }catch(e){ alert(e.message); }
     setLoadGer(false);
   }
-  return <div style={{padding:"8px 14px",background:"#F9FAFB",borderBottom:"1px solid "+C.border}}>
+  return <div style={{padding:"8px 14px",background:"#F5F6F8",borderBottom:"1px solid "+C.border}}>
     <div style={{display:"flex",alignItems:"center",gap:8}}>
       <span style={{fontSize:11,color:C.textMuted,fontWeight:600}}>Limite de Despesas Cotidianas</span>
       {!editando?<>
@@ -1843,7 +1843,7 @@ function EditorEnvelope({data,onUpdate}){
     setLoad(false);
   }
 
-  return <div style={{padding:"8px 14px",background:"#F9FAFB",borderBottom:"1px solid "+C.border}}>
+  return <div style={{padding:"8px 14px",background:"#F5F6F8",borderBottom:"1px solid "+C.border}}>
     <div style={{display:"flex",alignItems:"center",gap:8}}>
       <span style={{fontSize:11,color:C.textMuted,fontWeight:600}}>Envelope da semana (mín/máx)</span>
       {minAtual!=null&&maxAtual!=null?
@@ -1978,7 +1978,7 @@ function SugestaoReagendamento({onUpdate}){
     setLoadAplicar(false);
   }
 
-  return <div style={{padding:"10px 14px",background:"#F9FAFB",borderBottom:"1px solid "+C.border}}>
+  return <div style={{padding:"10px 14px",background:"#F5F6F8",borderBottom:"1px solid "+C.border}}>
     <button onClick={verificar} disabled={load}
       style={{width:"100%",background:C.accentLight,color:C.accent,border:"none",borderRadius:8,padding:"9px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
       {load?"…":"🔎 Checar se algum ciclo vai apertar"}
@@ -2764,7 +2764,7 @@ function EmprestimosPassivos({data,onUpdate}){
           ordenados por "menos parcelas faltando", o que fazia os JA
           quitados (restantes=0) aparecerem no TOPO da lista, disputando
           atencao com os que realmente ainda precisam de acompanhamento. */}
-      {emprestimos.filter(it=>it.restantes>0).map(it=><div key={it.desc} style={{background:C.bg||"#F9FAFB",border:"1px solid "+C.borderLight,borderRadius:8,padding:10,marginBottom:6}}>
+      {emprestimos.filter(it=>it.restantes>0).map(it=><div key={it.desc} style={{background:C.bg||"#F5F6F8",border:"1px solid "+C.borderLight,borderRadius:8,padding:10,marginBottom:6}}>
         <div style={{fontSize:13,fontWeight:700,color:C.text}}>{it.desc}</div>
         <div style={{display:"flex",justifyContent:"space-between",marginTop:4,fontSize:11,color:C.textMuted}}>
           <span>Valor: <b style={{color:C.red}}>{fmt(it.valor)}</b></span>
@@ -6315,14 +6315,14 @@ function ConciliarExtratoTab({data,onUpdate}){
         const diferencaAj=Number(cs.diferenca)-ajusteRend;
         const bateAj=cs.bate||Math.abs(diferencaAj)<=0.01;
         return <div style={{marginBottom:18,padding:"12px 14px",borderRadius:10,
-        background:bateAj?C.greenLight:"#FEF3C7",
+        background:bateAj?C.greenLight:"#FEF3E2",
         border:"1px solid "+(bateAj?C.green:"#F59E0B")}}>
         {bateAj?
           <div style={{fontSize:13,fontWeight:700,color:C.green}}>
             ✓ Saldo bate em {fmtD(cs.data)}{cs.ajustado?" (ajustado agora)":""}{!cs.bate&&ajusteRend>0?" (contando o rendimento do mês)":""} — {fmt(cs.saldoBanco)}
           </div>
         :<>
-          <div style={{fontSize:13,fontWeight:700,color:"#92400E",marginBottom:4}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#B45309",marginBottom:4}}>
             ⚠️ Saldo não bate em {fmtD(cs.data)}
           </div>
           <div style={{fontSize:11,color:"#78350F",marginBottom:8}}>
@@ -6414,7 +6414,7 @@ function ConciliarExtratoTab({data,onUpdate}){
               <span style={{fontSize:13,fontWeight:600,color:C.text}}>{c.item.descricao}</span>
               <span style={{fontSize:13,fontWeight:700,color:C.red}}>{fmt(c.item.valor)}</span>
             </div>
-            <div style={{fontSize:11,color:"#92400E",marginBottom:8}}>
+            <div style={{fontSize:11,color:"#B45309",marginBottom:8}}>
               Está como <b>{CAT_LABEL[c.avisoClassificacao.categoriaAtual]||c.avisoClassificacao.categoriaAtual}</b>, mas o texto bate com uma regra que espera <b>{CAT_LABEL[c.avisoClassificacao.categoriaEsperada]||c.avisoClassificacao.categoriaEsperada}</b>.
             </div>
             <div style={{display:"flex",gap:6}}>
@@ -6702,28 +6702,28 @@ function TransferenciaEspelhada({data,onUpdate}){
 
 function Ferramentas({onIrPara}){
   const FERRAMENTAS=[
-    {id:"receitas",icone:"🏥",titulo:"Receitas",sub:"HSA, HSI e outras fontes",cor:C.teal,bg:C.tealLight},
-    {id:"emprestimos",icone:"🏦",titulo:"Empréstimos",sub:"Dívidas e passivos",cor:C.red,bg:C.redLight},
-    {id:"recorr",icone:"🔁",titulo:"Despesas Fixas",sub:"Gastos fixos e receitas",cor:C.blue,bg:C.blueLight},
-    {id:"dcp",icone:"🗂",titulo:"Despesas Cotidianas",sub:"Envelope semanal",cor:C.green,bg:C.greenLight},
-    {id:"cartoes",icone:"💳",titulo:"Cartões",sub:"Faturas PF e PJ",cor:"#D97706",bg:"#FEF3C7"},
-    {id:"parcelas",icone:"🛍️",titulo:"Parceladas",sub:"Compras no cartão",cor:C.yellow,bg:C.yellowLight},
-    {id:"cofres",icone:"🏦",titulo:"Cofres",sub:"Poupança pra projetos, tipo caixinha",cor:C.teal,bg:C.tealLight||C.blueLight},
-    {id:"envelopes",icone:"💌",titulo:"Envelopes",sub:"Metas por projeto",cor:C.purple,bg:C.purpleLight},
-    {id:"conciliacao",icone:"🔄",titulo:"Conciliação",sub:"Cartões e extrato",cor:C.orange,bg:C.orangeLight},
-    {id:"transferencias",icone:"↔️",titulo:"Movimentação Entre Contas",sub:"Transferência espelhada PF/PJ",cor:C.purple,bg:C.purpleLight},
-    {id:"perfil",icone:"👤",titulo:"Perfil & Apelidos",sub:"Contexto do Gemini, nomes de descrição",cor:C.blue,bg:C.blueLight},
-    {id:"config",icone:"⚙️",titulo:"Configurações",sub:"Servidor, cartões, dados sensíveis",cor:C.textMuted,bg:C.borderLight},
-    {id:"conversar",icone:"💬",titulo:"Conversar",sub:"Assistente do app",cor:C.purple,bg:C.purpleLight},
+    {id:"receitas",icone:"🏥",titulo:"Receitas",sub:"HSA, HSI e outras fontes",cor:"#0F766E"},
+    {id:"emprestimos",icone:"🏦",titulo:"Empréstimos",sub:"Dívidas e passivos",cor:"#C0352B"},
+    {id:"recorr",icone:"🔁",titulo:"Despesas Fixas",sub:"Gastos fixos e receitas",cor:"#2347C5"},
+    {id:"dcp",icone:"🗂",titulo:"Despesas Cotidianas",sub:"Envelope semanal",cor:"#0B7A56"},
+    {id:"cartoes",icone:"💳",titulo:"Cartões",sub:"Faturas PF e PJ",cor:"#B45309"},
+    {id:"parcelas",icone:"🛍️",titulo:"Parceladas",sub:"Compras no cartão",cor:"#8A5A00"},
+    {id:"cofres",icone:"🏦",titulo:"Cofres",sub:"Poupança pra projetos, tipo caixinha",cor:"#0E7490"},
+    {id:"envelopes",icone:"💌",titulo:"Envelopes",sub:"Metas por projeto",cor:"#6D3FD0"},
+    {id:"conciliacao",icone:"🔄",titulo:"Conciliação",sub:"Cartões e extrato",cor:"#C2570C"},
+    {id:"transferencias",icone:"↔️",titulo:"Movimentação Entre Contas",sub:"Transferência espelhada PF/PJ",cor:"#4338CA"},
+    {id:"perfil",icone:"👤",titulo:"Perfil & Apelidos",sub:"Contexto do Gemini, nomes de descrição",cor:"#0F1B3D"},
+    {id:"config",icone:"⚙️",titulo:"Configurações",sub:"Servidor, cartões, dados sensíveis",cor:"#475569"},
+    {id:"conversar",icone:"💬",titulo:"Conversar",sub:"Assistente do app",cor:"#5B3FC4"},
   ];
   return <div style={{padding:"4px 4px 16px"}}>
     <div style={{fontSize:11,fontWeight:800,color:C.textMuted,letterSpacing:".1em",padding:"8px 12px"}}>FERRAMENTAS</div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,padding:"0 12px"}}>
       {FERRAMENTAS.map(f=><div key={f.id} onClick={()=>onIrPara(f.id)}
-        style={{background:f.bg,border:"1px solid "+f.cor+"33",borderRadius:16,padding:"16px 14px",cursor:"pointer"}}>
-        <div style={{fontSize:26,marginBottom:8}}>{f.icone}</div>
-        <div style={{fontSize:15,fontWeight:800,color:f.cor}}>{f.titulo}</div>
-        <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>{f.sub}</div>
+        style={{background:f.cor,borderRadius:20,padding:"16px 14px",cursor:"pointer",minHeight:120}}>
+        <div style={{width:40,height:40,borderRadius:12,background:"rgba(255,255,255,.18)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,marginBottom:12}}>{f.icone}</div>
+        <div style={{fontSize:15,fontWeight:800,color:"#FFFFFF"}}>{f.titulo}</div>
+        <div style={{fontSize:11,color:"rgba(255,255,255,.82)",marginTop:3,lineHeight:1.35}}>{f.sub}</div>
       </div>)}
     </div>
     <div style={{padding:"14px 12px 0"}}>
@@ -6752,7 +6752,7 @@ function BotaoFaseCNomenclatura(){
   }
   if(feito)return null;
   return <button onClick={rodar} disabled={loading}
-    style={{width:"100%",padding:"8px",borderRadius:10,background:"#DBEAFE",color:"#1E40AF",border:"1px dashed #93C5FD",fontSize:11,fontWeight:700,cursor:loading?"default":"pointer",fontFamily:"inherit"}}>
+    style={{width:"100%",padding:"8px",borderRadius:10,background:"#DBEAFE",color:"#2347C5",border:"1px dashed #93C5FD",fontSize:11,fontWeight:700,cursor:loading?"default":"pointer",fontFamily:"inherit"}}>
     {loading?"…":"🔵 Reforma de nomenclatura — Fase C, campos de nome automático (1x)"}
   </button>;
 }
@@ -6841,7 +6841,7 @@ function DCPTab({data,onUpdate,onIrPara}){
     <SugestaoReagendamento onUpdate={onUpdate}/>
     {!envelopes.length&&<div style={{padding:"40px 20px",textAlign:"center",color:C.textMuted,fontSize:14}}>Nenhum envelope DCP gerado ainda — toca "🔄 Gerar DCP" acima.</div>}
     {porCiclo.map(([ciclo,lista])=><div key={ciclo+"|"+(lista[0]&&lista[0].data)}>
-      <div style={{padding:"10px 14px 4px",fontSize:12,fontWeight:700,color:C.accent,background:"#F9FAFB",borderBottom:"1px solid "+C.border}}>{ciclo}</div>
+      <div style={{padding:"10px 14px 4px",fontSize:12,fontWeight:700,color:C.accent,background:"#F5F6F8",borderBottom:"1px solid "+C.border}}>{ciclo}</div>
       {lista.map(env=>{
         const transacoes=transacoesDoEnvelope(env.data);
         const aberto=expandido===env.data;
@@ -7097,13 +7097,13 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
       // que ainda não tem esse parId (normalmente só sobra 1 opção óbvia,
       // mas mostra todas pra cobrir o caso de mais de 2 contas).
       const contasSemPar=(data.contas||[]).filter(c=>c.ativa!==false&&c.id!==item.forma);
-      return <div style={{marginBottom:8,background:"#FEF3C7",borderRadius:6,padding:"7px 9px"}}>
-        <div style={{fontSize:10,color:"#92400E",fontWeight:700,marginBottom:5}}>⚠️ Sem par — essa transferência ficou com só 1 lado</div>
+      return <div style={{marginBottom:8,background:"#FEF3E2",borderRadius:6,padding:"7px 9px"}}>
+        <div style={{fontSize:10,color:"#B45309",fontWeight:700,marginBottom:5}}>⚠️ Sem par — essa transferência ficou com só 1 lado</div>
         <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
           {contasSemPar.map(c=>
             <button key={c.id} onClick={()=>criarLadoFaltante(c.id)} disabled={loadPar}
               style={{fontSize:10,fontWeight:700,padding:"4px 9px",borderRadius:6,border:"none",cursor:"pointer",fontFamily:"inherit",
-                background:"#D97706",color:"#fff"}}>
+                background:"#B45309",color:"#fff"}}>
               {loadPar?"Criando…":"Criar o lado que falta em "+(c.nome||c.id)}
             </button>)}
         </div>
@@ -7149,7 +7149,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
       })}
     </div>}
     {item.categoria!=="DCP_PROVISAO"&&<div style={{marginBottom:8}}>
-      <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME DE EXIBIÇÃO (opcional)</span>
+      <span style={{fontSize:10,color:"#B45309",fontWeight:600,letterSpacing:".05em"}}>NOME DE EXIBIÇÃO (opcional)</span>
       <div style={{display:"flex",gap:6,marginTop:3}}>
         <input value={apelidoInput} onChange={e=>setApelidoInput(e.target.value.toUpperCase())}
           placeholder={item.descricao}
@@ -7170,7 +7170,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
       })()}
     </div>}
     {item.categoria!=="DCP_PROVISAO"&&<div style={{marginBottom:10}}>
-      <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME NO EXTRATO/CONCILIAÇÃO</span>
+      <span style={{fontSize:10,color:"#B45309",fontWeight:600,letterSpacing:".05em"}}>NOME NO EXTRATO/CONCILIAÇÃO</span>
       <div style={{display:"flex",gap:6,marginTop:3}}>
         <input value={descInput} onChange={e=>setDescInput(e.target.value.toUpperCase())}
           style={{flex:1,padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit"}}/>
@@ -7182,12 +7182,12 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
     </div>}
     <div style={{display:"flex",gap:8,marginBottom:8}}>
       <div style={{display:"flex",flexDirection:"column",gap:3,flex:1}}>
-        <span style={{fontSize:10,color:execMode?"#166534":"#92400E",fontWeight:600,letterSpacing:".05em"}}>{execMode?"DATA DE EXECUÇÃO":"NOVA DATA"}</span>
+        <span style={{fontSize:10,color:execMode?"#166534":"#B45309",fontWeight:600,letterSpacing:".05em"}}>{execMode?"DATA DE EXECUÇÃO":"NOVA DATA"}</span>
         <input type="date" value={dt} onChange={e=>setDt(e.target.value)}
           style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+(execMode?"#86EFAC":C.accent),fontSize:13,fontFamily:"inherit",width:"100%"}}/>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:3,flex:1}}>
-        <span style={{fontSize:10,color:execMode?"#166534":"#92400E",fontWeight:600,letterSpacing:".05em"}}>VALOR</span>
+        <span style={{fontSize:10,color:execMode?"#166534":"#B45309",fontWeight:600,letterSpacing:".05em"}}>VALOR</span>
         <div style={{display:"flex",gap:4}}>
           <button type="button" onClick={()=>setNeg(n=>!n)}
             style={{width:30,flexShrink:0,borderRadius:6,border:"1px solid "+(execMode?"#86EFAC":C.accent),
@@ -7199,10 +7199,10 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
         </div>
       </div>
     </div>
-    {ehFatura&&execMode&&neg&&numBR(val)<Math.abs(item.valor)-0.01&&<div style={{fontSize:10,color:"#92400E",marginBottom:8,fontStyle:"italic"}}>
+    {ehFatura&&execMode&&neg&&numBR(val)<Math.abs(item.valor)-0.01&&<div style={{fontSize:10,color:"#B45309",marginBottom:8,fontStyle:"italic"}}>
       Pagamento parcial — o restante (R$ {(Math.abs(item.valor)-numBR(val)).toFixed(2).replace(".",",")}) vira um novo lançamento no Fluxo, na mesma data, editável normalmente.
     </div>}
-    {item.categoria==="DCP_PROVISAO"&&execMode&&<div style={{fontSize:10,color:"#92400E",background:C.accentLight,borderRadius:6,padding:"6px 8px",marginBottom:8}}>
+    {item.categoria==="DCP_PROVISAO"&&execMode&&<div style={{fontSize:10,color:"#B45309",background:C.accentLight,borderRadius:6,padding:"6px 8px",marginBottom:8}}>
       Fechamento de semana DCP: a sobra/estouro é redistribuída automaticamente entre as próximas segundas e a linha fecha em R$ 0,00 no Histórico — o valor digitado acima é ignorado. Feche as semanas em ordem (a mais antiga primeiro).
       <label style={{display:"flex",alignItems:"center",gap:6,marginTop:7,paddingTop:7,borderTop:"1px dashed #FBBF24",cursor:"pointer",fontWeight:700}}>
         <input type="checkbox" checked={ignorarDeficitDCP} onChange={e=>setIgnorarDeficitDCP(e.target.checked)}/>
@@ -7238,7 +7238,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
       </button>
     </div>}
     <div style={{display:"flex",gap:8,alignItems:"center"}}>
-      <span style={{flex:1,fontSize:11,color:execMode?"#166534":"#92400E"}}>
+      <span style={{flex:1,fontSize:11,color:execMode?"#166534":"#B45309"}}>
         {item.status==="EXECUTADO"?"":execMode?"→ Vai para o Histórico":"→ Permanece no Fluxo com nova data"}
       </span>
       <button onClick={confirmar} disabled={!!load}
@@ -7260,7 +7260,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
       const travado=!CAT_LIVRES_GASTO.includes(bucketAtual);
       const TODAS=["DESPESA FIXA","DCP","EXTRAORDINARIA","PAGAMENTO_FATURA","PAGAMENTO_EMPRESTIMO","COFRE"];
       return <div style={{marginTop:8,marginBottom:8}}>
-        <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA{travado&&
+        <span style={{fontSize:10,color:"#B45309",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA{travado&&
           <span style={{marginLeft:6,fontSize:8,background:"#fff",color:C.textMuted,padding:"1px 6px",borderRadius:8,fontWeight:700,letterSpacing:0}}>travada</span>}
         </span>
         <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:5}}>
@@ -7286,7 +7286,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
       </div>;
     })()}
     {!parInfo&&(data.contas||[]).filter(c=>c.ativa!==false).length>1&&(!ehFatura||item.status!=="EXECUTADO")&&<div style={{marginTop:8,marginBottom:8}}>
-      <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>{ehFatura?"CONTA DE PAGAMENTO DA FATURA":"CONTA"}</span>
+      <span style={{fontSize:10,color:"#B45309",fontWeight:600,letterSpacing:".05em"}}>{ehFatura?"CONTA DE PAGAMENTO DA FATURA":"CONTA"}</span>
       <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:5}}>
         {(data.contas||[]).filter(c=>c.ativa!==false).map(c=>{
           const ehAtual=(item.forma||"CONTA")===c.id;
@@ -7303,7 +7303,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
       </div>
     </div>}
     {item.tipo==="RECEITA"&&<div style={{marginTop:8,marginBottom:8}}>
-      <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA
+      <span style={{fontSize:10,color:"#B45309",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA
         <span style={{marginLeft:6,fontSize:8,background:"#fff",color:C.textMuted,padding:"1px 6px",borderRadius:8,fontWeight:700,letterSpacing:0}}>travada</span>
       </span>
       <div style={{marginTop:5,padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,display:"inline-block",
@@ -7312,7 +7312,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
       </div>
     </div>}
     {item.tipo==="DEPOSITO_AVULSO"&&<div style={{marginTop:8,marginBottom:8}}>
-      <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA
+      <span style={{fontSize:10,color:"#B45309",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA
         <span style={{marginLeft:6,fontSize:8,background:"#fff",color:C.textMuted,padding:"1px 6px",borderRadius:8,fontWeight:700,letterSpacing:0}}>travada</span>
       </span>
       <div style={{marginTop:5,padding:"8px 12px",borderRadius:20,fontSize:12,fontWeight:700,display:"inline-block",
@@ -7323,7 +7323,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
     {item.valor<0&&item.categoria!=="DCP_PROVISAO"&&String(item.obs||"").indexOf("FONTE_RECEITA")<0&&
       <SeletorEnvelopeItem aba="FLUXO" row={item.row} obsAtual={item.obs} data={data} onUpdate={onUpdate}/>}
     {ehFatura&&<button onClick={async()=>{setLoad(true);try{onUpdate(await api({action:"mesclarFaturaComSeguinte",row:item.row}));}catch(e){alert(e.message);}setLoad(false);onClose&&onClose();}} disabled={!!load}
-      style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:"#92400E",fontSize:11,border:"1px dashed #FED7AA",cursor:"pointer",fontFamily:"inherit"}}>
+      style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:"#B45309",fontSize:11,border:"1px dashed #FED7AA",cursor:"pointer",fontFamily:"inherit"}}>
       🔀 Em vez disso, somar esse valor direto na próxima fatura
     </button>}
     {(()=>{
@@ -7359,7 +7359,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
       const apagarTravado=ehFonteReceita||(bucket==="DESPESA FIXA"&&temRecorrenciaAtiva)||(bucket==="PAGAMENTO_FATURA"&&!ehRestanteDeFatura)||
         (bucket==="PAGAMENTO_EMPRESTIMO"&&item.categoria==="DIVIDA_PARCELADA");
       if(ehRestanteDeFatura&&!apagarTravado) return <div style={{marginTop:8}}>
-        <div style={{fontSize:10,color:"#92400E",marginBottom:6,textAlign:"center",lineHeight:1.4}}>
+        <div style={{fontSize:10,color:"#B45309",marginBottom:6,textAlign:"center",lineHeight:1.4}}>
           ⚠ Isso é um "restante devido" calculado automaticamente — apagar
           NÃO devolve o valor pra fatura original (fica como está). Só use
           se esse restante for fantasma (ex: crédito do banco confundido
@@ -7724,7 +7724,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
         const {cor:corItem,selo,bg:bgItem,descCor,confirmadoExtrato}=corDoItem(item,hj);
         const destacado=destaque?.tab==="fluxo"&&destaque.row===item.row;
         return <div key={item.row} id={"fluxo-item-"+item.row}>
-        <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 14px",borderBottom:"1px solid "+C.borderLight,background:destacado?"#FEF3C7":(bgItem||C.surface),transition:"background 1s",
+        <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 14px",borderBottom:"1px solid "+C.borderLight,background:destacado?"#FEF3E2":(bgItem||C.surface),transition:"background 1s",
           borderLeft:corItem?"3px solid "+corItem:"none"}}>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:12,fontWeight:600,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}</div>
@@ -7737,7 +7737,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
               <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:3,alignItems:"center"}}>
                 {(()=>{const it=infoTransferencia(item,data); return it&&
                   <span style={{fontSize:9,fontWeight:800,padding:"1px 6px",borderRadius:8,
-                    background:it.temPar?C.purpleLight:"#FEF3C7",color:it.temPar?C.purple:"#92400E"}}>
+                    background:it.temPar?C.purpleLight:"#FEF3E2",color:it.temPar?C.purple:"#B45309"}}>
                     {it.label}{!it.temPar&&" ⚠"}
                   </span>;})()}
                 {(()=>{const itr=infoTransfReceita(item,data); return itr&&
@@ -7922,7 +7922,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
       return <DiaCartao key={gdt} gdt={gdt} saldo={spIni} linhas={_linhasResumoDia(itens,cartaoDia)}
         vazio={!itens.length&&!cartaoDia.length} abertoInicial={gi===0} forcarAberto={!!busca.trim()||itemNoDia} sinal={sinalDias}>
         {itens.map(item=>{const {cor:corItem,selo,bg:bgItem,descCor,confirmadoExtrato}=corDoItem(item,hj);const isOpen=conf===item.row;const destacado=destaque?.tab==="historico"&&destaque.row===item.row;return <div key={item.row} id={"hist-item-"+item.row}>
-          <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 14px",borderBottom:isOpen?"none":"1px solid "+C.borderLight,background:destacado?"#FEF3C7":(bgItem||C.surface),transition:"background 1s",
+          <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 14px",borderBottom:isOpen?"none":"1px solid "+C.borderLight,background:destacado?"#FEF3E2":(bgItem||C.surface),transition:"background 1s",
             borderLeft:corItem?"3px solid "+corItem:"none"}}>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:12,fontWeight:600,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}</div>
@@ -7931,7 +7931,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
                 <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:3,alignItems:"center"}}>
                   {(()=>{const it=infoTransferencia(item,data); return it&&
                     <span style={{fontSize:9,fontWeight:800,padding:"1px 6px",borderRadius:8,
-                      background:it.temPar?C.purpleLight:"#FEF3C7",color:it.temPar?C.purple:"#92400E"}}>
+                      background:it.temPar?C.purpleLight:"#FEF3E2",color:it.temPar?C.purple:"#B45309"}}>
                       {it.label}{!it.temPar&&" ⚠"}
                     </span>;})()}
                   {(()=>{const itr=infoTransfReceita(item,data); return itr&&
@@ -8350,7 +8350,7 @@ function Timeline({data,onUpdate,onIrPara}){
               <div onClick={()=>setItemAbertoRow(painelAberto?null:s.item.item.row)}
                 style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",
                 background:painelAberto?C.accentLight:(ehDCP?C.yellowLight:"transparent"),borderRadius:(painelAberto||ehDCP)?8:0,
-                borderLeft:painelAberto?"3px solid "+C.accent:(ehDCP?"3px solid #D97706":"3px solid transparent"),
+                borderLeft:painelAberto?"3px solid "+C.accent:(ehDCP?"3px solid #B45309":"3px solid transparent"),
                 borderBottom:(ehDCP&&!painelAberto)?"none":"1px solid "+C.borderLight,padding:"8px 8px"}}>
                 <div data-fade style={{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%",transition:"opacity .06s linear"}}>
                   <div>
@@ -8854,7 +8854,7 @@ function Conversar({data,onUpdate,initTxt,onInitDone,msgs,setMsgs}){
           border:"1px solid "+C.accent,borderRadius:12,padding:"10px 14px",
           display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",
           boxShadow:"0 -2px 12px rgba(217,119,6,.15)"}}>
-          <span style={{fontSize:12,color:"#92400E",flex:1,fontWeight:600}}>Este CSV é de qual cartão?</span>
+          <span style={{fontSize:12,color:"#B45309",flex:1,fontWeight:600}}>Este CSV é de qual cartão?</span>
           {(data.cartoes||[]).filter(c=>c.ativo).map(c=>
             <button key={c.id} onClick={()=>executarConciliacao(c.id)} disabled={!!load}
               style={{background:C.accent,color:"#fff",borderRadius:6,padding:"6px 16px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",flexShrink:0}}>
@@ -8871,7 +8871,7 @@ function Conversar({data,onUpdate,initTxt,onInitDone,msgs,setMsgs}){
             <button onClick={()=>setPendConc(null)} style={{background:C.borderLight,color:C.textSub,borderRadius:6,padding:"4px 9px",fontSize:12,border:"none",cursor:"pointer"}}>✕</button>
           </div>
           {pendConc.divergencias.map(d=><div key={"d"+d.planilha.row} style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"8px 10px",marginBottom:6}}>
-            <div style={{fontSize:11,color:"#92400E",fontWeight:700,marginBottom:4}}>🟠 possível mesmo gasto, lançado diferente</div>
+            <div style={{fontSize:11,color:"#B45309",fontWeight:700,marginBottom:4}}>🟠 possível mesmo gasto, lançado diferente</div>
             <div style={{fontSize:12,color:C.text}}>CSV: {d.csv.date} · {d.csv.title} · R$ {d.csv.amount}</div>
             <div style={{fontSize:12,color:C.textSub,marginBottom:6}}>Planilha: {d.planilha.dataCompra} · {d.planilha.desc} · R$ {Math.abs(d.planilha.valor)}</div>
             <div style={{display:"flex",gap:6}}>
@@ -8904,7 +8904,7 @@ function Conversar({data,onUpdate,initTxt,onInitDone,msgs,setMsgs}){
           border:"1px solid "+C.accent,borderRadius:12,padding:"10px 14px",
           display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",
           boxShadow:"0 -2px 12px rgba(217,119,6,.15)"}}>
-          <span style={{fontSize:12,color:"#92400E",flex:1,fontWeight:600}}>{pend.resumo||"Confirmar?"}</span>
+          <span style={{fontSize:12,color:"#B45309",flex:1,fontWeight:600}}>{pend.resumo||"Confirmar?"}</span>
           <button onClick={confirmar} disabled={!!load}
             style={{background:C.accent,color:"#fff",borderRadius:6,padding:"6px 16px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",flexShrink:0}}>
             {load?"…":"✓ Confirmar"}
@@ -8992,7 +8992,7 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
             <span style={{fontSize:11,background:C.borderLight,borderRadius:5,padding:"2px 7px",color:C.textSub,fontWeight:600}}>{fmtDia(item.diaVenc,ehCartao(item))}</span>
             {item.parcTotal>0&&<span style={{fontSize:11,color:C.textMuted}}>{item.parcAtual}/{item.parcTotal} parcelas</span>}
             <span style={{fontSize:10,color:C.textMuted}}>{nomeDestinoRecorrencia(item,data)}</span>
-            {item.tolerancia!=null&&item.tolerancia!==""&&<span style={{fontSize:10,background:"#FEF3C7",color:"#92400E",borderRadius:5,padding:"2px 6px",fontWeight:600}}>
+            {item.tolerancia!=null&&item.tolerancia!==""&&<span style={{fontSize:10,background:"#FEF3E2",color:"#B45309",borderRadius:5,padding:"2px 6px",fontWeight:600}}>
               {Number(item.tolerancia)===0?"não posterga":"posterga até "+item.tolerancia+"d"}
             </span>}
             {item.alias&&<span style={{fontSize:10,background:C.blueLight,color:C.blue,borderRadius:5,padding:"2px 6px",fontWeight:600}}>
@@ -9520,7 +9520,7 @@ function Recorrencias({data,onUpdate}){
         </button>
       </div>}
     </div>
-    {totalRecorr===0&&<div style={{margin:12,padding:10,background:"#FEF3C7",borderRadius:8,fontSize:12,color:"#92400E"}}>
+    {totalRecorr===0&&<div style={{margin:12,padding:10,background:"#FEF3E2",borderRadius:8,fontSize:12,color:"#B45309"}}>
       Aba RECORRENCIAS nao encontrada. Atualize o script e toque Script.
       Abas: {(data.sheets||[]).join(", ")||"—"}
     </div>}
@@ -11657,7 +11657,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         ⚙️ {configCartaoAberta?"Fechar configurações":"Configurações de cartão"}
       </button>
       {configCartaoAberta&&<div style={{background:C.borderLight,borderRadius:10,padding:"12px",textAlign:"left",marginTop:8}}>
-        <div style={{fontSize:9,color:"#92400E",background:"#FEF3C7",borderRadius:6,padding:"6px 8px",marginBottom:10}}>
+        <div style={{fontSize:9,color:"#B45309",background:"#FEF3E2",borderRadius:6,padding:"6px 8px",marginBottom:10}}>
           Nome, conta que paga e dia de fechamento/vencimento agora ficam em <b>Ferramentas → Configurações Gerais → 💳 Cadastro de cartões</b> (não duplicado mais aqui). "Reconstruir do zero" abaixo apaga e reescreve a aba inteira do cartão — única ação de risco desta tela.
         </div>
 
@@ -11701,18 +11701,18 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         {corFaturaAtual===C.orange&&<span style={{fontSize:10,background:C.orangeLight,color:C.orange,padding:"2px 8px",borderRadius:10,fontWeight:700}}>PARCIAL</span>}
         {corFaturaAtual===C.red&&<span style={{fontSize:10,background:"#FEE2E2",color:C.red,padding:"2px 8px",borderRadius:10,fontWeight:700}}>VENCIDA</span>}
         {!corFaturaAtual&&(idxInicial+fatIdx)===idxAberta&&<span style={{fontSize:10,background:C.accentLight,color:C.accent,padding:"2px 8px",borderRadius:10,fontWeight:700}}>ABERTA</span>}
-        {faturaTravada(cartao,faturaAtual.venc,data)&&<span style={{fontSize:10,background:"#DBEAFE",color:"#1E40AF",padding:"2px 8px",borderRadius:10,fontWeight:700,marginLeft:4}}>🔒 TRAVADA</span>}
+        {faturaTravada(cartao,faturaAtual.venc,data)&&<span style={{fontSize:10,background:"#DBEAFE",color:"#2347C5",padding:"2px 8px",borderRadius:10,fontWeight:700,marginLeft:4}}>🔒 TRAVADA</span>}
         {faturaTravada(cartao,faturaAtual.venc,data)&&<div style={{marginTop:6}}>
           <button onClick={destravarFaturaAtual} disabled={loadDestravaFatura}
-            style={{padding:"5px 10px",borderRadius:6,background:"#1E40AF",color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+            style={{padding:"5px 10px",borderRadius:6,background:"#2347C5",color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
             {loadDestravaFatura?"…":"🔓 Destravar esta fatura"}
           </button>
           <button onClick={resincronizarFaturaAtual} disabled={loadResincFatura}
-            style={{padding:"5px 10px",borderRadius:6,background:"transparent",color:"#1E40AF",fontSize:11,fontWeight:700,border:"1px solid #1E40AF",cursor:"pointer",fontFamily:"inherit",marginLeft:6}}>
+            style={{padding:"5px 10px",borderRadius:6,background:"transparent",color:"#2347C5",fontSize:11,fontWeight:700,border:"1px solid #2347C5",cursor:"pointer",fontFamily:"inherit",marginLeft:6}}>
             {loadResincFatura?"…":"🔄 Recalcular total"}
           </button>
           <button onClick={()=>setAjusteAberto(!ajusteAberto)}
-            style={{padding:"5px 10px",borderRadius:6,background:"transparent",color:"#1E40AF",fontSize:11,fontWeight:700,border:"1px solid #1E40AF",cursor:"pointer",fontFamily:"inherit",marginLeft:6}}>
+            style={{padding:"5px 10px",borderRadius:6,background:"transparent",color:"#2347C5",fontSize:11,fontWeight:700,border:"1px solid #2347C5",cursor:"pointer",fontFamily:"inherit",marginLeft:6}}>
             {ajusteAberto?"✕ Cancelar":"+ Ajuste não-OFX"}
           </button>
           {ajusteAberto&&<div style={{marginTop:8,padding:"10px 12px",background:"#EFF6FF",borderRadius:8,textAlign:"left"}}>
@@ -11730,18 +11730,18 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
               <button onClick={()=>setAjusteDirecao("diminui")}
                 style={{flex:1,padding:"8px 6px",borderRadius:20,fontSize:11,fontWeight:700,fontFamily:"inherit",cursor:"pointer",
                   border:"1px solid "+(ajusteDirecao==="diminui"?C.blue:C.border),
-                  background:ajusteDirecao==="diminui"?"#DBEAFE":"#fff",color:ajusteDirecao==="diminui"?"#1E40AF":C.textSub}}>
+                  background:ajusteDirecao==="diminui"?"#DBEAFE":"#fff",color:ajusteDirecao==="diminui"?"#2347C5":C.textSub}}>
                 ⬇ Diminui a fatura
               </button>
               <button onClick={()=>setAjusteDirecao("aumenta")}
                 style={{flex:1,padding:"8px 6px",borderRadius:20,fontSize:11,fontWeight:700,fontFamily:"inherit",cursor:"pointer",
                   border:"1px solid "+(ajusteDirecao==="aumenta"?C.blue:C.border),
-                  background:ajusteDirecao==="aumenta"?"#DBEAFE":"#fff",color:ajusteDirecao==="aumenta"?"#1E40AF":C.textSub}}>
+                  background:ajusteDirecao==="aumenta"?"#DBEAFE":"#fff",color:ajusteDirecao==="aumenta"?"#2347C5":C.textSub}}>
                 ⬆ Aumenta a fatura
               </button>
             </div>
             <button onClick={enviarAjusteFatura} disabled={loadAjuste}
-              style={{width:"100%",padding:"8px",borderRadius:6,background:"#1E40AF",color:"#fff",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+              style={{width:"100%",padding:"8px",borderRadius:6,background:"#2347C5",color:"#fff",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
               {loadAjuste?"…":"Lançar ajuste"}
             </button>
           </div>}
@@ -11756,7 +11756,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
             tocada por essa ação. */}
         {!faturaTravada(cartao,faturaAtual.venc,data)&&<div style={{marginTop:6}}>
           <button onClick={travarFaturaAtual} disabled={loadTravaFatura}
-            style={{padding:"5px 10px",borderRadius:6,background:"transparent",color:"#1E40AF",fontSize:11,fontWeight:700,border:"1px solid #1E40AF",cursor:"pointer",fontFamily:"inherit"}}>
+            style={{padding:"5px 10px",borderRadius:6,background:"transparent",color:"#2347C5",fontSize:11,fontWeight:700,border:"1px solid #2347C5",cursor:"pointer",fontFamily:"inherit"}}>
             {loadTravaFatura?"…":"🔒 Travar esta fatura"}
           </button>
         </div>}
@@ -11844,7 +11844,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
               {!bate&&dif>0.05&&Math.abs(somaFut-dif)<=0.05&&<div style={{fontSize:11,color:"#166534",background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:8,padding:"7px 10px",marginTop:4}}>
                 ✓ A diferença é exatamente a soma dos {futuros.length} previsto(s) para datas futuras. Não há erro: quando o banco lançar, o total fecha.
               </div>}
-              {!bate&&!(dif>0.05&&Math.abs(somaFut-dif)<=0.05)&&Math.abs(Math.round((somaNaoConf+somaFut-somaSoltos-dif)*100)/100)<=0.05&&<div style={{fontSize:11,color:"#92400E",background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:8,padding:"7px 10px",marginTop:4}}>
+              {!bate&&!(dif>0.05&&Math.abs(somaFut-dif)<=0.05)&&Math.abs(Math.round((somaNaoConf+somaFut-somaSoltos-dif)*100)/100)<=0.05&&<div style={{fontSize:11,color:"#B45309",background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:8,padding:"7px 10px",marginTop:4}}>
                 A diferença se explica pelos grupos acima. Resolva os não confirmados / não lançados (parear, lançar ou apagar) e o total fecha.
               </div>}
             </div>
@@ -11937,7 +11937,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           <div style={{color:C.textMuted,fontSize:9}}>PAGO NO PERÍODO (01/{(()=>{const[y,m]=faturaAtual.venc.split("-").map(Number);const mi=m===1?12:m-1;return String(mi).padStart(2,"0");})()} em diante)</div>
           <div style={{color:C.green,fontWeight:800,fontSize:13}}>{fmt(totalPago)}</div>
         </div>
-        <div style={{flex:1,background:totalFalta>0.01?"#FEF3C7":C.borderLight,borderRadius:8,padding:"6px 10px",textAlign:"center"}}>
+        <div style={{flex:1,background:totalFalta>0.01?"#FEF3E2":C.borderLight,borderRadius:8,padding:"6px 10px",textAlign:"center"}}>
           <div style={{color:C.textMuted,fontSize:9}}>FALTA QUITAR</div>
           <div style={{color:totalFalta>0.01?C.orange:C.textMuted,fontWeight:800,fontSize:13}}>{fmt(totalFalta)}</div>
         </div>
@@ -12081,7 +12081,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
             return <React.Fragment key={linhaR!=null?linhaR:i}>
               {cabecalhoData}
               <div id={"cart-item-"+linhaR}
-                style={{background:destacado?"#FEF3C7":"transparent",borderRadius:10,transition:"background 1s"}}>
+                style={{background:destacado?"#FEF3E2":"transparent",borderRadius:10,transition:"background 1s"}}>
                 <SeloPar
                   ofx={{desc:divergencia?divergencia.csv.title:((()=>{try{const bo=JSON.parse(_obsCartaoRaw(r)||"{}").bancoOrig;return bo&&bo.t;}catch(e){return null;}})()||r[1]), valor:divergencia?divergencia.csv.amount:r[2], parcela:divergencia?divergencia.csv.parcela:r[3]}}
                   app={{desc:apelidoAtual||r[1], valor:r[2], categoria:r[5], parcela:r[3]}}
@@ -12147,7 +12147,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           {cabecalhoData}
           <div id={"cart-item-"+linhaR}>
           <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 12px",
-            background:destacado?"#FEF3C7":(previsto?C.borderLight:(r[7]==="PAGO"?C.greenLight:C.surface)),transition:"background 1s",
+            background:destacado?"#FEF3E2":(previsto?C.borderLight:(r[7]==="PAGO"?C.greenLight:C.surface)),transition:"background 1s",
             opacity:previsto?0.85:1,
             borderLeft:previsto?"3px dashed "+C.textMuted:"none",
             borderBottom:"1px solid "+C.borderLight,borderRadius:i===0?10:0}}>
@@ -12255,22 +12255,22 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
       })}
     </div>}
     {travadaFatura&&<div style={{background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:8,padding:"8px 10px",marginBottom:10}}>
-      <div style={{fontSize:11,fontWeight:700,color:"#1E40AF",marginBottom:4}}>🔒 Fatura travada</div>
-      <div style={{fontSize:10,color:"#1E40AF",marginBottom:6}}>Conciliada por completo via OFX — valor, data e apagar ficam bloqueados nesse item. Categoria, alias, apelido e envelope continuam editáveis.</div>
+      <div style={{fontSize:11,fontWeight:700,color:"#2347C5",marginBottom:4}}>🔒 Fatura travada</div>
+      <div style={{fontSize:10,color:"#2347C5",marginBottom:6}}>Conciliada por completo via OFX — valor, data e apagar ficam bloqueados nesse item. Categoria, alias, apelido e envelope continuam editáveis.</div>
       <button onClick={destravar} disabled={loadDestrava}
-        style={{width:"100%",padding:"6px",borderRadius:6,background:"#1E40AF",color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+        style={{width:"100%",padding:"6px",borderRadius:6,background:"#2347C5",color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
         {loadDestrava?"…":"🔓 Destravar esta fatura"}
       </button>
     </div>}
     {!travadaFatura&&itemJaConfirmado&&<div style={{background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:8,padding:"8px 10px",marginBottom:10}}>
-      <div style={{fontSize:11,fontWeight:700,color:"#1E40AF",marginBottom:4}}>🔒 Item confirmado pelo OFX</div>
-      <div style={{fontSize:10,color:"#1E40AF",marginBottom:6}}>Esse item específico já bateu com o CSV/OFX — valor, data e apagar ficam protegidos, mesmo com o resto da fatura ainda aberta. Categoria, alias, apelido e envelope continuam editáveis.</div>
+      <div style={{fontSize:11,fontWeight:700,color:"#2347C5",marginBottom:4}}>🔒 Item confirmado pelo OFX</div>
+      <div style={{fontSize:10,color:"#2347C5",marginBottom:6}}>Esse item específico já bateu com o CSV/OFX — valor, data e apagar ficam protegidos, mesmo com o resto da fatura ainda aberta. Categoria, alias, apelido e envelope continuam editáveis.</div>
       <button onClick={desconfirmarItem} disabled={loadDesconfirma}
-        style={{width:"100%",padding:"6px",borderRadius:6,background:"#1E40AF",color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+        style={{width:"100%",padding:"6px",borderRadius:6,background:"#2347C5",color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
         {loadDesconfirma?"…":"🔓 Desconfirmar este item"}
       </button>
     </div>}
-    {motivo&&motivo.tipo==="divergencia"&&<div style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"8px 10px",marginBottom:10,fontSize:11,color:"#92400E"}}>
+    {motivo&&motivo.tipo==="divergencia"&&<div style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"8px 10px",marginBottom:10,fontSize:11,color:"#B45309"}}>
       <div style={{fontWeight:700,marginBottom:4}}>🟠 Provável mesmo gasto, lançado diferente do CSV:</div>
       <div>CSV: {motivo.dado.csv.date} · {motivo.dado.csv.title} · R$ {motivo.dado.csv.amount}</div>
       {previewCSV&&<div style={{marginTop:6,fontStyle:"italic"}}>Vai virar: "{previewCSV}"{previewCSV.includes("(")?" (nota entre parênteses preservada)":""}</div>}
@@ -12283,13 +12283,13 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
         Nome no extrato logo abaixo -- so que aqui ja existia apelido, so
         precisava reordenar (estava embaixo de tudo). */}
     <div style={{display:"flex",flexDirection:"column",gap:3,marginBottom:8}}>
-      <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME DE EXIBIÇÃO (opcional)</span>
+      <span style={{fontSize:10,color:"#B45309",fontWeight:600,letterSpacing:".05em"}}>NOME DE EXIBIÇÃO (opcional)</span>
       <input value={eApelido} onChange={e=>setEApelido(e.target.value.toUpperCase())}
         placeholder={r[1]}
         style={{padding:"6px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:12,fontFamily:"inherit",background:C.surface}}/>
       {data&&(()=>{const cands=apelidosCandidatos(r[1],data);
         return cands.length>1&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:2}}>
-          <span style={{fontSize:9,color:"#92400E",width:"100%"}}>Esse texto bate com mais de uma regra salva — escolhe qual vale aqui:</span>
+          <span style={{fontSize:9,color:"#B45309",width:"100%"}}>Esse texto bate com mais de uma regra salva — escolhe qual vale aqui:</span>
           {cands.map((c,ci)=><button key={ci} type="button" onClick={()=>setEApelido(c.apelido)}
             style={{fontSize:10,padding:"3px 8px",borderRadius:12,border:"1px solid "+C.accent,background:eApelido===c.apelido?C.accent:"transparent",color:eApelido===c.apelido?"#fff":C.accent,cursor:"pointer",fontFamily:"inherit"}}>
             {c.apelido}
@@ -12299,12 +12299,12 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
     </div>
     <div style={{display:"flex",gap:8,marginBottom:8}}>
       <div style={{display:"flex",flexDirection:"column",gap:3,flex:2}}>
-        <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>NOME NO EXTRATO/CONCILIAÇÃO</span>
+        <span style={{fontSize:10,color:"#B45309",fontWeight:600,letterSpacing:".05em"}}>NOME NO EXTRATO/CONCILIAÇÃO</span>
         <input value={eDesc} onChange={e=>setEDesc(e.target.value.toUpperCase())} disabled={travada}
           style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:13,fontFamily:"inherit",width:"100%",background:travada?C.borderLight:C.surface}}/>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:3,flex:1}}>
-        <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>VALOR</span>
+        <span style={{fontSize:10,color:"#B45309",fontWeight:600,letterSpacing:".05em"}}>VALOR</span>
         <div style={{display:"flex",gap:4}}>
           <button type="button" onClick={()=>setENeg(n=>!n)} disabled={travada}
             style={{width:30,flexShrink:0,borderRadius:6,border:"1px solid "+C.accent,
@@ -12317,7 +12317,7 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
       </div>
     </div>
     <div style={{display:"flex",flexDirection:"column",gap:3,marginBottom:8}}>
-      <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>DATA (da compra/débito real)</span>
+      <span style={{fontSize:10,color:"#B45309",fontWeight:600,letterSpacing:".05em"}}>DATA (da compra/débito real)</span>
       <input type="date" value={eData||""} onChange={e=>setEData(e.target.value)} disabled={travada}
         style={{padding:"6px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:13,fontFamily:"inherit",background:travada?C.borderLight:C.surface}}/>
     </div>
@@ -12333,7 +12333,7 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
       const travadoCategoriaCartao=bucketAtualCartao==="DESPESA FIXA"&&temRecorrenciaCartao;
       const LIVRES_CARTAO=["DCP","EXTRAORDINARIA"];
       return <div style={{display:"flex",flexDirection:"column",gap:3,marginBottom:8}}>
-        <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA{travadoCategoriaCartao&&
+        <span style={{fontSize:10,color:"#B45309",fontWeight:600,letterSpacing:".05em"}}>CATEGORIA{travadoCategoriaCartao&&
           <span style={{marginLeft:6,fontSize:8,background:"#fff",color:C.textMuted,padding:"1px 6px",borderRadius:8,fontWeight:700,letterSpacing:0}}>travada</span>}
         </span>
         <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
@@ -12354,11 +12354,11 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
       </div>;
     })()}
     <div style={{display:"flex",flexDirection:"column",gap:3,marginBottom:8}}>
-      <span style={{fontSize:10,color:"#92400E",fontWeight:600,letterSpacing:".05em"}}>TERMOS ALTERNATIVOS (como o banco pode chamar esse gasto)</span>
+      <span style={{fontSize:10,color:"#B45309",fontWeight:600,letterSpacing:".05em"}}>TERMOS ALTERNATIVOS (como o banco pode chamar esse gasto)</span>
       <input value={eAlias} onChange={e=>setEAlias(e.target.value.toUpperCase())}
         placeholder="ex: CANAIS STREAMING; AMAZON VAREJO"
         style={{padding:"6px 8px",borderRadius:6,border:"1px solid "+C.accent,fontSize:12,fontFamily:"inherit",background:C.surface}}/>
-      <span style={{fontSize:9,color:"#92400E"}}>Separe vários com ";". Ajuda a conciliação a reconhecer o mesmo gasto com nome diferente no CSV.</span>
+      <span style={{fontSize:9,color:"#B45309"}}>Separe vários com ";". Ajuda a conciliação a reconhecer o mesmo gasto com nome diferente no CSV.</span>
     </div>
     {data&&onUpdate&&<SeletorEnvelopeItem aba={abaCartao} row={_linhaCartao(r)} obsAtual={_obsCartaoRaw(r)} data={data} onUpdate={onUpdate}/>}
     {/* [NOVO 28/07] Mesclar com outro lançamento já existente nesta fatura --
@@ -12570,7 +12570,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261011.1500 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261011.1620 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12663,7 +12663,7 @@ function Tesouraria(){
 <script>
 (function(){
   var root=document.getElementById("root");
-  function st(msg){root.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100dvh;flex-direction:column;gap:12px;color:#9CA3AF;font-size:13px"><div style="width:26px;height:26px;border:3px solid #E5E7EB;border-top-color:#D97706;border-radius:50%;animation:spin .8s linear infinite"></div>'+msg+'</div>';}
+  function st(msg){root.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100dvh;flex-direction:column;gap:12px;color:#9CA3AF;font-size:13px"><div style="width:26px;height:26px;border:3px solid #E5E7EB;border-top-color:#B45309;border-radius:50%;animation:spin .8s linear infinite"></div>'+msg+'</div>';}
   function ld(src){return new Promise((res,rej)=>{var s=document.createElement("script");s.src=src;s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
   async function boot(){
     try{
@@ -12684,7 +12684,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261011.1500
+      // HTML v3.20261011.1620
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
