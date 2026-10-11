@@ -24,8 +24,8 @@ button,input,select,textarea{font-family:inherit}
 </style>
 </head>
 <body>
-<div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100dvh;flex-direction:column;gap:12px;color:#9CA3AF;font-size:13px">
-<div style="width:28px;height:28px;border:3px solid #E5E7EB;border-top-color:#B45309;border-radius:50%;animation:spin .8s linear infinite"></div>
+<div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100dvh;flex-direction:column;gap:12px;color:#6B7385;font-size:13px">
+<div style="width:28px;height:28px;border:3px solid #E7E9EE;border-top-color:#B45309;border-radius:50%;animation:spin .8s linear infinite"></div>
 Carregando...</div></div>
 <script type="text/plain" id="app-source">
 // [NOVO 19/07] URL do Web App configuravel, pra permitir que uma copia deste
@@ -43,10 +43,10 @@ function getApiUrl(){
 const C={bg:"#F5F6F8",surface:"#FFF",border:"#E7E9EE",borderLight:"#EEF0F4",
   text:"#0F172A",textSub:"#4A5365",textMuted:"#6B7385",
   accent:"#2347C5",accentLight:"#E8EDFB",
-  red:"#C0352B",redLight:"#FDEEEC",orange:"#C2570C",orangeLight:"#FFF7ED",
-  yellow:"#CA8A04",yellowLight:"#FEFCE8",purple:"#7C3AED",purpleLight:"#F5F3FF",
+  red:"#C0352B",redLight:"#FDEEEC",orange:"#C2570C",orangeLight:"#FEF3E2",
+  yellow:"#B45309",yellowLight:"#FEF3E2",purple:"#7C3AED",purpleLight:"#F5F3FF",
   blue:"#2347C5",blueLight:"#EEF2FD",blueFaint:"#F6F8FE",green:"#0B7A56",greenLight:"#E6F5EE",
-  teal:"#0D9488",tealLight:"#F0FDFA",dark:"#0F1B3D"};
+  teal:"#0F766E",tealLight:"#E6F5EE",dark:"#0F1B3D"};
 // BASAIS agora e calculado dinamicamente (ver Dashboard) a partir das
 // recorrencias DESPESA FIXA ativas + orcamento do DCP -- nao mais um numero
 // fixo digitado uma vez, que ficava defasado assim que um recorrente mudava.
@@ -1381,10 +1381,10 @@ function Chart({pts,zoomX}){
       </defs>
       <g transform={"translate("+PL+","+PT+")"}>
         <rect x={0} y={0}  width={W} height={toY(P2)} fill="#F8FAFF" opacity={0.8}/>
-        <rect x={0} y={toY(P2)} width={W} height={toY(P1)-toY(P2)} fill="#EFF6FF" opacity={0.5}/>
+        <rect x={0} y={toY(P2)} width={W} height={toY(P1)-toY(P2)} fill="#EEF2FD" opacity={0.5}/>
         <rect x={0} y={toY(P1)} width={W} height={iH-toY(P1)} fill="#F5F6F8" opacity={0.8}/>
-        <rect x={0} y={y5} width={W} height={y1-y5} fill="#FFF7ED" opacity={0.4}/>
-        <rect x={0} y={y1} width={W} height={iH-y1} fill="#FEF2F2" opacity={0.5}/>
+        <rect x={0} y={y5} width={W} height={y1-y5} fill="#FEF3E2" opacity={0.4}/>
+        <rect x={0} y={y1} width={W} height={iH-y1} fill="#FDEEEC" opacity={0.5}/>
         {(()=>{
           // Marcadores: pontos chave + referências por segmento
           const marks=[0,1000,5000,10000,20000,40000,60000,80000];
@@ -1399,7 +1399,7 @@ function Chart({pts,zoomX}){
             const isPivot=v===P1||v===P2;
             return <g key={v}>
               <line x1={0} y1={y} x2={W} y2={y}
-                stroke={v===0?"#D1D5DB":isPivot?"#CBD5E1":"#E5E7EB"}
+                stroke={v===0?"#D5DAE4":isPivot?"#CBD5E1":"#E7E9EE"}
                 strokeWidth={v===0?1:isPivot?1:0.5}
                 strokeDasharray={v?"4 5":"none"}/>
               <text x={-6} y={y+4} textAnchor="end" fontSize={9}
@@ -1418,8 +1418,8 @@ function Chart({pts,zoomX}){
           </g>;
         })}
         {/* Linhas de divisão dos segmentos */}
-        <line x1={0} y1={Y1} x2={W} y2={Y1} stroke="#94A3B8" strokeWidth={1} opacity={0.4} strokeDasharray="2 4"/>
-        <line x1={0} y1={Y2} x2={W} y2={Y2} stroke="#94A3B8" strokeWidth={1} opacity={0.4} strokeDasharray="2 4"/>
+        <line x1={0} y1={Y1} x2={W} y2={Y1} stroke="#6B7385" strokeWidth={1} opacity={0.4} strokeDasharray="2 4"/>
+        <line x1={0} y1={Y2} x2={W} y2={Y2} stroke="#6B7385" strokeWidth={1} opacity={0.4} strokeDasharray="2 4"/>
         {(()=>{const idx=pts.findIndex(p=>p.d>=hj);if(idx<=0)return null;const x=toX(idx);return <g>
           <line x1={x} y1={0} x2={x} y2={iH} stroke={C.accent} strokeWidth={1.5} opacity={0.5}/>
           <text x={x+4} y={14} fontSize={8} fill={C.accent} fontWeight="700">hoje</text>
@@ -1431,7 +1431,7 @@ function Chart({pts,zoomX}){
           return <text key={i} x={toX(i)} y={iH+18} textAnchor="middle" fontSize={9} fontWeight={diaChave?700:400} fill={diaChave?C.textSub:C.textMuted}>{fmtD(p.d).slice(0,5)}</text>;})}
         {tip&&(()=>{const p=pts[tip.i],tx=tip.x,ty=tip.y,bW=155,bH=52,bX=tx+bW>W?tx-bW-10:tx+10,bY=Math.max(4,ty-18);
           return <g>
-            <line x1={tx} y1={0} x2={tx} y2={iH} stroke="#D1D5DB" strokeWidth={1} strokeDasharray="3 3"/>
+            <line x1={tx} y1={0} x2={tx} y2={iH} stroke="#D5DAE4" strokeWidth={1} strokeDasharray="3 3"/>
             <rect x={bX} y={bY} width={bW} height={bH} rx={8} fill="#fff" stroke={C.border} strokeWidth={1} style={{filter:"drop-shadow(0 2px 8px rgba(0,0,0,.08))"}}/>
             <text x={bX+10} y={bY+17} fontSize={10} fill={C.textSub}>{fmtD(p.d)}</text>
             <text x={bX+10} y={bY+36} fontSize={14} fontWeight="800" fill={corZChart(p.v)}>{fmt(p.v)}</text>
@@ -1552,7 +1552,7 @@ function CicloCard({fluxo,nome,atual,dcpResumo,basais,data}){
 // [NOVO 12/09, Camada B do DCP] Componente compartilhado -- aparece no
 // Dashboard e na Previsão (mesmo bloco, mesma lógica de aplicar), já que
 // "Sim" no diálogo central leva direto pra Previsão pra ver o detalhe.
-const CORES_NIVEL_DCP={vermelho:{cor:"#991B1B",bg:"#FEE2E2"},laranja:{cor:"#EA580C",bg:"#FFF7ED"},amarelo:{cor:"#854D0E",bg:"#FEFCE8"},verde:{cor:"#16A34A",bg:"#F0FDF4"}};
+const CORES_NIVEL_DCP={vermelho:{cor:"#C0352B",bg:"#FDEEEC"},laranja:{cor:"#EA580C",bg:"#FEF3E2"},amarelo:{cor:"#B45309",bg:"#FEF3E2"},verde:{cor:"#16A34A",bg:"#E6F5EE"}};
 function AvisoEstouroDCP({estouro,onUpdate}){
   const [aplicandoEstouro,setAplicandoEstouro]=useState(false);
   async function aplicarEstouro(){
@@ -1910,7 +1910,7 @@ function EditorEnvelope({data,onUpdate}){
                 placeholder="0,00" style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box"}}/>
             </div>
             <div style={{flex:1}}>
-              <label style={{fontSize:9,color:it.redutivel?C.textMuted:"#D1D5DB"}}>MÍNIMO</label>
+              <label style={{fontSize:9,color:it.redutivel?C.textMuted:"#D5DAE4"}}>MÍNIMO</label>
               <input type="text" inputMode="numeric" value={it.redutivel?it.min:it.max} disabled={!it.redutivel}
                 onChange={e=>atualizarItem(i,"min",formatarMoedaInput(e.target.value))}
                 style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",
@@ -2181,7 +2181,7 @@ function PlanoAmortizacaoDivida({divida,planos,data,onUpdate}){
     if(x.ultimaFlex&&x.nParcelas>1) return (x.nParcelas-1)+" × "+fmt(x.valorParcela)+" + 1 × "+fmt(x.ultimaParcela)+" (a última é flexível)";
     return x.nParcelas+" × "+fmt(x.ultimaParcela);
   };
-  return <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #FDBA74"}}>
+  return <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #F6D9A8"}}>
     <button onClick={()=>setAberto(a=>!a)}
       style={{width:"100%",background:"none",border:"none",textAlign:"left",padding:0,fontSize:10,fontWeight:700,color:C.textMuted,cursor:"pointer",fontFamily:"inherit"}}>
       {aberto?"▼":"▶"} 📅 PROGRAMAR AMORTIZAÇÕES{planoAtivo?" — plano ativo":""}
@@ -2293,7 +2293,7 @@ function EventosDivida({divida,eventos,onUpdate,data}){
     }catch(e){ await falhaDeMutacao(e,onUpdate); }
     setLoad(false);
   }
-  return <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #FDBA74"}}>
+  return <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #F6D9A8"}}>
     <button onClick={()=>setAberto(a=>!a)}
       style={{width:"100%",background:"none",border:"none",textAlign:"left",padding:0,fontSize:10,fontWeight:700,color:C.textMuted,cursor:"pointer",fontFamily:"inherit"}}>
       {aberto?"▼":"▶"} AMORTIZAÇÕES E MARCOS ({eventos.length}) — editar / apagar / importar
@@ -2494,7 +2494,7 @@ function CardDividaPosFixada({divida,onUpdate,data}){
     .map(it=>({data:String(it.data).slice(0,10),tipo:"Amortização programada",deltaAbs:-Math.abs(it.valor),desc:""})):[];
   const futuroDivida=projetarLinhaFutura(divida.saldoAtual,"cdi",taxasDivida,data.config?.CICLO_INICIO,eventosPlano,-1);
 
-  return <div style={{background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:10,padding:10,marginBottom:8}}>
+  return <div style={{background:"#FEF3E2",border:"1px solid #F6D9A8",borderRadius:10,padding:10,marginBottom:8}}>
     <div style={{fontSize:13,fontWeight:700,color:C.text}}>{divida.nome} <span style={{fontWeight:500,color:C.textMuted}}>· correção {divida.percentualCdi}% CDI</span></div>
     <div style={{fontSize:15,fontWeight:800,color:C.accent,marginTop:4}}>{fmt(-divida.saldoAtual)}</div>
     <div style={{fontSize:11,color:C.textMuted,marginTop:2,marginBottom:8}}>
@@ -2531,7 +2531,7 @@ function CardDividaPosFixada({divida,onUpdate,data}){
           </button>
         </div>
       </div>}
-    <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #FDBA74"}}>
+    <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #F6D9A8"}}>
       <div style={{fontSize:10,color:C.textMuted,fontWeight:700,marginBottom:6}}>REGISTRAR AMORTIZAÇÃO</div>
       <FormAmortizarDivida data={data} divida={divida} onUpdate={onUpdate}/>
     </div>
@@ -2785,7 +2785,7 @@ function EmprestimosPassivos({data,onUpdate}){
           </select>
         </div>}
         <button onClick={()=>apagarEmprestimoInteiro(it.desc)} disabled={loadApagarEmp===it.desc}
-          style={{width:"100%",marginTop:6,padding:"5px",borderRadius:6,background:"transparent",color:C.red,fontSize:10,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
+          style={{width:"100%",marginTop:6,padding:"5px",borderRadius:6,background:"transparent",color:C.red,fontSize:10,border:"1px dashed #F3C6C1",cursor:"pointer",fontFamily:"inherit"}}>
           {loadApagarEmp===it.desc?"…":'🗑 Apagar este empréstimo inteiro'}
         </button>
       </div>)}
@@ -2801,7 +2801,7 @@ function EmprestimosPassivos({data,onUpdate}){
               <span>{it.parcAtualReal}/{it.parcTotalReal} parcelas</span>
             </div>
             <button onClick={()=>apagarEmprestimoInteiro(it.desc)} disabled={loadApagarEmp===it.desc}
-              style={{width:"100%",marginTop:6,padding:"5px",borderRadius:6,background:"transparent",color:C.red,fontSize:10,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
+              style={{width:"100%",marginTop:6,padding:"5px",borderRadius:6,background:"transparent",color:C.red,fontSize:10,border:"1px dashed #F3C6C1",cursor:"pointer",fontFamily:"inherit"}}>
               {loadApagarEmp===it.desc?"…":'🗑 Apagar este empréstimo inteiro'}
             </button>
           </div>)}
@@ -3769,7 +3769,7 @@ function EnvelopesCustom({data,onUpdate}){
             <span style={{fontWeight:700,color:estourado?"#B45309":C.green}}>{estourado?"estourou ":"disponível "}{fmt(Math.abs(env.saldo))}</span>
           </div>
         </div>
-        {aberto&&<div style={{background:"#FAFAFA",padding:"4px 0"}}>
+        {aberto&&<div style={{background:"#F5F6F8",padding:"4px 0"}}>
           {env.periodicidade
             ? (!(env.itensAtual||[]).length
                 ? <div style={{padding:"10px 20px",fontSize:12,color:C.textMuted,fontStyle:"italic"}}>Nenhum lançamento classificado neste período ainda.</div>
@@ -3807,7 +3807,7 @@ function EnvelopesCustom({data,onUpdate}){
             {env.periodicidade&&<button onClick={()=>alternarAtivo(env)} disabled={load} style={{flex:1,padding:"7px",borderRadius:6,background:"transparent",color:C.textSub,fontSize:11,fontWeight:700,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
               {env.encerrado?"▶ Reativar":"⏸ Pausar"}
             </button>}
-            <button onClick={()=>apagar(env)} style={{flex:1,padding:"7px",borderRadius:6,background:"transparent",color:C.red,fontSize:11,fontWeight:700,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
+            <button onClick={()=>apagar(env)} style={{flex:1,padding:"7px",borderRadius:6,background:"transparent",color:C.red,fontSize:11,fontWeight:700,border:"1px dashed #F3C6C1",cursor:"pointer",fontFamily:"inherit"}}>
               🗑 Apagar envelope
             </button>
           </div>
@@ -4037,7 +4037,7 @@ function CardCofre({cofre,onUpdate,data}){
     futuroCofre=projetarLinhaFutura(_accCofre,cofre.tipoInvestimento||"cdi",taxasCofre,data.config?.CICLO_INICIO,eventosReaisCofre,1);
   }
 
-  return <div style={{background:C.tealLight,border:"1px solid #99F6E4",borderRadius:10,padding:10,marginBottom:8}}>
+  return <div style={{background:C.tealLight,border:"1px solid #BFE3D2",borderRadius:10,padding:10,marginBottom:8}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
       <div style={{flex:1,minWidth:0}}>
         <div style={{fontSize:13,fontWeight:700,color:C.text}}>🏦 {cofre.nome}</div>
@@ -4153,7 +4153,7 @@ function CardCofre({cofre,onUpdate,data}){
         tracejada + titulo discreto, pedido explicito do Marcus 25/07 pra
         deixar visualmente claro que sao 2 blocos diferentes. */}
     {ehRV&&<>
-      <div style={{borderTop:"1px dashed #99F6E4",margin:"12px 0 8px"}}/>
+      <div style={{borderTop:"1px dashed #BFE3D2",margin:"12px 0 8px"}}/>
       <div style={{fontSize:9,fontWeight:800,color:C.textMuted,letterSpacing:".06em",marginBottom:6}}>PESQUISA E COMPRA DE NOVOS ATIVOS</div>
       <div style={{display:"flex",gap:6,alignItems:"center"}}>
         <input value={papelInput} onChange={e=>setPapelInput(e.target.value.toUpperCase())}
@@ -4201,7 +4201,7 @@ function CardCofre({cofre,onUpdate,data}){
       {ehRV?"Quantidade calculada de valor÷cotação, mas editável.":tipoAcao==="aporte"?"Sai do saldo da conta, fica guardado aqui.":"Volta pro saldo da conta, livre pra qualquer uso."}
     </div>
     <button onClick={apagar} disabled={loadApagar}
-      style={{width:"100%",marginTop:8,padding:"5px",borderRadius:6,background:"transparent",color:C.red,fontSize:10,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
+      style={{width:"100%",marginTop:8,padding:"5px",borderRadius:6,background:"transparent",color:C.red,fontSize:10,border:"1px dashed #F3C6C1",cursor:"pointer",fontFamily:"inherit"}}>
       🗑 Apagar este cofre
     </button>
     <TimelineSaldo historico={historicoCofre} futuro={futuroCofre} corPositivo={C.teal} corNegativo={C.red}/>
@@ -4852,10 +4852,13 @@ function ConciliacaoHub({data,onUpdate,onIrPara}){
       Escolha o que quer conciliar contra o extrato ou fatura real do banco.
     </div>
     {opcoes.map(op=><button key={op.titulo} onClick={op.onClick}
-      style={{width:"100%",padding:14,borderRadius:10,background:C.surface,border:"1px solid "+C.border,
-        marginBottom:10,textAlign:"left",cursor:"pointer",fontFamily:"inherit"}}>
-      <div style={{fontSize:14,fontWeight:700,color:C.text}}>{op.titulo}</div>
-      <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>{op.sub}</div>
+      style={{width:"100%",padding:"16px 18px",minHeight:44,borderRadius:20,background:C.surface,border:"1px solid "+C.border,
+        marginBottom:10,textAlign:"left",cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:12}}>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:15,fontWeight:800,color:C.text}}>{op.titulo}</div>
+        <div style={{fontSize:12,color:C.textSub,marginTop:3,lineHeight:1.35}}>{op.sub}</div>
+      </div>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8A93A6" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{flexShrink:0}}><path d="M9 6l6 6-6 6"/></svg>
     </button>)}
   </div>;
 }
@@ -4876,8 +4879,8 @@ function limparParcelaTitulo(titulo){
 // mesma tela ficam impossiveis de distinguir (mesmo problema achado no
 // protótipo do extrato).
 const PALETA_PARES=[
-  {cor:"#EA580C",bg:"#FFF7ED"},{cor:"#7C3AED",bg:"#F5F3FF"},{cor:"#0D9488",bg:"#F0FDFA"},
-  {cor:"#DB2777",bg:"#FDF2F8"},{cor:"#CA8A04",bg:"#FEFCE8"},
+  {cor:"#EA580C",bg:"#FEF3E2"},{cor:"#7C3AED",bg:"#F5F3FF"},{cor:"#0F766E",bg:"#E6F5EE"},
+  {cor:"#DB2777",bg:"#FDF2F8"},{cor:"#4D7C0F",bg:"#EEF5E1"},
 ];
 function Pilula({children,ativa,editavel,onClick,grande}){
   // [NOVO 03/09, pedido do Marcus] Variante "grande" -- mesma fonte/padding
@@ -4950,12 +4953,12 @@ function rotuloCategoriaPillGrande(cat){
 // SeloPar era sempre cinza neutro, mesmo tamanho pra qualquer categoria --
 // difícil bater o olho e saber o que é o quê numa lista longa.
 const COR_CATEGORIA={
-  "DCP":{cor:"#CA8A04",bg:"#FEFCE8"},
+  "DCP":{cor:"#0E7490",bg:"#E4F4F8"},
   "DESPESA FIXA":{cor:C.red,bg:C.redLight},
   "DIVIDA_PARCELADA":{cor:C.purple,bg:C.purpleLight},
   "DIVIDA_NAO_PARCELADA":{cor:C.purple,bg:C.purpleLight},
   "EXTRAORDINARIA":{cor:C.orange,bg:C.orangeLight},
-  "IMPOSTO":{cor:"#991B1B",bg:C.redLight},
+  "IMPOSTO":{cor:"#C0352B",bg:C.redLight},
   "INVESTIMENTO":{cor:C.teal,bg:C.tealLight},
   "TRANSFERENCIA":{cor:C.accent,bg:C.accentLight},
   "RECEITA":{cor:C.green,bg:C.greenLight},
@@ -5135,7 +5138,7 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
         else if(row){ setEditando(true); }
       }} style={{
       display:"flex",alignItems:"center",gap:6,padding:"9px 12px",
-      background:editando?"#EFF6FF":C.surface,borderRadius:"10px 10px 0 0",
+      background:editando?"#EEF2FD":C.surface,borderRadius:"10px 10px 0 0",
       border:"1px solid "+(editando?C.blue:C.border),borderBottom:"none",
       cursor:row?"pointer":"default",boxSizing:"border-box",
     }}>
@@ -5160,7 +5163,7 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
         banco sao verdade do OFX) */}
     <div style={{
       display:"flex",flexDirection:"column",gap:3,
-      padding:"6px 12px",background:"#EFF6FF",
+      padding:"6px 12px",background:"#EEF2FD",
       border:"1px solid "+C.border,borderTop:"none",borderBottom:editando?"none":"1px solid "+C.border,
       borderRadius:editando?0:"0 0 10px 10px",boxSizing:"border-box",
     }}>
@@ -5188,7 +5191,7 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
     </div>
 
     {/* envelope -- linha propria, so quando editando */}
-    {editando&&(tipo==="cartao"||tipo==="extrato")&&envelopes.length>0&&<div style={{border:"1px solid "+C.blue,borderTop:"none",padding:"6px 10px",background:"#EFF6FF"}}>
+    {editando&&(tipo==="cartao"||tipo==="extrato")&&envelopes.length>0&&<div style={{border:"1px solid "+C.blue,borderTop:"none",padding:"6px 10px",background:"#EEF2FD"}}>
       <select value={envelopeEdit} onChange={e=>setEnvelopeEdit(e.target.value)}
         style={{width:"100%",fontSize:10.5,padding:"4px 6px",borderRadius:5,border:"1px solid "+C.border,color:C.textSub,background:"#fff",fontFamily:"inherit",boxSizing:"border-box"}}>
         <option value="">Envelope: nenhum</option>
@@ -5197,7 +5200,7 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
     </div>}
 
     {/* categoria + acoes -- so quando editando, tudo numa linha */}
-    {editando&&<div style={{border:"1px solid "+C.blue,borderTop:"none",borderRadius:"0 0 8px 8px",padding:"7px 10px",background:"#EFF6FF"}}>
+    {editando&&<div style={{border:"1px solid "+C.blue,borderTop:"none",borderRadius:"0 0 8px 8px",padding:"7px 10px",background:"#EEF2FD"}}>
       <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
         {categoriasPorSinal(app.valor).map(c=><Pilula key={c} grande editavel ativa={categoriaEdit===c} onClick={()=>setCategoriaEdit(c)}>{rotuloCategoriaPillGrande(c)}</Pilula>)}
       </div>
@@ -5307,7 +5310,7 @@ function LinhaOfxIsoladaCartao({item,numero,selecionado,onClick,onCriarPrevia}){
   return <div style={{width:"90%",marginRight:"auto",marginBottom:6}}>
     <div onClick={onClick} style={{
       display:"flex",alignItems:"center",gap:6,padding:"8px 10px",flexWrap:expandido?"wrap":"nowrap",
-      background:cor?cor.bg:(selecionado?"#EFF6FF":C.redLight),
+      background:cor?cor.bg:(selecionado?"#EEF2FD":C.redLight),
       border:"1px solid "+(cor?cor.cor:(selecionado?C.blue:C.red)),
       borderRadius:8,boxSizing:"border-box",cursor:"pointer",
     }}>
@@ -5340,7 +5343,7 @@ function LinhaOfxIsoladaCartao({item,numero,selecionado,onClick,onCriarPrevia}){
 // o botão "Mesclar" roda (lancarCartao, criação+confirmação numa chamada
 // só).
 function PreviaAppCartao({item,previa,numero,envelopes,despesasFixas,ocorrenciasProgramadasDe,onMudar,onDesvincular}){
-  const cor=numero?PALETA_PARES[(numero-1)%PALETA_PARES.length]:{cor:C.blue,bg:"#EFF6FF"};
+  const cor=numero?PALETA_PARES[(numero-1)%PALETA_PARES.length]:{cor:C.blue,bg:"#EEF2FD"};
   return <div style={{width:"90%",marginLeft:"auto",marginBottom:6}}>
     <div style={{
       display:"flex",alignItems:"center",gap:6,padding:"8px 10px",
@@ -5372,9 +5375,9 @@ function PreviaAppCartao({item,previa,numero,envelopes,despesasFixas,ocorrencias
             igual ao resto do sistema usa pra DCP, pra ficar claro que é
             um caminho diferente do normal (Receita/Depósito). */}
         {item.amount<0&&<button type="button" onClick={()=>onMudar({...previa,categoria:"DCP"})}
-          style={{padding:"5px 10px",borderRadius:16,fontSize:11,fontWeight:700,border:"1px solid #EAB308",cursor:"pointer",
-            background:previa.categoria==="DCP"?"#EAB308":"#FEFCE8",
-            color:previa.categoria==="DCP"?"#fff":"#854D0E"}}>
+          style={{padding:"5px 10px",borderRadius:16,fontSize:11,fontWeight:700,border:"1px solid #B45309",cursor:"pointer",
+            background:previa.categoria==="DCP"?"#B45309":"#FEF3E2",
+            color:previa.categoria==="DCP"?"#fff":"#B45309"}}>
           Devolver pro DCP da semana
         </button>}
       </div>
@@ -5453,7 +5456,7 @@ function PreviaAppCartao({item,previa,numero,envelopes,despesasFixas,ocorrencias
 // só pra acomodar campos que ele nunca usa. Mesmo contrato de "nunca salva
 // sozinha" -- só grava quando Mesclar roda.
 function PreviaAppExtrato({n,previa,numero,envelopes,contas,cartoes,data,despesasFixas,ocorrenciasProgramadasDe,onMudar,onDesvincular,contaExtrato}){
-  const cor=numero?PALETA_PARES[(numero-1)%PALETA_PARES.length]:{cor:C.blue,bg:"#EFF6FF"};
+  const cor=numero?PALETA_PARES[(numero-1)%PALETA_PARES.length]:{cor:C.blue,bg:"#EEF2FD"};
   return <div style={{width:"90%",marginLeft:"auto",marginBottom:6}}>
     <div style={{
       display:"flex",alignItems:"center",gap:6,padding:"8px 10px",
@@ -5622,7 +5625,7 @@ function LinhaAppIsoladaCartao({aguardando,numero,selecionado,onClickParear,onEx
   // lugar/largura do lado banco, pra alinhar visualmente entre as duas.
   return <div onClick={futuro?undefined:onClickParear} style={{
     display:"flex",alignItems:"center",gap:6,padding:"8px 10px",flexWrap:expandido?"wrap":"nowrap",
-    background:futuro?C.borderLight:(cor?cor.bg:(selecionado?"#EFF6FF":C.redLight)),
+    background:futuro?C.borderLight:(cor?cor.bg:(selecionado?"#EEF2FD":C.redLight)),
     border:"1px "+(futuro?"dashed "+C.textMuted:"solid "+(cor?cor.cor:(selecionado?C.blue:C.red))),
     borderRadius:8,width:"90%",marginLeft:"auto",boxSizing:"border-box",cursor:futuro?"default":"pointer",
     opacity:futuro?0.8:1,
@@ -6328,7 +6331,7 @@ function ConciliarExtratoTab({data,onUpdate}){
           <div style={{fontSize:13,fontWeight:700,color:"#B45309",marginBottom:4}}>
             ⚠️ Saldo não bate em {fmtD(cs.data)}
           </div>
-          <div style={{fontSize:11,color:"#78350F",marginBottom:8}}>
+          <div style={{fontSize:11,color:"#B45309",marginBottom:8}}>
             Banco: {fmt(cs.saldoBanco)} · App: {fmt(saldoAppAj)}{ajusteRend>0&&" (já com o rendimento do mês)"} · Diferença: {fmt(diferencaAj)}
           </div>
           {(()=>{
@@ -6336,7 +6339,7 @@ function ConciliarExtratoTab({data,onUpdate}){
             // nunca cria lançamento. Substitui "candidatos" e o botão de ajuste.
             const dg=cs.diagnostico;
             const diaAntes=(iso)=>{ const d=_dataLocalSegura(iso); d.setDate(d.getDate()-1); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
-            const caixa={fontSize:11,color:"#78350F",background:"#FFFBEB",borderRadius:6,padding:"8px 10px",lineHeight:1.5};
+            const caixa={fontSize:11,color:"#B45309",background:"#FEF3E2",borderRadius:6,padding:"8px 10px",lineHeight:1.5};
             if(!dg||dg.arquivoIncompleto||!dg.abertura) return <div style={caixa}>Não consegui localizar a origem da diferença com esse arquivo (precisa ser um OFX completo).</div>;
             if(dg.erroAnterior){
               const mudou=Math.abs(Math.abs(Number(diferencaAj)||0)-Math.abs(Number(dg.abertura.diferenca)||0))>0.06;
@@ -6412,7 +6415,7 @@ function ConciliarExtratoTab({data,onUpdate}){
           <div style={{fontSize:11,fontWeight:700,color:"#B45309",marginBottom:6,letterSpacing:".05em"}}>
             ⚠️ POSSÍVEL CLASSIFICAÇÃO ERRADA ({comAviso.length})
           </div>
-          {comAviso.map(c=><div key={c.row} style={{background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:8,padding:"10px 12px",marginBottom:6}}>
+          {comAviso.map(c=><div key={c.row} style={{background:"#FEF3E2",border:"1px solid #F6D9A8",borderRadius:8,padding:"10px 12px",marginBottom:6}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
               <span style={{fontSize:13,fontWeight:600,color:C.text}}>{c.item.descricao}</span>
               <span style={{fontSize:13,fontWeight:700,color:C.red}}>{fmt(c.item.valor)}</span>
@@ -6767,7 +6770,7 @@ function BotaoFaseCNomenclatura(){
   }
   if(feito)return null;
   return <button onClick={rodar} disabled={loading}
-    style={{width:"100%",padding:"8px",borderRadius:10,background:"#DBEAFE",color:"#2347C5",border:"1px dashed #93C5FD",fontSize:11,fontWeight:700,cursor:loading?"default":"pointer",fontFamily:"inherit"}}>
+    style={{width:"100%",padding:"8px",borderRadius:10,background:"#E8EDFB",color:"#2347C5",border:"1px dashed #93C5FD",fontSize:11,fontWeight:700,cursor:loading?"default":"pointer",fontFamily:"inherit"}}>
     {loading?"…":"🔵 Reforma de nomenclatura — Fase C, campos de nome automático (1x)"}
   </button>;
 }
@@ -6872,9 +6875,9 @@ function DCPTab({data,onUpdate,onIrPara}){
             </div>
           </div>
           {aberto&&<div>
-            {!transacoes.length&&<div style={{padding:"12px 20px",fontSize:12,color:C.textMuted,fontStyle:"italic",background:"#FAFAFA"}}>Nenhum lançamento contabilizado aqui ainda.</div>}
+            {!transacoes.length&&<div style={{padding:"12px 20px",fontSize:12,color:C.textMuted,fontStyle:"italic",background:"#F5F6F8"}}>Nenhum lançamento contabilizado aqui ainda.</div>}
             {transacoes.map(t=><div key={t.origem+"-"+t.row} onClick={()=>irParaLancamento(t)}
-              style={{display:"flex",alignItems:"center",gap:8,padding:"8px 14px 8px 26px",borderBottom:"1px solid "+C.borderLight,background:"#FAFAFA",cursor:"pointer"}}>
+              style={{display:"flex",alignItems:"center",gap:8,padding:"8px 14px 8px 26px",borderBottom:"1px solid "+C.borderLight,background:"#F5F6F8",cursor:"pointer"}}>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:12,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
                   {t.descricao}{t.parcelas>1&&<span style={{color:C.accent,fontWeight:800}}> ({t.parcelas}x)</span>}
@@ -7099,7 +7102,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
   })();
 
   return <div style={{background:execMode?C.greenLight:C.accentLight,padding:"10px 14px",
-    borderBottom:"1px solid "+(execMode?"#BBF7D0":C.accent),
+    borderBottom:"1px solid "+(execMode?"#BFE3D2":C.accent),
     borderLeft:"3px solid "+(execMode?C.green:C.accent)}}>
     {parInfo&&(()=>{
       if(parInfo.par){
@@ -7197,20 +7200,20 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
     </div>}
     <div style={{display:"flex",gap:8,marginBottom:8}}>
       <div style={{display:"flex",flexDirection:"column",gap:3,flex:1}}>
-        <span style={{fontSize:10,color:execMode?"#166534":"#B45309",fontWeight:600,letterSpacing:".05em"}}>{execMode?"DATA DE EXECUÇÃO":"NOVA DATA"}</span>
+        <span style={{fontSize:10,color:execMode?"#0B7A56":"#B45309",fontWeight:600,letterSpacing:".05em"}}>{execMode?"DATA DE EXECUÇÃO":"NOVA DATA"}</span>
         <input type="date" value={dt} onChange={e=>setDt(e.target.value)}
-          style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+(execMode?"#86EFAC":C.accent),fontSize:13,fontFamily:"inherit",width:"100%"}}/>
+          style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+(execMode?"#BFE3D2":C.accent),fontSize:13,fontFamily:"inherit",width:"100%"}}/>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:3,flex:1}}>
-        <span style={{fontSize:10,color:execMode?"#166534":"#B45309",fontWeight:600,letterSpacing:".05em"}}>VALOR</span>
+        <span style={{fontSize:10,color:execMode?"#0B7A56":"#B45309",fontWeight:600,letterSpacing:".05em"}}>VALOR</span>
         <div style={{display:"flex",gap:4}}>
           <button type="button" onClick={()=>setNeg(n=>!n)}
-            style={{width:30,flexShrink:0,borderRadius:6,border:"1px solid "+(execMode?"#86EFAC":C.accent),
+            style={{width:30,flexShrink:0,borderRadius:6,border:"1px solid "+(execMode?"#BFE3D2":C.accent),
               background:neg?C.redLight:C.blueLight,color:neg?C.red:C.blue,fontWeight:800,fontSize:14,cursor:"pointer"}}>
             {neg?"−":"+"}
           </button>
           <input type="text" inputMode="numeric" value={val} onChange={e=>setVal(formatarMoedaInput(e.target.value))}
-            style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+(execMode?"#86EFAC":C.accent),fontSize:13,textAlign:"right",width:"100%"}}/>
+            style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+(execMode?"#BFE3D2":C.accent),fontSize:13,textAlign:"right",width:"100%"}}/>
         </div>
       </div>
     </div>
@@ -7253,7 +7256,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
       </button>
     </div>}
     <div style={{display:"flex",gap:8,alignItems:"center"}}>
-      <span style={{flex:1,fontSize:11,color:execMode?"#166534":"#B45309"}}>
+      <span style={{flex:1,fontSize:11,color:execMode?"#0B7A56":"#B45309"}}>
         {item.status==="EXECUTADO"?"":execMode?"→ Vai para o Histórico":"→ Permanece no Fluxo com nova data"}
       </span>
       <button onClick={confirmar} disabled={!!load}
@@ -7338,7 +7341,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
     {item.valor<0&&item.categoria!=="DCP_PROVISAO"&&String(item.obs||"").indexOf("FONTE_RECEITA")<0&&
       <SeletorEnvelopeItem aba="FLUXO" row={item.row} obsAtual={item.obs} data={data} onUpdate={onUpdate}/>}
     {ehFatura&&<button onClick={async()=>{setLoad(true);try{onUpdate(await api({action:"mesclarFaturaComSeguinte",row:item.row}));}catch(e){alert(e.message);}setLoad(false);onClose&&onClose();}} disabled={!!load}
-      style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:"#B45309",fontSize:11,border:"1px dashed #FED7AA",cursor:"pointer",fontFamily:"inherit"}}>
+      style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:"#B45309",fontSize:11,border:"1px dashed #F6D9A8",cursor:"pointer",fontFamily:"inherit"}}>
       🔀 Em vez disso, somar esse valor direto na próxima fatura
     </button>}
     {(()=>{
@@ -7381,7 +7384,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
           com dívida).
         </div>
         <button onClick={apagar} disabled={!!load}
-          style={{width:"100%",padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:11,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
+          style={{width:"100%",padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:11,border:"1px dashed #F3C6C1",cursor:"pointer",fontFamily:"inherit"}}>
           🗑 Apagar este restante fantasma
         </button>
       </div>;
@@ -7408,12 +7411,12 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
         {bucket==="DESPESA FIXA"&&temRecorrenciaAtiva&&<button onClick={()=>{
             if(confirm('"'+item.descricao+'" ('+fmt(item.valor)+', '+fmtD(item.data)+') é mesmo uma duplicata? Isso apaga só ESTA ocorrência, sem mexer nas outras nem na recorrência -- não dá pra desfazer.')) apagar();
           }} disabled={!!load}
-          style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:10,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
+          style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:10,border:"1px dashed #F3C6C1",cursor:"pointer",fontFamily:"inherit"}}>
           🗑 É uma duplicata? Apagar só esta ocorrência
         </button>}
       </div>;
       return <button onClick={apagar} disabled={!!load}
-        style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:11,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
+        style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:11,border:"1px dashed #F3C6C1",cursor:"pointer",fontFamily:"inherit"}}>
         🗑 Apagar este lançamento
       </button>;
     })()}
@@ -7434,7 +7437,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
         const nomeAba=bucket==="PAGAMENTO_EMPRESTIMO"?"Empréstimos":"Despesas Fixas";
         return <button onClick={()=>travadoApagarTodos?(onIrPara&&onIrPara({tab:destino})):apagarTodosComEssaDescricao()} disabled={!!load}
           style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",
-            color:travadoApagarTodos?C.blue:C.red,fontSize:10,border:"1px dashed "+(travadoApagarTodos?C.blue:"#FECACA"),cursor:"pointer",fontFamily:"inherit"}}>
+            color:travadoApagarTodos?C.blue:C.red,fontSize:10,border:"1px dashed "+(travadoApagarTodos?C.blue:"#F3C6C1"),cursor:"pointer",fontFamily:"inherit"}}>
           {travadoApagarTodos?("🔁 Ir pra "+nomeAba+" pra apagar"):('🗑 Apagar TODOS os "'+item.descricao+'" futuros (Fluxo)')}
         </button>;
       })()}
@@ -7717,12 +7720,12 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
           style={{background:"none",border:"none",fontSize:16,cursor:"pointer",padding:4,lineHeight:1,flexShrink:0}} title="Ver Cofres">🏦</button>:null}>
       {ehPrimeiro&&mostrarCofres&&(data.cofres||[]).length>0&&(()=>{
         const totalCofres=(data.cofres||[]).reduce((s,c)=>s+c.saldo,0);
-        return <div style={{background:C.tealLight,padding:"10px 14px",borderBottom:"1px solid #99F6E4"}}>
+        return <div style={{background:C.tealLight,padding:"10px 14px",borderBottom:"1px solid #BFE3D2"}}>
           <div style={{fontSize:10,fontWeight:800,color:C.teal,letterSpacing:".05em",marginBottom:6}}>🏦 SEUS COFRES</div>
           {(data.cofres||[]).map(c=><div key={c.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,color:C.text,padding:"2px 0"}}>
             <span>{c.nome}</span><span style={{fontWeight:700}}>{fmt(c.saldo)}</span>
           </div>)}
-          <div style={{borderTop:"1px solid #99F6E4",marginTop:6,paddingTop:6}}>
+          <div style={{borderTop:"1px solid #BFE3D2",marginTop:6,paddingTop:6}}>
             <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:C.textMuted}}>
               <span>Saldo na conta (já mostrado acima)</span><span>{fmt(sp)}</span>
             </div>
@@ -8885,7 +8888,7 @@ function Conversar({data,onUpdate,initTxt,onInitDone,msgs,setMsgs}){
             <span style={{fontSize:12,fontWeight:700,color:C.textSub,flex:1}}>Fechar conciliação — cartão {pendConc.cartao}</span>
             <button onClick={()=>setPendConc(null)} style={{background:C.borderLight,color:C.textSub,borderRadius:6,padding:"4px 9px",fontSize:12,border:"none",cursor:"pointer"}}>✕</button>
           </div>
-          {pendConc.divergencias.map(d=><div key={"d"+d.planilha.row} style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"8px 10px",marginBottom:6}}>
+          {pendConc.divergencias.map(d=><div key={"d"+d.planilha.row} style={{background:"#FEF3E2",border:"1px solid #F6D9A8",borderRadius:8,padding:"8px 10px",marginBottom:6}}>
             <div style={{fontSize:11,color:"#B45309",fontWeight:700,marginBottom:4}}>🟠 possível mesmo gasto, lançado diferente</div>
             <div style={{fontSize:12,color:C.text}}>CSV: {d.csv.date} · {d.csv.title} · R$ {d.csv.amount}</div>
             <div style={{fontSize:12,color:C.textSub,marginBottom:6}}>Planilha: {d.planilha.dataCompra} · {d.planilha.desc} · R$ {Math.abs(d.planilha.valor)}</div>
@@ -8900,8 +8903,8 @@ function Conversar({data,onUpdate,initTxt,onInitDone,msgs,setMsgs}){
               </button>
             </div>
           </div>)}
-          {pendConc.aguardando.map(a=><div key={"a"+a.row} style={{background:"#FEFCE8",border:"1px solid #FEF08A",borderRadius:8,padding:"8px 10px",marginBottom:6}}>
-            <div style={{fontSize:11,color:"#854D0E",fontWeight:700,marginBottom:4}}>🟡 na planilha, ainda não apareceu no CSV</div>
+          {pendConc.aguardando.map(a=><div key={"a"+a.row} style={{background:"#FEF3E2",border:"1px solid #F6D9A8",borderRadius:8,padding:"8px 10px",marginBottom:6}}>
+            <div style={{fontSize:11,color:"#B45309",fontWeight:700,marginBottom:4}}>🟡 na planilha, ainda não apareceu no CSV</div>
             <div style={{fontSize:12,color:C.text,marginBottom:6}}>{a.dataCompra} · {a.desc} · R$ {Math.abs(a.valor)}</div>
             <div style={{display:"flex",gap:6}}>
               <button onClick={()=>resolverAguardando(a,"manter")} disabled={!!load}
@@ -8936,7 +8939,7 @@ function Conversar({data,onUpdate,initTxt,onInitDone,msgs,setMsgs}){
         <button onClick={()=>{if(window.confirm("Limpar histórico?")){setMsgs([]);try{localStorage.removeItem("t_chat");}catch{}}}} style={{background:C.borderLight,borderRadius:8,padding:"8px 10px",fontSize:14,color:C.textMuted,border:"none",cursor:"pointer"}}>🗑</button>
         <div style={{flex:1}}/>
         <button onClick={()=>send()} disabled={load||!input.trim()}
-          style={{background:input.trim()?C.accent:"#E5E7EB",color:input.trim()?"#fff":C.textMuted,borderRadius:8,padding:"8px 18px",fontSize:14,fontWeight:600,border:"none",cursor:"pointer"}}>→</button>
+          style={{background:input.trim()?C.accent:"#E7E9EE",color:input.trim()?"#fff":C.textMuted,borderRadius:8,padding:"8px 18px",fontSize:14,fontWeight:600,border:"none",cursor:"pointer"}}>→</button>
       </div>
       <textarea ref={inputRef} value={input} onChange={e=>setInput(e.target.value)}
         onKeyDown={e=>{if(e.key==="Enter"&&e.ctrlKey){e.preventDefault();send();}}}
@@ -9149,7 +9152,7 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
           </button>
         </div>
         <button onClick={()=>apagar(item)} disabled={load}
-          style={{width:"100%",marginTop:8,padding:"6px",borderRadius:8,background:"transparent",color:C.red,fontSize:11,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
+          style={{width:"100%",marginTop:8,padding:"6px",borderRadius:8,background:"transparent",color:C.red,fontSize:11,border:"1px dashed #F3C6C1",cursor:"pointer",fontFamily:"inherit"}}>
           🗑 Apagar esta recorrência
         </button>
         {/* [NOVO 03/10, pedido do Marcus] Só aparece pra quem já está
@@ -10445,7 +10448,7 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido, onVinculado, onNovaLinh
     setLoad(false);
   }
 
-  return <div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,padding:"10px 12px",marginBottom:8}}>
+  return <div style={{background:"#FDEEEC",border:"1px solid #F3C6C1",borderRadius:10,padding:"10px 12px",marginBottom:8}}>
     <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
       <input type="checkbox" checked={incluir} onChange={e=>setIncluir(e.target.checked)}/>
       <span style={{fontSize:11,color:C.textSub}}>Incluir no "Lançar todos"</span>
@@ -11714,9 +11717,9 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
         <div style={{fontSize:16,fontWeight:800,color:corFaturaAtual||C.accent}}>{fmtD(faturaAtual.venc)}</div>
         {corFaturaAtual===C.green&&<span style={{fontSize:10,background:C.greenLight,color:C.green,padding:"2px 8px",borderRadius:10,fontWeight:700}}>PAGA</span>}
         {corFaturaAtual===C.orange&&<span style={{fontSize:10,background:C.orangeLight,color:C.orange,padding:"2px 8px",borderRadius:10,fontWeight:700}}>PARCIAL</span>}
-        {corFaturaAtual===C.red&&<span style={{fontSize:10,background:"#FEE2E2",color:C.red,padding:"2px 8px",borderRadius:10,fontWeight:700}}>VENCIDA</span>}
+        {corFaturaAtual===C.red&&<span style={{fontSize:10,background:"#FDEEEC",color:C.red,padding:"2px 8px",borderRadius:10,fontWeight:700}}>VENCIDA</span>}
         {!corFaturaAtual&&(idxInicial+fatIdx)===idxAberta&&<span style={{fontSize:10,background:C.accentLight,color:C.accent,padding:"2px 8px",borderRadius:10,fontWeight:700}}>ABERTA</span>}
-        {faturaTravada(cartao,faturaAtual.venc,data)&&<span style={{fontSize:10,background:"#DBEAFE",color:"#2347C5",padding:"2px 8px",borderRadius:10,fontWeight:700,marginLeft:4}}>🔒 TRAVADA</span>}
+        {faturaTravada(cartao,faturaAtual.venc,data)&&<span style={{fontSize:10,background:"#E8EDFB",color:"#2347C5",padding:"2px 8px",borderRadius:10,fontWeight:700,marginLeft:4}}>🔒 TRAVADA</span>}
         {faturaTravada(cartao,faturaAtual.venc,data)&&<div style={{marginTop:6}}>
           <button onClick={destravarFaturaAtual} disabled={loadDestravaFatura}
             style={{padding:"5px 10px",borderRadius:6,background:"#2347C5",color:"#fff",fontSize:11,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
@@ -11730,7 +11733,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
             style={{padding:"5px 10px",borderRadius:6,background:"transparent",color:"#2347C5",fontSize:11,fontWeight:700,border:"1px solid #2347C5",cursor:"pointer",fontFamily:"inherit",marginLeft:6}}>
             {ajusteAberto?"✕ Cancelar":"+ Ajuste não-OFX"}
           </button>
-          {ajusteAberto&&<div style={{marginTop:8,padding:"10px 12px",background:"#EFF6FF",borderRadius:8,textAlign:"left"}}>
+          {ajusteAberto&&<div style={{marginTop:8,padding:"10px 12px",background:"#EEF2FD",borderRadius:8,textAlign:"left"}}>
             <div style={{fontSize:10,color:C.textMuted,marginBottom:8,lineHeight:1.4}}>
               Pra ajuste que o próprio banco aplica sem nunca aparecer em CSV/OFX
               (ex: "Pagamento antecipado" sem data, visível só no app do Nu).
@@ -11745,13 +11748,13 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
               <button onClick={()=>setAjusteDirecao("diminui")}
                 style={{flex:1,padding:"8px 6px",borderRadius:20,fontSize:11,fontWeight:700,fontFamily:"inherit",cursor:"pointer",
                   border:"1px solid "+(ajusteDirecao==="diminui"?C.blue:C.border),
-                  background:ajusteDirecao==="diminui"?"#DBEAFE":"#fff",color:ajusteDirecao==="diminui"?"#2347C5":C.textSub}}>
+                  background:ajusteDirecao==="diminui"?"#E8EDFB":"#fff",color:ajusteDirecao==="diminui"?"#2347C5":C.textSub}}>
                 ⬇ Diminui a fatura
               </button>
               <button onClick={()=>setAjusteDirecao("aumenta")}
                 style={{flex:1,padding:"8px 6px",borderRadius:20,fontSize:11,fontWeight:700,fontFamily:"inherit",cursor:"pointer",
                   border:"1px solid "+(ajusteDirecao==="aumenta"?C.blue:C.border),
-                  background:ajusteDirecao==="aumenta"?"#DBEAFE":"#fff",color:ajusteDirecao==="aumenta"?"#2347C5":C.textSub}}>
+                  background:ajusteDirecao==="aumenta"?"#E8EDFB":"#fff",color:ajusteDirecao==="aumenta"?"#2347C5":C.textSub}}>
                 ⬆ Aumenta a fatura
               </button>
             </div>
@@ -11794,12 +11797,12 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
       const cf={...cf0,totalApp:totalFatura,diferenca:Math.round((totalFatura-cf0.totalBanco)*100)/100};
       cf.batem=Math.abs(cf.diferenca)<=0.05&&cf0.arquivoIntegro!==false;
       const bate=cf.batem;
-      return <Card style={{marginBottom:10,padding:"12px 16px",background:bate?"#F0FDF4":"#FEF2F2",border:"1px solid "+(bate?"#BBF7D0":"#FECACA")}}>
-        <div style={{fontSize:11,fontWeight:800,color:bate?"#166534":"#B91C1C",marginBottom:6}}>
+      return <Card style={{marginBottom:10,padding:"12px 16px",background:bate?"#E6F5EE":"#FDEEEC",border:"1px solid "+(bate?"#BFE3D2":"#F3C6C1")}}>
+        <div style={{fontSize:11,fontWeight:800,color:bate?"#0B7A56":"#C0352B",marginBottom:6}}>
           {bate?"✅ Total confere com o banco":"⚠️ Total do app diferente do banco"}
         </div>
         {cf0.fechadaConfiavel&&<div style={{fontSize:10,color:C.textSub,marginBottom:6}}>🔒 Fatura fechada pelo banco (arquivo gerado depois do fechamento — não muda mais).</div>}
-        {cf0.arquivoIntegro===false&&<div style={{fontSize:10,color:"#B91C1C",marginBottom:6}}>O total declarado pelo banco ({fmt(cf0.totalDeclarado)}) não bate com a soma das linhas do arquivo ({fmt(cf0.totalLinhasBanco)}): arquivo incompleto ou fatura ainda aberta.</div>}
+        {cf0.arquivoIntegro===false&&<div style={{fontSize:10,color:"#C0352B",marginBottom:6}}>O total declarado pelo banco ({fmt(cf0.totalDeclarado)}) não bate com a soma das linhas do arquivo ({fmt(cf0.totalLinhasBanco)}): arquivo incompleto ou fatura ainda aberta.</div>}
         {/* [REDESENHADO 10/10, pedido do Marcus] Conferência em linguagem de
             extrato: fatura prevista, confirmado pelo banco até a data do OFX,
             previsto pra datas futuras, não confirmados pelo banco e não
@@ -11855,11 +11858,11 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
               {soltos.length>0&&<div style={{fontSize:9,color:C.textMuted,marginTop:4}}>O "+ lançar" cria a contraparte já pareada com a linha do banco; depois é só mesclar na lista abaixo.</div>}
             </Sec>
             <div style={{borderTop:"1px solid "+C.border,paddingTop:6,marginTop:2}}>
-              <Linha rotulo="Diferença (app − banco)" sub={bate?null:"= não confirmados + futuros − não lançados"} valor={fmt(dif)} forte cor={bate?C.green:"#B91C1C"}/>
-              {!bate&&dif>0.05&&Math.abs(somaFut-dif)<=0.05&&<div style={{fontSize:11,color:"#166534",background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:8,padding:"7px 10px",marginTop:4}}>
+              <Linha rotulo="Diferença (app − banco)" sub={bate?null:"= não confirmados + futuros − não lançados"} valor={fmt(dif)} forte cor={bate?C.green:"#C0352B"}/>
+              {!bate&&dif>0.05&&Math.abs(somaFut-dif)<=0.05&&<div style={{fontSize:11,color:"#0B7A56",background:"#E6F5EE",border:"1px solid #BFE3D2",borderRadius:8,padding:"7px 10px",marginTop:4}}>
                 ✓ A diferença é exatamente a soma dos {futuros.length} previsto(s) para datas futuras. Não há erro: quando o banco lançar, o total fecha.
               </div>}
-              {!bate&&!(dif>0.05&&Math.abs(somaFut-dif)<=0.05)&&Math.abs(Math.round((somaNaoConf+somaFut-somaSoltos-dif)*100)/100)<=0.05&&<div style={{fontSize:11,color:"#B45309",background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:8,padding:"7px 10px",marginTop:4}}>
+              {!bate&&!(dif>0.05&&Math.abs(somaFut-dif)<=0.05)&&Math.abs(Math.round((somaNaoConf+somaFut-somaSoltos-dif)*100)/100)<=0.05&&<div style={{fontSize:11,color:"#B45309",background:"#FEF3E2",border:"1px solid #F6D9A8",borderRadius:8,padding:"7px 10px",marginTop:4}}>
                 A diferença se explica pelos grupos acima. Resolva os não confirmados / não lançados (parear, lançar ou apagar) e o total fecha.
               </div>}
             </div>
@@ -11886,7 +11889,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
                 setConciliacao(null);
                 alert("Apagado. Envie o OFX de novo para reconferir o total.");
               }catch(e){ await falhaDeMutacao(e,onUpdate); }
-            }} style={{padding:"3px 8px",borderRadius:6,background:"transparent",color:"#B91C1C",fontSize:10,fontWeight:700,border:"1px solid #B91C1C",cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Apagar</button>
+            }} style={{padding:"3px 8px",borderRadius:6,background:"transparent",color:"#C0352B",fontSize:10,fontWeight:700,border:"1px solid #C0352B",cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>Apagar</button>
           </div>)}
         </>}
         {!bate&&(!cf.confirmadosSemPar||!cf.confirmadosSemPar.length)&&<div style={{fontSize:10,color:C.textSub}}>Nenhuma linha confirmada sobrando; veja os itens vermelhos/amarelos abaixo (não pareados) ou lançamentos manuais da fatura.</div>}
@@ -12269,7 +12272,7 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
           background:ativo?C.accent:C.borderLight,color:ativo?"#fff":C.textMuted,opacity:ativo?1:0.55}}>{label}</span>;
       })}
     </div>}
-    {travadaFatura&&<div style={{background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:8,padding:"8px 10px",marginBottom:10}}>
+    {travadaFatura&&<div style={{background:"#EEF2FD",border:"1px solid #C9D3F3",borderRadius:8,padding:"8px 10px",marginBottom:10}}>
       <div style={{fontSize:11,fontWeight:700,color:"#2347C5",marginBottom:4}}>🔒 Fatura travada</div>
       <div style={{fontSize:10,color:"#2347C5",marginBottom:6}}>Conciliada por completo via OFX — valor, data e apagar ficam bloqueados nesse item. Categoria, alias, apelido e envelope continuam editáveis.</div>
       <button onClick={destravar} disabled={loadDestrava}
@@ -12277,7 +12280,7 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
         {loadDestrava?"…":"🔓 Destravar esta fatura"}
       </button>
     </div>}
-    {!travadaFatura&&itemJaConfirmado&&<div style={{background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:8,padding:"8px 10px",marginBottom:10}}>
+    {!travadaFatura&&itemJaConfirmado&&<div style={{background:"#EEF2FD",border:"1px solid #C9D3F3",borderRadius:8,padding:"8px 10px",marginBottom:10}}>
       <div style={{fontSize:11,fontWeight:700,color:"#2347C5",marginBottom:4}}>🔒 Item confirmado pelo OFX</div>
       <div style={{fontSize:10,color:"#2347C5",marginBottom:6}}>Esse item específico já bateu com o CSV/OFX — valor, data e apagar ficam protegidos, mesmo com o resto da fatura ainda aberta. Categoria, alias, apelido e envelope continuam editáveis.</div>
       <button onClick={desconfirmarItem} disabled={loadDesconfirma}
@@ -12285,7 +12288,7 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
         {loadDesconfirma?"…":"🔓 Desconfirmar este item"}
       </button>
     </div>}
-    {motivo&&motivo.tipo==="divergencia"&&<div style={{background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,padding:"8px 10px",marginBottom:10,fontSize:11,color:"#B45309"}}>
+    {motivo&&motivo.tipo==="divergencia"&&<div style={{background:"#FEF3E2",border:"1px solid #F6D9A8",borderRadius:8,padding:"8px 10px",marginBottom:10,fontSize:11,color:"#B45309"}}>
       <div style={{fontWeight:700,marginBottom:4}}>🟠 Provável mesmo gasto, lançado diferente do CSV:</div>
       <div>CSV: {motivo.dado.csv.date} · {motivo.dado.csv.title} · R$ {motivo.dado.csv.amount}</div>
       {previewCSV&&<div style={{marginTop:6,fontStyle:"italic"}}>Vai virar: "{previewCSV}"{previewCSV.includes("(")?" (nota entre parênteses preservada)":""}</div>}
@@ -12429,12 +12432,12 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
         🔒 Apagar indisponível — nasceu de recorrência, use "Gerenciar recorrência" abaixo
       </div>;
       return <button onClick={onApagar} disabled={eLoad||travada}
-        style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:11,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
+        style={{width:"100%",marginTop:8,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:11,border:"1px dashed #F3C6C1",cursor:"pointer",fontFamily:"inherit"}}>
         🗑 Apagar este item
       </button>;
     })()}
     {onApagarTodos&&<button onClick={onApagarTodos} disabled={eLoad||travada}
-      style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:10,border:"1px dashed #FECACA",cursor:"pointer",fontFamily:"inherit"}}>
+      style={{width:"100%",marginTop:6,padding:"6px",borderRadius:6,background:"transparent",color:C.red,fontSize:10,border:"1px dashed #F3C6C1",cursor:"pointer",fontFamily:"inherit"}}>
       🗑 Apagar TODOS os "{eDesc}" pendentes neste cartão
     </button>}
     {data&&(data.recorr||[]).some(rec=>String(rec[0]).toUpperCase()===String(r[1]).toUpperCase()&&String(rec[6]).toUpperCase()==="S")&&
@@ -12585,7 +12588,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261011.1800 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261011.1840 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12678,7 +12681,7 @@ function Tesouraria(){
 <script>
 (function(){
   var root=document.getElementById("root");
-  function st(msg){root.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100dvh;flex-direction:column;gap:12px;color:#9CA3AF;font-size:13px"><div style="width:26px;height:26px;border:3px solid #E5E7EB;border-top-color:#B45309;border-radius:50%;animation:spin .8s linear infinite"></div>'+msg+'</div>';}
+  function st(msg){root.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100dvh;flex-direction:column;gap:12px;color:#6B7385;font-size:13px"><div style="width:26px;height:26px;border:3px solid #E7E9EE;border-top-color:#B45309;border-radius:50%;animation:spin .8s linear infinite"></div>'+msg+'</div>';}
   function ld(src){return new Promise((res,rej)=>{var s=document.createElement("script");s.src=src;s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
   async function boot(){
     try{
@@ -12699,7 +12702,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261011.1800
+      // HTML v3.20261011.1840
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
