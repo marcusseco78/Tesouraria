@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
-<meta name="theme-color" content="#052e2b">
+<meta name="theme-color" content="#F5F6F8">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -12,9 +12,12 @@
 <link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgcng9IjEwMCIgZmlsbD0iIzA1MmUyYiIvPgogIDx0ZXh0IHg9IjI1NiIgeT0iMzYwIiBmb250LWZhbWlseT0iR2VvcmdpYSxzZXJpZiIgZm9udC1zaXplPSIzMjAiIGZvbnQtd2VpZ2h0PSI5MDAiCiAgICB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmRlMDQ3Ij7igqI8L3RleHQ+Cjwvc3ZnPg==">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgcng9IjEwMCIgZmlsbD0iIzA1MmUyYiIvPgogIDx0ZXh0IHg9IjI1NiIgeT0iMzYwIiBmb250LWZhbWlseT0iR2VvcmdpYSxzZXJpZiIgZm9udC1zaXplPSIzMjAiIGZvbnQtd2VpZ2h0PSI5MDAiCiAgICB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjZmRlMDQ3Ij7igqI8L3RleHQ+Cjwvc3ZnPg==">
 <title>TESOURARIA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Inter','Segoe UI',sans-serif;background:#F7F8FA;color:#111827}
+body{font-family:'Manrope','Inter','Segoe UI',sans-serif;background:#F5F6F8;color:#0F172A}
+button,input,select,textarea{font-family:inherit}
 #root{max-width:480px;margin:0 auto;min-height:100dvh}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
@@ -37,13 +40,13 @@ function getApiUrl(){
 }
 
 
-const C={bg:"#F3F1EA",surface:"#FFF",border:"#E5E7EB",borderLight:"#F3F4F6",
-  text:"#111827",textSub:"#6B7280",textMuted:"#9CA3AF",
-  accent:"#1E3A8A",accentLight:"#DBEAFE",
-  red:"#DC2626",redLight:"#FEF2F2",orange:"#EA580C",orangeLight:"#FFF7ED",
+const C={bg:"#F5F6F8",surface:"#FFF",border:"#E7E9EE",borderLight:"#EEF0F4",
+  text:"#0F172A",textSub:"#4A5365",textMuted:"#6B7385",
+  accent:"#2347C5",accentLight:"#E8EDFB",
+  red:"#C0352B",redLight:"#FDEEEC",orange:"#EA580C",orangeLight:"#FFF7ED",
   yellow:"#CA8A04",yellowLight:"#FEFCE8",purple:"#7C3AED",purpleLight:"#F5F3FF",
-  blue:"#2563EB",blueLight:"#EFF6FF",blueFaint:"#F6FAFF",green:"#16A34A",greenLight:"#F0FDF4",
-  teal:"#0D9488",tealLight:"#F0FDFA",dark:"#111827"};
+  blue:"#2347C5",blueLight:"#EEF2FD",blueFaint:"#F6F8FE",green:"#0B7A56",greenLight:"#E6F5EE",
+  teal:"#0D9488",tealLight:"#F0FDFA",dark:"#0F1B3D"};
 // BASAIS agora e calculado dinamicamente (ver Dashboard) a partir das
 // recorrencias DESPESA FIXA ativas + orcamento do DCP -- nao mais um numero
 // fixo digitado uma vez, que ficava defasado assim que um recorrente mudava.
@@ -7430,10 +7433,88 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
   </div>;
 }
 
+// [NOVO 11/10, pedido do Marcus] Visual novo da Previsao/Historico: um CARTAO por dia,
+// com a data numa coluna propria (dia grande + dia da semana), resumo do dia e saldo
+// do dia como unico numero colorido. Toque abre/fecha os lancamentos do dia.
+// So muda a APARENCIA -- os lancamentos de dentro continuam exatamente os mesmos.
+const _MES_ABREV=["JAN","FEV","MAR","ABR","MAI","JUN","JUL","AGO","SET","OUT","NOV","DEZ"];
+function _linhasResumoDia(itens,cartaoItens){
+  const its=(itens||[]).filter(r=>r.categoria!=="DCP_PROVISAO");
+  const sai=its.filter(r=>(r.valor||0)<0), ent=its.filter(r=>(r.valor||0)>0);
+  const soma=l=>l.reduce((a,r)=>a+Math.abs(r.valor||0),0);
+  const out=[];
+  if(sai.length) out.push(sai.length+(sai.length>1?" saídas":" saída")+" · "+fmt(soma(sai)));
+  if(ent.length) out.push(ent.length+(ent.length>1?" entradas":" entrada")+" · "+fmt(soma(ent)));
+  const nc=(cartaoItens||[]).length;
+  if(nc) out.push(nc+(nc>1?" compras":" compra")+" no cartão");
+  if(!out.length && (itens||[]).length) out.push("Envelope semanal");
+  if(!out.length) out.push("Sem lançamentos");
+  return out;
+}
+function DiaCartao({gdt,linhas,saldo,atrasado,abertoInicial,forcarAberto,sinal,vazio,acessorio,children}){
+  const [ab,setAb]=useState(!!abertoInicial);
+  const nSinal=sinal?sinal.n:0;
+  useEffect(()=>{ if(nSinal) setAb(!!sinal.v); },[nSinal]);
+  const aberto=!vazio&&(forcarAberto||ab);
+  const dd=String(gdt).slice(8,10), mm=Number(String(gdt).slice(5,7));
+  return <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:20,overflow:"hidden",marginBottom:10}}>
+    <div onClick={()=>{ if(!vazio) setAb(a=>!a); }}
+      style={{padding:"14px 16px",display:"flex",alignItems:"center",gap:12,minHeight:44,cursor:vazio?"default":"pointer"}}>
+      <div style={{width:50,textAlign:"center",flexShrink:0}}>
+        <div style={{fontSize:22,fontWeight:800,lineHeight:1,color:atrasado?C.red:C.text}}>{dd}</div>
+        <div style={{fontSize:10,fontWeight:700,color:C.textSub,marginTop:3,letterSpacing:".02em"}}>{diaSemana(gdt)} · {_MES_ABREV[mm-1]||""}</div>
+      </div>
+      <div style={{flex:1,minWidth:0,fontSize:12,color:C.textSub,fontWeight:500,lineHeight:1.4}}>
+        {atrasado&&<div style={{display:"inline-block",fontSize:10,fontWeight:800,color:C.red,background:C.redLight,padding:"1px 8px",borderRadius:10,marginBottom:3}}>ATRASADO</div>}
+        {(linhas||[]).map((l,i)=><div key={i}>{l}</div>)}
+      </div>
+      {acessorio}
+      {saldo!=null&&isFinite(saldo)&&<span style={{fontSize:18,fontWeight:800,color:saldo<0?C.red:C.green,fontVariantNumeric:"tabular-nums",flexShrink:0,whiteSpace:"nowrap"}}>{fmt(saldo)}</span>}
+      {!vazio&&<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8A93A6" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{flexShrink:0,transform:aberto?"rotate(90deg)":"none",transition:"transform .15s"}}><path d="M9 6l6 6-6 6"/></svg>}
+    </div>
+    {aberto&&<div style={{borderTop:"1px solid "+C.borderLight}}>{children}</div>}
+  </div>;
+}
+// Busca + pilulas de conta (controle segmentado) + abrir/fechar todos os dias.
+function FiltroTopo({busca,onBusca,placeholder,contasAtivas,contaSelecionada,onConta,onSinal}){
+  return <div style={{marginBottom:12}}>
+    <input type="text" value={busca} onChange={e=>onBusca(e.target.value.toUpperCase())} placeholder={placeholder}
+      style={{width:"100%",padding:"13px 18px",minHeight:44,borderRadius:16,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",boxSizing:"border-box",background:C.surface,color:C.text}}/>
+    {contasAtivas.length>1&&<div style={{display:"flex",gap:4,marginTop:10,background:"#E7E9EE",borderRadius:14,padding:4}}>
+      {contasAtivas.map(c=>{const at=contaSelecionada===c.id;
+        return <button key={c.id} onClick={()=>onConta(c.id)}
+          style={{flex:1,minHeight:44,padding:"10px 6px",borderRadius:11,border:"none",cursor:"pointer",fontFamily:"inherit",fontSize:13,
+            fontWeight:at?800:700,background:at?"#FFFFFF":"transparent",color:at?C.text:C.textSub,boxShadow:at?"0 1px 3px rgba(15,23,42,.12)":"none"}}>{c.nome}</button>;})}
+    </div>}
+    {onSinal&&<div style={{display:"flex",justifyContent:"flex-end",gap:14,marginTop:8}}>
+      <button onClick={()=>onSinal(true)} style={{background:"none",border:"none",color:C.accent,fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 0"}}>Abrir todos</button>
+      <button onClick={()=>onSinal(false)} style={{background:"none",border:"none",color:C.textSub,fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 0"}}>Fechar todos</button>
+    </div>}
+  </div>;
+}
+// Caixa escura do topo da Plano: primeiro dia negativo (ou menor saldo) + envelope da semana.
+function CaixaResumoPlano({destaqueDia,envelope}){
+  if(!destaqueDia&&!envelope) return null;
+  const neg=destaqueDia&&destaqueDia.negativo;
+  return <div style={{background:C.dark,borderRadius:20,padding:"18px 20px",color:"#FFFFFF",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:12}}>
+    {destaqueDia?<div>
+      <div style={{fontSize:11,fontWeight:700,letterSpacing:".04em",color:"#A9B6DA"}}>{neg?"PRIMEIRO DIA NEGATIVO":"MENOR SALDO PREVISTO"}</div>
+      <div style={{fontSize:30,fontWeight:800,letterSpacing:"-.03em",marginTop:4,color:neg?"#FFB4AC":"#7FE0B5",fontVariantNumeric:"tabular-nums"}}>{destaqueDia.dia}</div>
+      <div style={{fontSize:12,color:"#A9B6DA",fontWeight:600,marginTop:2}}>saldo {fmt(destaqueDia.saldo)}</div>
+    </div>:<div/>}
+    {envelope?<div style={{textAlign:"right"}}>
+      <div style={{fontSize:11,fontWeight:700,letterSpacing:".04em",color:"#A9B6DA"}}>ENVELOPE {periodoDCP(envelope.data)}</div>
+      <div style={{fontSize:22,fontWeight:800,marginTop:4,color:envelope.valor>0?"#FFB4AC":"#7FE0B5",fontVariantNumeric:"tabular-nums"}}>{fmt(Math.abs(envelope.valor))}</div>
+      <div style={{fontSize:12,color:"#A9B6DA",fontWeight:600,marginTop:2}}>{envelope.valor>0?"pior que a meta":"melhor que a meta"}</div>
+    </div>:null}
+  </div>;
+}
+
 function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
   const [conf,setConf]=useState(null);
   const [busca,setBusca]=useState("");
   const [mostrarCofres,setMostrarCofres]=useState(false);
+  const [sinalDias,setSinalDias]=useState({n:0,v:false});
   const hj=hoje();
   // [NOVO 01/08] Fase 5 -- seletor de conta, mesmo padrao que a Timeline ja
   // usa. So aparece com mais de 1 conta ativa.
@@ -7599,35 +7680,26 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
 
   return <div>
     {/* [REMOVIDO 09/10, pedido do Marcus] aviso de estouro do DCP fica só na Dashboard. */}
-    <div style={{padding:"10px 14px"}}>
-      <input type="text" value={busca} onChange={e=>setBusca(e.target.value.toUpperCase())} placeholder="🔍 Buscar por descrição ou categoria"
-        style={{width:"100%",padding:"9px 14px",borderRadius:24,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
-      {contasAtivas.length>1&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>
-        {contasAtivas.map(c=>
-          <button key={c.id} onClick={()=>setContaSelecionada(c.id)}
-            style={{padding:"5px 10px",borderRadius:16,fontSize:11,fontWeight:700,border:"none",cursor:"pointer",
-              background:contaSelecionada===c.id?C.accent:C.borderLight,color:contaSelecionada===c.id?"#fff":C.textSub}}>{c.nome}</button>)}
-      </div>}
-    </div>
+    <FiltroTopo busca={busca} onBusca={setBusca} placeholder="Buscar por descrição ou categoria" contasAtivas={contasAtivas}
+      contaSelecionada={contaSelecionada} onConta={setContaSelecionada} onSinal={v=>setSinalDias(x=>({n:x.n+1,v}))}/>
+    {!busca.trim()&&(()=>{
+      const filtrar=contasAtivas.length>1&&contaSelecionada;
+      const pts=gruposExibidos.map(g=>({gdt:g.gdt,sp:filtrar?(g.spPorConta&&g.spPorConta[contaSelecionada]):g.spIni})).filter(x=>x.sp!=null&&isFinite(x.sp));
+      const neg=pts.find(x=>x.sp<0);
+      const menor=pts.length?pts.reduce((m,x)=>x.sp<m.sp?x:m,pts[0]):null;
+      const alvo=neg||menor;
+      return <CaixaResumoPlano destaqueDia={alvo?{dia:fmtD(alvo.gdt).slice(0,5),saldo:alvo.sp,negativo:!!neg}:null} envelope={envelopeAberto}/>;
+    })()}
     {busca.trim()&&!gruposExibidos.length&&<div style={{padding:"20px 14px",textAlign:"center",color:C.textMuted,fontSize:13}}>Nada encontrado para "{busca}".</div>}
     {gruposExibidos.map(({gdt,itensExibir,cartaoExibir,spIni,spPorConta},gi)=>{
       const filtrarPorConta=contasAtivas.length>1&&contaSelecionada;
       const at=gdt<hj,sp=filtrarPorConta?(spPorConta&&spPorConta[contaSelecionada]):spIni;
       const ehPrimeiro=!busca.trim()&&!filtrarPorConta&&gi===primeiroIdxComSaldo;
-      return <div key={gdt}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 14px 4px",background:"#F9FAFB",borderBottom:"1px solid "+C.border,borderLeft:at?"3px solid "+C.red:"none"}}>
-        <span style={{fontSize:12,fontWeight:700,color:at?C.red:C.accent}}>{at?"⚠ ATRASADO · ":""}{fmtD(gdt)} · {diaSemana(gdt)}</span>
-        <div style={{display:"flex",alignItems:"center",gap:6}}>
-          {ehPrimeiro&&(data.cofres||[]).length>0&&<button onClick={()=>setMostrarCofres(v=>!v)}
-            style={{background:"none",border:"none",fontSize:14,cursor:"pointer",padding:2,lineHeight:1}} title="Ver Cofres">
-            🏦
-          </button>}
-          <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:1}}>
-            {sp!=null&&isFinite(sp)&&<span style={sp<0?{fontSize:ehPrimeiro?18:15,fontWeight:800,fontStyle:ehPrimeiro?"italic":"normal",color:C.red,background:C.redLight,padding:"2px 7px",borderRadius:5}:{fontSize:ehPrimeiro?17:14,fontWeight:ehPrimeiro?800:700,fontStyle:ehPrimeiro?"italic":"normal",color:C.blue}}>{"→ "+fmt(sp)}</span>}
-            {envelopeAberto&&<BadgeMetaDCP valor={envelopeAberto.valor}/>}
-          </div>
-        </div>
-      </div>
+      const itemNoDia=itensExibir.some(i=>i.row===conf||(destaque?.tab==="fluxo"&&destaque.row===i.row));
+      return <DiaCartao key={gdt} gdt={gdt} atrasado={at} saldo={sp} linhas={_linhasResumoDia(itensExibir,cartaoExibir)}
+        vazio={!itensExibir.length&&!cartaoExibir.length} abertoInicial={gi===0} forcarAberto={!!busca.trim()||itemNoDia} sinal={sinalDias}
+        acessorio={ehPrimeiro&&(data.cofres||[]).length>0?<button onClick={e=>{e.stopPropagation();setMostrarCofres(v=>!v);}}
+          style={{background:"none",border:"none",fontSize:16,cursor:"pointer",padding:4,lineHeight:1,flexShrink:0}} title="Ver Cofres">🏦</button>:null}>
       {ehPrimeiro&&mostrarCofres&&(data.cofres||[]).length>0&&(()=>{
         const totalCofres=(data.cofres||[]).reduce((s,c)=>s+c.saldo,0);
         return <div style={{background:C.tealLight,padding:"10px 14px",borderBottom:"1px solid #99F6E4"}}>
@@ -7689,7 +7761,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
           antecipar={!!(destaque&&destaque.antecipar&&destaque.row===item.row)}/>}
       </div>;})}
       {porCartao(cartaoExibir).map(g=><GrupoCartaoDia key={"gc-"+gdt+"-"+g.cartao} cartaoId={g.cartao} itens={g.itens} data={data} futuro={true} onIrPara={onIrPara}/>)}
-    </div>;})}
+    </DiaCartao>;})}
     <BotaoLancar data={data} onUpdate={onUpdate} onIrPara={onIrPara}/>
   </div>;
 }
@@ -7745,6 +7817,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
   const [conf,setConf]=useState(null);
   const [busca,setBusca]=useState("");
   const [limite,setLimite]=useState(30);
+  const [sinalDias,setSinalDias]=useState({n:0,v:false});
   // [NOVO 01/08] Fase 5 -- seletor de conta, mesmo padrao da Timeline/Previsao.
   const contasAtivas=useMemo(()=>(data.contas||[]).filter(c=>c.ativa!==false),[data.contas]);
   const [contaSelecionada,setContaSelecionada]=useState(null);
@@ -7836,28 +7909,18 @@ function Historico({data,onUpdate,destaque,onIrPara}){
   },[ex,cartaoPorDataFiltrado]);
 
   return <div style={{paddingBottom:8}}>
-    <div style={{padding:"10px 14px",background:"#F9FAFB",borderBottom:"1px solid "+C.border}}>
-      <input type="text" value={busca} onChange={e=>{setBusca(e.target.value.toUpperCase());setLimite(30);}}
-        placeholder="🔎 Buscar por descrição ou categoria..."
-        style={{width:"100%",padding:"7px 12px",borderRadius:24,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box",background:C.surface}}/>
-      {contasAtivas.length>1&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>
-        {contasAtivas.map(c=>
-          <button key={c.id} onClick={()=>{setContaSelecionada(c.id);setLimite(30);}}
-            style={{padding:"5px 10px",borderRadius:16,fontSize:11,fontWeight:700,border:"none",cursor:"pointer",
-              background:contaSelecionada===c.id?C.accent:C.borderLight,color:contaSelecionada===c.id?"#fff":C.textSub}}>{c.nome}</button>)}
-      </div>}
-    </div>
+    <FiltroTopo busca={busca} onBusca={v=>{setBusca(v);setLimite(30);}} placeholder="Buscar por descrição ou categoria" contasAtivas={contasAtivas}
+      contaSelecionada={contaSelecionada} onConta={id=>{setContaSelecionada(id);setLimite(30);}} onSinal={v=>setSinalDias(x=>({n:x.n+1,v}))}/>
     {!ex.length&&<div style={{padding:"40px 20px",textAlign:"center",color:C.textMuted,fontSize:14}}>{busca?"Nenhum resultado pra essa busca.":"Nenhum lançamento executado."}</div>}
-    {grupos.map(([gdt,itens])=>{
+    {grupos.map(([gdt,itens],gi)=>{
       const filtrarPorConta=contasAtivas.length>1&&contaSelecionada;
       const totalDia=itens.reduce((s,r)=>s+(r.valor||0),0);
       const spFim=itens.length?(filtrarPorConta?itens[0].saldoRealConta:itens[0].saldoReal):null;
       const spIni=(spFim!=null&&isFinite(spFim))?(spFim-totalDia):null;
-      return <div key={gdt}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 14px 4px",background:"#F9FAFB",borderBottom:"1px solid "+C.border}}>
-          <span style={{fontSize:12,fontWeight:700,color:C.accent}}>{fmtD(gdt)} · {diaSemana(gdt)}</span>
-          {spIni!=null&&isFinite(spIni)&&<span style={spIni<0?{fontSize:15,fontWeight:800,color:C.red,background:C.redLight,padding:"2px 7px",borderRadius:5}:{fontSize:14,fontWeight:700,color:C.blue}}>{"→ "+fmt(spIni)}</span>}
-        </div>
+      const cartaoDia=cartaoPorDataFiltrado[gdt]||[];
+      const itemNoDia=itens.some(i=>i.row===conf||(destaque?.tab==="historico"&&destaque.row===i.row));
+      return <DiaCartao key={gdt} gdt={gdt} saldo={spIni} linhas={_linhasResumoDia(itens,cartaoDia)}
+        vazio={!itens.length&&!cartaoDia.length} abertoInicial={gi===0} forcarAberto={!!busca.trim()||itemNoDia} sinal={sinalDias}>
         {itens.map(item=>{const {cor:corItem,selo,bg:bgItem,descCor,confirmadoExtrato}=corDoItem(item,hj);const isOpen=conf===item.row;const destacado=destaque?.tab==="historico"&&destaque.row===item.row;return <div key={item.row} id={"hist-item-"+item.row}>
           <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 14px",borderBottom:isOpen?"none":"1px solid "+C.borderLight,background:destacado?"#FEF3C7":(bgItem||C.surface),transition:"background 1s",
             borderLeft:corItem?"3px solid "+corItem:"none"}}>
@@ -7889,7 +7952,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
           {isOpen&&<PainelEdicaoItem key={item.row} item={item} data={data} onUpdate={onUpdate} onClose={()=>setConf(null)} onIrPara={onIrPara}/>}
         </div>;})}
         {porCartao(cartaoPorDataFiltrado[gdt]).map(g=><GrupoCartaoDia key={"gc-"+gdt+"-"+g.cartao} cartaoId={g.cartao} itens={g.itens} data={data} futuro={false} onIrPara={onIrPara}/>)}
-      </div>;
+      </DiaCartao>;
     })}
     {filtrados.length>limite&&<div style={{padding:"14px",textAlign:"center"}}>
       <button onClick={()=>setLimite(l=>l+30)}
@@ -8191,10 +8254,10 @@ function Timeline({data,onUpdate,onIrPara}){
   const alturaContainer=520;
 
   return <div>
-    <Card style={{padding:"7px 12px",marginBottom:7}}>
+    <Card style={{padding:"12px 14px",marginBottom:10,borderRadius:20,boxShadow:"none"}}>
       <div style={{display:"flex",alignItems:"center",gap:8}}>
         <input value={busca} onChange={e=>setBusca(e.target.value.toUpperCase())} placeholder="Buscar por descrição ou categoria..."
-          style={{flex:1,padding:"7px 13px",border:"1px solid "+C.border,borderRadius:24,fontSize:13,fontFamily:"inherit"}}/>
+          style={{flex:1,padding:"12px 16px",minHeight:44,border:"1px solid "+C.border,borderRadius:14,fontSize:14,fontFamily:"inherit"}}/>
       </div>
       <div style={{display:"flex",gap:6,marginTop:7}}>
         {[["todos","Todos"],["previsao","Só Plano"],["historico","Só Histórico"]].map(([id,l])=>
@@ -8215,13 +8278,12 @@ function Timeline({data,onUpdate,onIrPara}){
           Ferramentas > Despesas Cotidianas ja mostra, so trazido pra ca pra
           nao precisar trocar de tela. O envelope "aberto" e sempre o mais
           antigo com status != EXECUTADO (semanas passadas ja fecharam). */}
-      {envelopeAtual&&<div style={{marginTop:9,padding:"8px 12px",borderRadius:10,
-        background:envelopeAtual.valor>0?"#FEF3C7":C.greenLight,
-        display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <span style={{fontSize:11,color:C.textSub,fontWeight:600}}>
-          💰 {envelopeAtual.valor>0?"Faltando pra fechar a semana":"Disponível pra gastos essa semana"}
+      {envelopeAtual&&<div style={{marginTop:9,padding:"12px 16px",borderRadius:16,background:C.dark,
+        display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+        <span style={{fontSize:12,color:"#A9B6DA",fontWeight:700}}>
+          {envelopeAtual.valor>0?"Faltando pra fechar a semana":"Disponível pra gastos essa semana"}
         </span>
-        <span style={{fontSize:15,fontWeight:900,color:envelopeAtual.valor>0?"#92400E":C.green}}>
+        <span style={{fontSize:20,fontWeight:800,color:envelopeAtual.valor>0?"#FFB4AC":"#7FE0B5",fontVariantNumeric:"tabular-nums"}}>
           {fmt(Math.abs(envelopeAtual.valor))}
         </span>
       </div>}
@@ -8230,7 +8292,7 @@ function Timeline({data,onUpdate,onIrPara}){
 
     <div style={{position:"relative"}}>
       <div ref={containerRef} style={{height:alturaContainer,overflowY:"auto",scrollSnapType:"y mandatory",
-        WebkitOverflowScrolling:"touch",borderRadius:16,background:C.surface,border:"1px solid "+C.border}}>
+        WebkitOverflowScrolling:"touch",borderRadius:20,background:C.surface,border:"1px solid "+C.border}}>
         <div style={{height:alturaContainer/2-19}}/>
         {slots.map((s,i)=>{
           const isHoje=s.tipo==="saldo"&&s.linha.hoje;
@@ -8240,11 +8302,11 @@ function Timeline({data,onUpdate,onIrPara}){
           // cartao nunca abre painel (s.item.item e null pra ele).
           const painelAberto=s.tipo==="item"&&!s.item.ehCartao&&s.item.item&&s.item.item.row===itemAbertoRow;
           return <div key={i} ref={n=>nodeRefs.current[i]=n} data-open-panel={painelAberto?"1":undefined}
-            style={{scrollSnapAlign:painelAberto?"start":"center",transition:"transform .06s linear",padding:"5px 13px"}}>
+            style={{scrollSnapAlign:painelAberto?"start":"center",transition:"transform .06s linear",padding:"9px 16px"}}>
             {s.tipo==="saldo" ? (
               <div data-fade style={{display:"flex",justifyContent:"space-between",alignItems:"center",transition:"opacity .06s linear"}}>
                 <div>
-                  <div style={{fontWeight:800,color:C.accent,fontSize:isHoje?13:11}}>{_fmtDataCurta(s.linha.dataObj)}{isHoje&&<span style={{marginLeft:6,fontSize:9,background:C.accentLight,color:C.accent,padding:"1px 5px",borderRadius:5}}>HOJE</span>}</div>
+                  <div style={{fontWeight:800,color:C.text,fontSize:isHoje?15:13}}>{_fmtDataCurta(s.linha.dataObj)}{isHoje&&<span style={{marginLeft:6,fontSize:10,background:C.accentLight,color:C.accent,padding:"2px 8px",borderRadius:10}}>HOJE</span>}</div>
                 </div>
                 <div style={{textAlign:"right"}}>
                   {contasAtivas.length>1&&contaSelecionada?(()=>{
@@ -8255,10 +8317,10 @@ function Timeline({data,onUpdate,onIrPara}){
                       <div style={{fontSize:9,color:C.textMuted}}>{nomeContaSel}</div>
                       <div style={{color:C.textSub,fontWeight:700,fontSize:isHoje?12:11}}>{saldoConta!=null?fmt(saldoConta):"—"}</div>
                       <div style={{fontSize:9,color:C.textMuted,marginTop:1}}>outras contas: {saldoOutras!=null?fmt(saldoOutras):"—"}</div>
-                      <div style={{color:C.blue,fontWeight:900,fontSize:isHoje?17:13,marginTop:1}}>→ {fmt(s.linha.saldo)}</div>
+                      <div style={{color:s.linha.saldo<0?C.red:C.green,fontWeight:800,fontSize:isHoje?24:19,marginTop:1,fontVariantNumeric:"tabular-nums"}}>{fmt(s.linha.saldo)}</div>
                     </>;
                   })():
-                    <div style={{color:C.blue,fontWeight:900,fontSize:isHoje?17:13}}>→ {fmt(s.linha.saldo)}</div>
+                    <div style={{color:s.linha.saldo<0?C.red:C.green,fontWeight:800,fontSize:isHoje?24:19,fontVariantNumeric:"tabular-nums"}}>{fmt(s.linha.saldo)}</div>
                   }
                   {(data.cofres||[]).length>0&&<div style={{fontSize:9,color:C.teal,fontWeight:700,marginTop:1}}>
                     🏦 patrimônio: {fmt(s.linha.saldo+valorCofresProjetadoNaData(data.cofres,s.linha.data,data.config||{}))}
@@ -8267,7 +8329,7 @@ function Timeline({data,onUpdate,onIrPara}){
                       so em linhas de hoje/futuro -- pedido do Marcus 10/08,
                       mesmo dado (envelopeAtual) que a tela ja calculava,
                       so nao exibia em lugar nenhum. */}
-                  {envelopeAtual&&s.linha.data>=hj&&<div style={{marginTop:2}}><BadgeMetaDCP valor={envelopeAtual.valor}/></div>}
+                  
                 </div>
               </div>
             ) : s.item.ehCartao ? (
@@ -8289,13 +8351,13 @@ function Timeline({data,onUpdate,onIrPara}){
                 style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",
                 background:painelAberto?C.accentLight:(ehDCP?C.yellowLight:"transparent"),borderRadius:(painelAberto||ehDCP)?8:0,
                 borderLeft:painelAberto?"3px solid "+C.accent:(ehDCP?"3px solid #D97706":"3px solid transparent"),
-                borderBottom:(ehDCP&&!painelAberto)?"none":"1px solid "+C.border,padding:"4px 7px"}}>
+                borderBottom:(ehDCP&&!painelAberto)?"none":"1px solid "+C.borderLight,padding:"8px 8px"}}>
                 <div data-fade style={{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%",transition:"opacity .06s linear"}}>
                   <div>
-                    <div style={{fontWeight:700,fontSize:12}}>{s.item.descricao}</div>
-                    <div style={{fontSize:9,color:C.textMuted}}>{s.item.categoriaTxt}{s.item.status==="EXECUTADO"&&<span style={{marginLeft:5,color:C.green}}>✓</span>}</div>
+                    <div style={{fontWeight:700,fontSize:14}}>{s.item.descricao}</div>
+                    <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>{s.item.categoriaTxt}{s.item.status==="EXECUTADO"&&<span style={{marginLeft:5,color:C.green}}>✓</span>}</div>
                   </div>
-                  <div style={{fontWeight:800,fontSize:12,color:s.item.valor<0?C.red:C.green}}>{fmt(s.item.valor)}</div>
+                  <div style={{fontWeight:800,fontSize:14,color:s.item.valor<0?C.red:C.green,fontVariantNumeric:"tabular-nums"}}>{fmt(s.item.valor)}</div>
                 </div>
               </div>
               {/* [25/07] Painel INLINE, mesmo padrao do Fluxo/Historico --
@@ -10009,8 +10071,9 @@ function BotaoLancar({data,onUpdate,onIrPara}){
   }
 
   if(!open) return <button onClick={()=>setOpen(true)}
-    style={{position:"fixed",bottom:24,right:20,width:52,height:52,borderRadius:26,background:C.accent,color:"#fff",
-      fontSize:28,border:"none",cursor:"pointer",boxShadow:"0 4px 16px rgba(217,119,6,.4)",zIndex:100,lineHeight:1}}>+</button>;
+    aria-label="Novo lançamento" style={{position:"fixed",bottom:24,right:20,width:56,height:56,borderRadius:18,background:C.accent,color:"#fff",
+      border:"none",cursor:"pointer",boxShadow:"0 6px 18px rgba(35,71,197,.38)",zIndex:100,lineHeight:1,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>;
 
   // [22/07] Navegacao (pilulas) flutua solta sobre a tela, SEM bandeja/caixa
   // branca por baixo -- so quando chega numa folha (formAberto=true) e que
@@ -10020,12 +10083,12 @@ function BotaoLancar({data,onUpdate,onIrPara}){
     const ehRaizAtual=trilha.length===0;
     return <>
       <button onClick={fecharTudo}
-        style={{position:"fixed",bottom:24,right:20,width:52,height:52,borderRadius:26,background:C.accent,color:"#fff",
-          fontSize:24,border:"none",cursor:"pointer",boxShadow:"0 4px 16px rgba(30,58,138,.35)",zIndex:200,lineHeight:1}}>✕</button>
+        aria-label="Fechar" style={{position:"fixed",bottom:24,right:20,width:56,height:56,borderRadius:18,background:C.accent,color:"#fff",
+          fontSize:22,border:"none",cursor:"pointer",boxShadow:"0 6px 18px rgba(35,71,197,.38)",zIndex:200,lineHeight:1}}>✕</button>
       <div style={{position:"fixed",bottom:88,right:20,maxWidth:280,display:"flex",flexDirection:"column-reverse",
         gap:8,zIndex:150,alignItems:"flex-end"}}>
         {trilha.length>0&&<button onClick={voltarTrilha}
-          style={{background:"#EDEBE3",color:C.textSub,border:"none",borderRadius:20,padding:"8px 15px",
+          style={{background:"#E7E9EE",color:C.textSub,border:"none",borderRadius:14,padding:"10px 16px",
             fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px rgba(0,0,0,.12)"}}>← voltar</button>}
         {nivelAtual.map((it,ix)=>{
           const ehGalho=!it.acao&&!!NODES[it.id];
@@ -10035,9 +10098,9 @@ function BotaoLancar({data,onUpdate,onIrPara}){
               else { const fn=LEAF_ACOES[it.id]; if(fn) fn(); }
             }}
             style={ehRaizAtual?
-              {padding:"13px 20px",borderRadius:26,border:"none",background:C.accent,color:"#fff",
-                fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px rgba(0,0,0,.12)"}
-              :{padding:"11px 17px",borderRadius:22,border:"none",background:C.accent,color:"#fff",
+              {padding:"14px 22px",borderRadius:16,border:"none",background:C.accent,color:"#fff",
+                fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px rgba(35,71,197,.25)"}
+              :{padding:"12px 18px",borderRadius:14,border:"none",background:C.accent,color:"#fff",
                 fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px rgba(0,0,0,.12)"}}>
             {ehRaizAtual&&it.id==="gastos"&&<span style={{fontWeight:900,marginRight:5,color:"#F87171"}}>▼</span>}
             {ehRaizAtual&&it.id==="ganhos"&&<span style={{fontWeight:900,marginRight:5,color:"#60A5FA"}}>▲</span>}
@@ -12492,17 +12555,22 @@ function Tesouraria(){
     ferramentas:{cor:C.purple,bg:C.purpleLight},
   };
 
-  return <div style={{minHeight:"100dvh",background:C.bg,fontFamily:"'Inter','Segoe UI',sans-serif",color:C.text}}>
+  return <div style={{minHeight:"100dvh",background:C.bg,fontFamily:"'Manrope','Inter','Segoe UI',sans-serif",color:C.text}}>
     <div style={{maxWidth:480,margin:"0 auto",padding:"20px 16px 40px"}}>
       {/* Header leve — sem barra escura */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
         <div>
-          <div style={{fontSize:32,fontWeight:900,color:C.accent,letterSpacing:"-.03em",fontStyle:"italic"}}>Tesouraria</div>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:34,height:34,borderRadius:11,background:C.accent,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 16l5-5 4 4 7-8"/></svg>
+            </div>
+            <div style={{fontSize:26,fontWeight:800,color:C.text,letterSpacing:"-.03em"}}>Tesouraria</div>
+          </div>
           <div style={{fontSize:12,color:C.textMuted,fontWeight:600,marginTop:2}}>Suas contas, previsíveis.</div>
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261010.1300 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261011.1500 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12522,13 +12590,13 @@ function Tesouraria(){
       {/* Tabs pill-style no topo -- cada aba com cor pastel propria, no
           mesmo espirito leve da grade de Ferramentas (nada de preenchimento
           solido saturado -- fundo clarinho + texto na cor, igual os cards). */}
-      <div style={{display:"flex",gap:4,marginBottom:20,background:C.surface,
-        border:"1px solid "+C.border,borderRadius:10,padding:4}}>
+      <div style={{display:"flex",gap:4,marginBottom:20,background:"#E7E9EE",
+        borderRadius:14,padding:4}}>
         {TABS.map(t=>{const cor=TAB_CORES[t.id]||C.accent;const ativo=tab===t.id;return <button key={t.id} onClick={()=>navegar(t.id)} style={{
-          flex:1,padding:"8px 4px",borderRadius:7,border:"none",cursor:"pointer",
-          fontFamily:"inherit",fontSize:11,fontWeight:700,transition:"all .2s",whiteSpace:"nowrap",
-          background:ativo?cor.bg:"transparent",
-          color:ativo?cor.cor:C.textSub}}>
+          flex:1,padding:"11px 4px",minHeight:44,borderRadius:11,border:"none",cursor:"pointer",
+          fontFamily:"inherit",fontSize:12,fontWeight:ativo?800:700,transition:"all .2s",whiteSpace:"nowrap",
+          background:ativo?"#FFFFFF":"transparent",boxShadow:ativo?"0 1px 3px rgba(15,23,42,.12)":"none",
+          color:ativo?C.accent:C.textSub}}>
           {t.l}
         </button>;})}
       </div>
@@ -12616,7 +12684,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261010.1300
+      // HTML v3.20261011.1500
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
