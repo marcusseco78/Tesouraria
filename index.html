@@ -7817,10 +7817,11 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
         const {cor:corItem,selo,bg:bgItem,descCor,confirmadoExtrato}=corDoItem(item,hj);
         const destacado=destaque?.tab==="fluxo"&&destaque.row===item.row;
         return <div key={item.row} id={"fluxo-item-"+item.row}>
-        <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 14px",borderBottom:"1px solid "+C.borderLight,background:destacado?"#FEF3E2":(bgItem||C.surface),transition:"background 1s",
+        <div onClick={()=>isOpen?setConf(null):setConf(item.row)}
+          style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px 11px 78px",minHeight:44,cursor:"pointer",borderBottom:"1px solid "+C.borderLight,background:destacado?"#FEF3E2":(isOpen?C.bg:(bgItem||C.surface)),transition:"background 1s",
           borderLeft:corItem?"3px solid "+corItem:"none"}}>
           <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:12,fontWeight:600,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}</div>
+            <div style={{fontSize:13,fontWeight:700,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}</div>
             <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{item.categoria==="DCP_PROVISAO"?periodoDCP(item.data):(<>{tipoDisplay(item.tipo,data)}{item.categoria&&item.categoria!==item.tipo?" · "+item.categoria:""} · {item.forma}{item.status==="EXECUTADO"?" · ✓ executado":""}</>)}</div>
             {/* [24/07] Selos (status, conciliacao, envelope) sempre numa
                 terceira linha propria, com flex-wrap -- antes disputavam
@@ -7844,11 +7845,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
                 {(()=>{const ie=infoEnvelopeItem(item);return ie?<TagEnvelopeCustom nome={ie.nome} saldo={ie.saldo}/>:null;})()}
               </div>}
           </div>
-          {item.categoria==="DCP_PROVISAO"?<ValorDCPProvisao valor={item.valor} dataEnvelope={item.data}/>:<span style={{fontWeight:700,color:item.valor<0?C.red:C.blue,flexShrink:0,fontSize:12}}>{fmt(item.valor)}</span>}
-          <button onClick={()=>isOpen?setConf(null):setConf(item.row)}
-            style={{background:C.borderLight,color:C.textSub,borderRadius:8,padding:"6px 12px",fontSize:18,border:"1px solid "+C.border,fontWeight:400,cursor:"pointer",flexShrink:0,lineHeight:1}}>
-            ⋮
-          </button>
+          {item.categoria==="DCP_PROVISAO"?<ValorDCPProvisao valor={item.valor} dataEnvelope={item.data}/>:<span style={{fontWeight:800,color:item.valor<0?C.red:C.blue,flexShrink:0,fontSize:14,fontVariantNumeric:"tabular-nums"}}>{fmt(item.valor)}</span>}
         </div>
         {isOpen&&<PainelEdicaoItem key={item.row} item={item} data={data} onUpdate={onUpdate} onClose={()=>setConf(null)} onIrPara={onIrPara}
           antecipar={!!(destaque&&destaque.antecipar&&destaque.row===item.row)}/>}
@@ -8015,10 +8012,11 @@ function Historico({data,onUpdate,destaque,onIrPara}){
       return <DiaCartao key={gdt} gdt={gdt} saldo={spIni} linhas={_linhasResumoDia(itens,cartaoDia)}
         vazio={!itens.length&&!cartaoDia.length} abertoInicial={gi===0} forcarAberto={!!busca.trim()||itemNoDia} sinal={sinalDias}>
         {itens.map(item=>{const {cor:corItem,selo,bg:bgItem,descCor,confirmadoExtrato}=corDoItem(item,hj);const isOpen=conf===item.row;const destacado=destaque?.tab==="historico"&&destaque.row===item.row;return <div key={item.row} id={"hist-item-"+item.row}>
-          <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 14px",borderBottom:isOpen?"none":"1px solid "+C.borderLight,background:destacado?"#FEF3E2":(bgItem||C.surface),transition:"background 1s",
+          <div onClick={()=>isOpen?setConf(null):setConf(item.row)}
+            style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px 11px 78px",minHeight:44,cursor:"pointer",borderBottom:isOpen?"none":"1px solid "+C.borderLight,background:destacado?"#FEF3E2":(isOpen?C.bg:(bgItem||C.surface)),transition:"background 1s",
             borderLeft:corItem?"3px solid "+corItem:"none"}}>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:12,fontWeight:600,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}</div>
+              <div style={{fontSize:13,fontWeight:700,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}</div>
               <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{item.categoria==="DCP_PROVISAO"?periodoDCP(item.data):(<>{tipoDisplay(item.tipo,data)}{item.categoria&&item.categoria!==item.tipo?" · "+item.categoria:""}</>)}</div>
               {(selo||confirmadoExtrato||(item.categoria!=="DCP_PROVISAO"&&item.dcpEnvelope)||infoEnvelopeItem(item)||infoTransferencia(item,data))&&
                 <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:3,alignItems:"center"}}>
@@ -8038,9 +8036,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
                   {(()=>{const ie=infoEnvelopeItem(item);return ie?<TagEnvelopeCustom nome={ie.nome} saldo={ie.saldo}/>:null;})()}
                 </div>}
             </div>
-            {item.categoria==="DCP_PROVISAO"?<ValorDCPFechado item={item}/>:<span style={{fontWeight:700,color:item.valor<0?C.red:C.blue,flexShrink:0,fontSize:12}}>{fmt(item.valor)}</span>}
-            <button onClick={()=>isOpen?setConf(null):setConf(item.row)}
-              style={{color:C.textSub,padding:"4px 8px",fontSize:14,background:isOpen?C.borderLight:"none",border:"1px solid "+C.border,borderRadius:5,cursor:"pointer",flexShrink:0}}>⋮</button>
+            {item.categoria==="DCP_PROVISAO"?<ValorDCPFechado item={item}/>:<span style={{fontWeight:800,color:item.valor<0?C.red:C.blue,flexShrink:0,fontSize:14,fontVariantNumeric:"tabular-nums"}}>{fmt(item.valor)}</span>}
           </div>
           {isOpen&&<PainelEdicaoItem key={item.row} item={item} data={data} onUpdate={onUpdate} onClose={()=>setConf(null)} onIrPara={onIrPara}/>}
         </div>;})}
@@ -12678,7 +12674,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261012.0940 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261012.1320 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12792,7 +12788,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261012.0940
+      // HTML v3.20261012.1320
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
