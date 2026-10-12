@@ -56,7 +56,10 @@ const fmt=v=>{
   return n<0 ? s.replace(/(\s)/,"$1-") : s;
 };
 const fmtK=v=>Math.abs(v)>=1000?(v/1000).toFixed(0)+"k":Math.abs(v).toFixed(0);
-const hoje=()=>new Date().toISOString().slice(0,10);
+// [11/10, bug real achado pelo Marcus] toISOString() devolve a data em UTC: depois
+// das 21h em Brasilia ja era "amanha" no app inteiro (Plano, Timeline, DCP
+// atual). Agora usa a data LOCAL do aparelho.
+const hoje=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
 // Janela de datas (inicio/fim, formato ISO) de um ciclo deslocado N meses a
 // partir do ciclo atual -- deslocamento 0 = ciclo atual, 1 = proximo, 2 =
 // o seguinte. Usa CONFIG.CICLO_INICIO (sempre dia 16) como ancora.
@@ -5106,7 +5109,7 @@ function SeloPar({ofx,app,forca,onConfirmar,confirmando,row,onUpdate,tipo,aba,da
         r=await api({action:"editarRecorrencia",descricao:despesaFixaEdit,campo:"ALIAS_CSV",valor:aliasCombinado,resumo:"",forcarAlias:true});
         if(onUpdate) onUpdate(r);
       }else if(criarNovaEdit){
-        const dObj=_dataLocalSegura(dataItem||new Date().toISOString().slice(0,10));
+        const dObj=_dataLocalSegura(dataItem||hoje());
         const freqParams={
           mensal:{intervalo_meses:1,dia_venc:dObj.getDate()},
           semanal:{intervalo_meses:1,dia_venc:dObj.getDay()},
@@ -6609,7 +6612,7 @@ function ConciliarExtratoTab({data,onUpdate}){
 // entrega -- ficam pra depois de testar essa parte com dado real.
 function TransferenciaEspelhada({data,onUpdate}){
   const contasAtivas=(data.contas||[]).filter(c=>c.ativa!==false);
-  const [dataOp,setDataOp]=useState(new Date().toISOString().slice(0,10));
+  const [dataOp,setDataOp]=useState(hoje());
   const [valor,setValor]=useState("");
   const [intencao,setIntencao]=useState("");
   const [origem,setOrigem]=useState("");
@@ -12639,7 +12642,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261011.2100 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261011.2240 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12753,7 +12756,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261011.2100
+      // HTML v3.20261011.2240
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
