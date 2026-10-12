@@ -6619,6 +6619,12 @@ function TransferenciaEspelhada({data,onUpdate}){
   const [destino,setDestino]=useState("");
   const [apelido,setApelido]=useState("");
   const [load,setLoad]=useState(false);
+  // [11/10, pedido do Marcus] Depois de lancar, o formulario NAO fica aberto e
+  // preenchido (prato cheio pra lancar 2x): vira um recibo, e so volta ao
+  // formulario (limpo) tocando em "Lançar outra". Trava tambem contra toque
+  // duplo enquanto a chamada ainda esta em andamento.
+  const [recibo,setRecibo]=useState(null);
+  const travaLancar=useRef(false);
 
   useEffect(()=>{
     if(!contasAtivas.length) return;
@@ -6636,21 +6642,40 @@ function TransferenciaEspelhada({data,onUpdate}){
     if(!origem||!destino){ alert("Escolha origem e destino."); return; }
     if(origem===destino){ alert("Origem e destino não podem ser a mesma conta."); return; }
     if(!intencao){ alert("Escolha a finalidade da transferência antes de lançar."); return; }
+    if(travaLancar.current) return;
+    travaLancar.current=true;
     setLoad(true);
     try{
       const r=await api({action:"lancarTransferenciaEspelhada",data:dataOp,valor:v,
         contaOrigem:origem,contaDestino:destino,intencao,apelido:apelido||""});
       onUpdate(r);
-      setValor(""); setApelido("");
-      alert("Transferência lançada — os dois lados já entraram executados e amarrados.");
+      const nomeC=id=>(contasAtivas.find(c=>c.id===id)||{}).nome||id;
+      const itn=(intencoesOk.find(i=>i.id===intencao)||{}).label||"";
+      setRecibo({valor:v,data:dataOp,de:nomeC(origem),para:nomeC(destino),intencao:itn});
+      setValor(""); setApelido(""); setIntencao("");
     }catch(e){ alert(e.message); }
     setLoad(false);
+    travaLancar.current=false;
   }
 
   const Pilula=({ativo,onClick,children})=><button onClick={onClick}
     style={{padding:"8px 12px",borderRadius:10,border:"1px solid "+(ativo?C.purple:C.border),
       background:ativo?C.purple:"#fff",color:ativo?"#fff":C.text,fontSize:12,fontWeight:700,
       cursor:"pointer",fontFamily:"inherit",marginRight:6,marginBottom:6}}>{children}</button>;
+
+  if(recibo) return <div style={{padding:"4px 4px 16px"}}>
+    <div style={{fontSize:11,fontWeight:800,color:C.textMuted,letterSpacing:".1em",padding:"8px 12px"}}>MOVIMENTAÇÃO ENTRE CONTAS</div>
+    <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:14,padding:16,margin:"0 8px"}}>
+      <div style={{fontSize:13,fontWeight:800,color:C.green,marginBottom:6}}>✓ Transferência lançada</div>
+      <div style={{fontSize:20,fontWeight:800,color:C.text,fontVariantNumeric:"tabular-nums"}}>{fmt(recibo.valor)}</div>
+      <div style={{fontSize:13,color:C.textSub,marginTop:6,lineHeight:1.5}}>{recibo.de} → {recibo.para}<br/>{fmtD(recibo.data)}{recibo.intencao?" · "+recibo.intencao:""}</div>
+      <div style={{fontSize:11,color:C.textMuted,marginTop:8}}>Os dois lados já entraram executados e amarrados.</div>
+      <button onClick={()=>{ setRecibo(null); setDataOp(hoje()); }}
+        style={{width:"100%",padding:"12px",borderRadius:10,background:C.surface,color:C.purple,border:"1px solid "+C.purple,fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit",marginTop:14}}>
+        Lançar outra transferência
+      </button>
+    </div>
+  </div>;
 
   return <div style={{padding:"4px 4px 16px"}}>
     <div style={{fontSize:11,fontWeight:800,color:C.textMuted,letterSpacing:".1em",padding:"8px 12px"}}>MOVIMENTAÇÃO ENTRE CONTAS</div>
@@ -7584,7 +7609,10 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
     }
   },[destaque]);
 
-  const prog=useMemo(()=>(data.fluxo||[]).filter(r=>r.status==="PROGRAMADO").sort((a,b)=>a.data>b.data?1:-1),[data.fluxo]);
+  // [11/10, pedido do Marcus] O dia de HOJE aparece inteiro ate 23:59: alem dos
+  // programados, entram os ja executados de hoje (so exibicao -- o saldo de
+  // abertura do dia continua sendo o de antes dos lancamentos de hoje).
+  const prog=useMemo(()=>(data.fluxo||[]).filter(r=>r.status==="PROGRAMADO"||(r.status==="EXECUTADO"&&r.data===hj&&r.categoria!=="DCP_PROVISAO")).sort((a,b)=>a.data>b.data?1:-1),[data.fluxo,hj]);
 
   // Gastos de cartao (PF/PJ) so pra EXIBIR no Fluxo -- puramente informativo,
   // pra Marcus achar "onde foi parar" uma compra de cartao sem precisar
@@ -7788,7 +7816,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
           borderLeft:corItem?"3px solid "+corItem:"none"}}>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:12,fontWeight:600,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}</div>
-            <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{item.categoria==="DCP_PROVISAO"?periodoDCP(item.data):(<>{tipoDisplay(item.tipo,data)}{item.categoria&&item.categoria!==item.tipo?" · "+item.categoria:""} · {item.forma}</>)}</div>
+            <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{item.categoria==="DCP_PROVISAO"?periodoDCP(item.data):(<>{tipoDisplay(item.tipo,data)}{item.categoria&&item.categoria!==item.tipo?" · "+item.categoria:""} · {item.forma}{item.status==="EXECUTADO"?" · ✓ executado":""}</>)}</div>
             {/* [24/07] Selos (status, conciliacao, envelope) sempre numa
                 terceira linha propria, com flex-wrap -- antes disputavam
                 espaco com o nome ou o subtitulo e cortavam quando nao
@@ -12642,7 +12670,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261011.2240 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261011.2320 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12756,7 +12784,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261011.2240
+      // HTML v3.20261011.2320
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
