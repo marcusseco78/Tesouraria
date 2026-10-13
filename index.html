@@ -9036,7 +9036,7 @@ function Conversar({data,onUpdate,initTxt,onInitDone,msgs,setMsgs}){
 
 
 // ── RECORRÊNCIAS ──────────────────────────────────────────────────────────────
-function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCartao,neg,setNeg,val,setVal,dia,setDia,diaTipoEdit,setDiaTipoEdit,diaNEdit,setDiaNEdit,tolerancia,setTolerancia,alias,setAlias,envelopePadrao,setEnvelopePadrao,destinoEdit,setDestinoEdit,regerar,load,salvar,apagar,data,formaEdit,setFormaEdit,intervaloSemanasEdit,setIntervaloSemanasEdit,dataAncoraSemanaEdit,setDataAncoraSemanaEdit}){
+function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCartao,neg,setNeg,val,setVal,dia,setDia,diaTipoEdit,setDiaTipoEdit,diaNEdit,setDiaNEdit,tolerancia,setTolerancia,alias,setAlias,envelopePadrao,setEnvelopePadrao,destinoEdit,setDestinoEdit,regerar,load,salvar,apagar,data,formaEdit,setFormaEdit,intervaloSemanasEdit,setIntervaloSemanasEdit,dataAncoraSemanaEdit,setDataAncoraSemanaEdit,nomeEdit,setNomeEdit}){
   // [CORRIGIDO 11/08] Faltava esta linha -- SecaoRecorrencias usava
   // contasAtivasRecEdit (pra montar o seletor de conta no painel de edicao)
   // sem nunca declarar nem receber como prop. So disparava quando havia
@@ -9111,6 +9111,12 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
         <span style={{fontSize:11,color:C.textMuted}}>{isOpen?"▲":"▼"}</span>
       </div>
       {isOpen&&<div style={{background:bg,padding:"12px 16px",borderBottom:"1px solid "+C.border}}>
+        <div style={{marginBottom:10}}>
+          <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Nome</div>
+          <input type="text" value={nomeEdit} onChange={e=>setNomeEdit(e.target.value)}
+            style={{width:"100%",boxSizing:"border-box",padding:"10px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",background:"#fff"}}/>
+          <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Muda o nome nos lançamentos futuros também. O que já foi executado/pago mantém o nome antigo.</div>
+        </div>
         <div style={{marginBottom:10}}>
           <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Destino</div>
           {/* [NOVO 03/09, pedido do Marcus] Era select "Conta/Cartão PF/Cartão
@@ -9234,13 +9240,6 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
             Cancelar
           </button>
         </div>
-        {/* [NOVO 12/10, pedido do Marcus] Botão Regerar de volta: Salvar só
-            regenera quando algo mudou, e recorrência "a cada N semanas" que
-            nunca gerou nada ficava sem saída. */}
-        <button onClick={()=>regerar(item)} disabled={load}
-          style={{width:"100%",marginTop:8,padding:"8px",borderRadius:8,background:"transparent",color:cor,fontSize:12,fontWeight:700,border:"1px solid "+cor,cursor:"pointer",fontFamily:"inherit"}}>
-          ↻ Regerar ocorrências futuras
-        </button>
         <button onClick={()=>apagar(item)} disabled={load}
           style={{width:"100%",marginTop:8,padding:"6px",borderRadius:8,background:"transparent",color:C.red,fontSize:11,border:"1px dashed #F3C6C1",cursor:"pointer",fontFamily:"inherit"}}>
           🗑 Apagar esta recorrência
@@ -9286,6 +9285,8 @@ function Recorrencias({data,onUpdate}){
   // é semanal.
   const [intervaloSemanasEdit,setIntervaloSemanasEdit]=useState("1");
   const [dataAncoraSemanaEdit,setDataAncoraSemanaEdit]=useState("");
+  const [nomeEdit,setNomeEdit]=useState("");
+  const [dlg,setDlg]=useState(null); // [NOVO 12/10] {item,acao:"salvar"|"apagar",etapa:"opcoes"|"datas",datas:null|[]} -- pergunta ao salvar/apagar
   const contasAtivasRecEdit=(data.contas||[]).filter(c=>c.ativa!==false);
   const [load,setLoad]=useState(false);
   const [showForm,setShowForm]=useState(false);
@@ -9401,6 +9402,7 @@ function Recorrencias({data,onUpdate}){
     // tocar em uma abria/fechava TODAS ao mesmo tempo, porque todas
     // batiam a mesma comparação. idx é o número da linha -- sempre único.
     setEdit(item.idx);
+    setNomeEdit(item.desc);
     setVal(formatarValorInicial(item.valor));
     setDia(String(item.diaVenc));
     setDiaTipoEdit(item.diaTipo);
@@ -9432,7 +9434,7 @@ function Recorrencias({data,onUpdate}){
   // com a config antiga que ainda estava na planilha. Motor unico agora: os
   // dois botoes (Salvar e Regerar) sempre persistem qualquer edicao pendente
   // primeiro, do mesmo jeito, antes de fazer o que sao pra fazer.
-  async function _persistirCamposRecorrencia(item){
+  async function _persistirCamposRecorrencia(item,semCascata){
     let ultimoResultado=null;
     // [SIMPLIFICADO 03/10, pedido do Marcus: "nao precisa perguntar, sempre
     // vai querer apagar e regerar"] Antes vários campos podiam disparar
@@ -9450,44 +9452,72 @@ function Recorrencias({data,onUpdate}){
     const novoDia=parseInt(dia);
     const novaTolerancia=tolerancia===""?null:parseInt(tolerancia);
     if(novoValor!==item.valor)
-      _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"VALOR",valor:String(novoValor),resumo:""}));
+      _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"VALOR",valor:String(novoValor),resumo:"",semCascata:!!semCascata}));
     if(destinoEdit==="FLUXO"&&formaEdit!==(item.forma||"CONTA"))
-      _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"FORMA",valor:formaEdit,resumo:""}));
+      _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"FORMA",valor:formaEdit,resumo:"",semCascata:!!semCascata}));
     if(novoDia!==parseInt(item.diaVenc))
-      _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_VENC",valor:String(novoDia),resumo:""}));
+      _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_VENC",valor:String(novoDia),resumo:"",semCascata:!!semCascata}));
     if(diaTipoEdit!==item.diaTipo)
-      _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_TIPO",valor:diaTipoEdit,resumo:""}));
+      _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_TIPO",valor:diaTipoEdit,resumo:"",semCascata:!!semCascata}));
     if(parseInt(diaNEdit)!==item.diaN)
-      _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_N",valor:diaNEdit,resumo:""}));
+      _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"DIA_N",valor:diaNEdit,resumo:"",semCascata:!!semCascata}));
     if(novaTolerancia!=null&&novaTolerancia!==Number(item.tolerancia))
-      _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"TOLERANCIA_DIAS",valor:String(novaTolerancia),resumo:""}));
+      _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"TOLERANCIA_DIAS",valor:String(novaTolerancia),resumo:"",semCascata:!!semCascata}));
     const novoAlias=alias.trim().toUpperCase();
     if(novoAlias!==String(item.alias||"").trim().toUpperCase()){
       // [SIMPLIFICADO 03/10, pedido do Marcus] Antes podia parar aqui e
       // perguntar se alguma ocorrência já tinha um nome bancário diferente
       // gravado. Agora o backend já atualiza direto, sem perguntar.
-      const rAlias=await api({action:"editarRecorrencia",descricao:item.desc,campo:"ALIAS_CSV",valor:novoAlias,resumo:""});
+      const rAlias=await api({action:"editarRecorrencia",descricao:item.desc,campo:"ALIAS_CSV",valor:novoAlias,resumo:"",semCascata:!!semCascata});
       _guardarResultado(rAlias);
     }
     if(envelopePadrao!==String(item.envelopePadrao||""))
-      _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"ENVELOPE_PADRAO",valor:envelopePadrao,resumo:""}));
+      _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"ENVELOPE_PADRAO",valor:envelopePadrao,resumo:"",semCascata:!!semCascata}));
     // [NOVO 08/09, "a cada X semanas"] Só existe pra recorrência semanal.
     // Mesma regra de sempre: nunca cascateia sozinho, o backend devolve
     // _precisaRegenerar (guardado junto com os outros acima).
     if(item.ehSemanal){
       const novoIntervalo=Math.max(1,parseInt(intervaloSemanasEdit)||1);
       if(novoIntervalo!==item.intervaloSemanas)
-        _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"INTERVALO_SEMANAS",valor:String(novoIntervalo),resumo:""}));
+        _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"INTERVALO_SEMANAS",valor:String(novoIntervalo),resumo:"",semCascata:!!semCascata}));
       if(novoIntervalo>1&&dataAncoraSemanaEdit!==item.ancoraSemana)
-        _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"ANCORA_SEMANA",valor:dataAncoraSemanaEdit,resumo:""}));
+        _guardarResultado(await api({action:"editarRecorrencia",descricao:item.desc,campo:"ANCORA_SEMANA",valor:dataAncoraSemanaEdit,resumo:"",semCascata:!!semCascata}));
     }
     if(avisoRegenAcumulado&&ultimoResultado) ultimoResultado._avisoRegen=avisoRegenAcumulado;
     return ultimoResultado;
   }
 
-  async function salvar(item){
+  // [NOVO 12/10, pedido do Marcus] Ao tocar em Salvar, a pergunta vem na
+  // saída (como no calendário): substituir todos os futuros ou só salvar.
+  // Se mudou só o nome, não pergunta nada -- renomear não precisa regerar.
+  function salvar(item){
+    const nomeNovo=(nomeEdit||"").trim();
+    const mudouNome=nomeNovo&&nomeNovo!==item.desc;
+    const mudouOutro=numBR(val)*(neg?-1:1)!==item.valor
+      ||destinoEdit!==String(item.destino||"FLUXO").toUpperCase().replace(/[^A-Z0-9_.\-]/g,"")
+      ||(destinoEdit==="FLUXO"&&formaEdit!==(item.forma||"CONTA"))
+      ||parseInt(dia)!==parseInt(item.diaVenc)||diaTipoEdit!==item.diaTipo||parseInt(diaNEdit)!==item.diaN
+      ||alias.trim().toUpperCase()!==String(item.alias||"").trim().toUpperCase()
+      ||envelopePadrao!==String(item.envelopePadrao||"")
+      ||(tolerancia!==""&&parseInt(tolerancia)!==Number(item.tolerancia))
+      ||(item.ehSemanal&&(Math.max(1,parseInt(intervaloSemanasEdit)||1)!==item.intervaloSemanas||(parseInt(intervaloSemanasEdit)>1&&dataAncoraSemanaEdit!==item.ancoraSemana)));
+    if(mudouNome&&!mudouOutro) return salvarConfirmado(item,false);
+    setDlg({item,acao:"salvar",etapa:"opcoes",datas:null,fut:null});
+    // Busca já os próximos lançamentos (e quais foram editados à mão) pra pergunta seguinte
+    api({action:"listarFuturosRecorrencia",descricao:item.desc})
+      .then(r=>setDlg(x=>x&&x.item===item?{...x,fut:r}:x)).catch(()=>{});
+  }
+
+  async function salvarConfirmado(itemOrig,substituirTodos){
+    setDlg(null);
     setLoad(true);
+    let item=itemOrig;
     try{
+      const nomeNovo=(nomeEdit||"").trim();
+      if(nomeNovo&&nomeNovo!==itemOrig.desc){
+        await api({action:"renomearRecorrencia",descricao:itemOrig.desc,novoNome:nomeNovo});
+        item={...itemOrig,desc:nomeNovo};
+      }
       let ultimoResultado=null;
       const destinoAntigo=String(item.destino||"FLUXO").toUpperCase().replace(/[^A-Z0-9_]/g,"");
       if(destinoEdit!==destinoAntigo){
@@ -9507,6 +9537,10 @@ function Recorrencias({data,onUpdate}){
         }catch(eReg){ alert("Destino salvo, mas a regeração falhou: "+eReg.message); }
       }
       ultimoResultado=(await _persistirCamposRecorrencia(item))||ultimoResultado;
+      if(substituirTodos){
+        const rReg2=await api({action:"regerarOcorrenciasRecorrencia",descricao:item.desc});
+        ultimoResultado=rReg2;
+      }
       // [SIMPLIFICADO 03/10, pedido do Marcus] Fusão Salvar/Regerar: um
       // botão só, sem pergunta nenhuma. Quando VALOR/DIA_VENC muda e isso
       // afeta ocorrências já geradas (cartão sempre; conta só quando é
@@ -9519,6 +9553,69 @@ function Recorrencias({data,onUpdate}){
       onUpdate(ultimoResultado||await api({action:"getData"}));
     }catch(e){alert(e.message);}
     setLoad(false);setEdit(null);
+  }
+
+  async function abrirDatas(){
+    // [NOVO 13/10] Etapa 2 da pergunta: lista os próximos lançamentos da recorrência
+    const d=dlg; if(!d) return;
+    if(d.fut){ setDlg({...d,etapa:"datas",datas:d.fut.datas||[]}); return; }
+    setDlg({...d,etapa:"datas",datas:null});
+    try{
+      const r=await api({action:"listarFuturosRecorrencia",descricao:d.item.desc});
+      setDlg(x=>x?{...x,etapa:"datas",datas:(r&&r.datas)||[],fut:r}:x);
+    }catch(e){alert(e.message);setDlg(null);}
+  }
+
+  // Escolheu o ponto de partida (corte vazio = todos os futuros). Se há lançamentos
+  // editados à mão a partir dali, pergunta o que fazer com eles; senão já executa.
+  async function escolherCorte(corte){
+    const d=dlg; if(!d) return;
+    let fut=d.fut;
+    if(!fut){
+      try{fut=await api({action:"listarFuturosRecorrencia",descricao:d.item.desc});}catch(e){fut={editadas:[]};}
+    }
+    const qtd=((fut&&fut.editadas)||[]).filter(x=>!corte||x>=corte).length;
+    if(qtd>0) setDlg({...d,etapa:"editados",corte,qtdEditados:qtd,fut});
+    else salvarAPartirDe(d.item,corte,false);
+  }
+
+  // [NOVO 13/10] Editar daqui pra frente: lançamentos anteriores ao corte não
+  // são tocados; os do corte em diante são apagados e recriados com a
+  // configuração nova.
+  async function salvarAPartirDe(itemOrig,corte,manter){
+    setDlg(null);
+    setLoad(true);
+    let item=itemOrig;
+    try{
+      const nomeNovo=(nomeEdit||"").trim();
+      if(nomeNovo&&nomeNovo!==itemOrig.desc){
+        await api({action:"renomearRecorrencia",descricao:itemOrig.desc,novoNome:nomeNovo});
+        item={...itemOrig,desc:nomeNovo};
+      }
+      await api({action:"apagarFuturosRecorrencia",descricao:item.desc,aPartirDe:corte||"",manterEditados:!!manter});
+      const destinoAntigo=String(item.destino||"FLUXO").toUpperCase().replace(/[^A-Z0-9_]/g,"");
+      if(destinoEdit!==destinoAntigo)
+        await api({action:"editarRecorrencia",descricao:item.desc,campo:"DESTINO",valor:destinoEdit,resumo:"",semCascata:true});
+      const rPersist=await _persistirCamposRecorrencia(item,true);
+      const dAtual=rPersist||await api({action:"getData"});
+      const achado=((dAtual&&dAtual.recorr)||[]).find(r=>r.idx===itemOrig.idx);
+      const nomeAtual=achado?achado.desc:item.desc;
+      const r=await api({action:"regerarOcorrenciasRecorrencia",descricao:nomeAtual,aPartirDe:corte||"",semApagar:true});
+      onUpdate(r);
+      setEdit(null);
+    }catch(e){alert("Não consegui concluir: "+e.message+" Se algum lançamento futuro sumiu, abra a recorrência e use Salvar → Substituir todos os futuros.");}
+    setLoad(false);
+  }
+
+  async function apagarAPartirDe(item,corte){
+    setDlg(null);
+    setLoad(true);
+    try{
+      const r=await api({action:"terminarRecorrencia",descricao:item.desc,aPartirDe:corte});
+      onUpdate(r);
+      setEdit(null);
+    }catch(e){alert(e.message);}
+    setLoad(false);
   }
 
   async function regerar(item){
@@ -9534,7 +9631,9 @@ function Recorrencias({data,onUpdate}){
     setLoad(false);
   }
 
-  async function apagar(item){
+  function apagar(item){ setDlg({item,acao:"apagar",etapa:"opcoes",datas:null}); }
+
+  async function apagarTudo(item){
     if(!confirm("Apagar \""+item.desc+"\"? Para de gerar novas ocorrências (o que já foi lançado continua no Fluxo/Cartões, editável normalmente)."))return;
     // [NOVO 17/07] Antes disso o Marcus tinha que lembrar de ir apagar
     // manualmente os lançamentos já gerados numa segunda etapa (aconteceu
@@ -9567,6 +9666,54 @@ function Recorrencias({data,onUpdate}){
 
   const totalRecorr=(data.recorr||[]).length;
   return <div style={{paddingBottom:16}}>
+    {dlg&&(()=>{
+      const ehSalvar=dlg.acao==="salvar";
+      const fmtD=iso=>iso.slice(8,10)+"/"+iso.slice(5,7)+"/"+iso.slice(0,4);
+      const btn=(primario)=>({width:"100%",textAlign:"left",padding:"12px 14px",borderRadius:10,border:primario?"none":"1px solid "+C.border,background:primario?C.accent:"#fff",color:primario?"#fff":C.text,cursor:"pointer",fontFamily:"inherit",marginBottom:8});
+      return <div onClick={()=>setDlg(null)} style={{position:"fixed",inset:0,background:"rgba(15,27,61,.55)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+        <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:16,padding:"20px 18px",width:"100%",maxWidth:380,boxShadow:"0 10px 40px rgba(0,0,0,.3)"}}>
+          {dlg.etapa==="editados"?<>
+            <div style={{fontSize:17,fontWeight:800,color:C.text,marginBottom:4}}>{dlg.qtdEditados} lançamento{dlg.qtdEditados>1?"s":""} editado{dlg.qtdEditados>1?"s":""} à mão</div>
+            <div style={{fontSize:13,color:C.textSub,marginBottom:14}}>Valor, data ou conta diferentes do padrão. O que fazer com {dlg.qtdEditados>1?"eles":"ele"}?</div>
+            <button onClick={()=>salvarAPartirDe(dlg.item,dlg.corte,true)} style={btn(true)}>
+              <div style={{fontSize:14,fontWeight:800}}>Manter como estão</div>
+              <div style={{fontSize:11,opacity:.85,marginTop:2}}>Só os outros são recriados com a configuração nova.</div>
+            </button>
+            <button onClick={()=>salvarAPartirDe(dlg.item,dlg.corte,false)} style={btn(false)}>
+              <div style={{fontSize:14,fontWeight:800}}>Substituir pela configuração atual</div>
+              <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>As edições feitas à mão se perdem.</div>
+            </button>
+            <button onClick={()=>setDlg({...dlg,etapa:"opcoes"})} style={{width:"100%",padding:"10px",borderRadius:10,border:"none",background:"transparent",color:C.textSub,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Voltar</button>
+          </>:dlg.etapa==="opcoes"?<>
+            <div style={{fontSize:17,fontWeight:800,color:C.text,marginBottom:4}}>{ehSalvar?"Salvar":"Apagar"} "{(ehSalvar?(nomeEdit||dlg.item.desc):dlg.item.desc).trim()}"</div>
+            <div style={{fontSize:13,color:C.textSub,marginBottom:14}}>{ehSalvar?"O que fazer com os lançamentos futuros que já foram criados?":"O que apagar?"}</div>
+            {ehSalvar&&<button onClick={()=>escolherCorte("")} style={btn(true)}>
+              <div style={{fontSize:14,fontWeight:800}}>Todos os futuros</div>
+              <div style={{fontSize:11,opacity:.85,marginTop:2}}>Apaga os que ainda não foram executados e cria de novo com esta configuração.</div>
+            </button>}
+            <button onClick={abrirDatas} style={btn(!ehSalvar)}>
+              <div style={{fontSize:14,fontWeight:800}}>A partir de um lançamento…</div>
+              <div style={{fontSize:11,opacity:ehSalvar?1:.85,color:ehSalvar?C.textMuted:"#fff",marginTop:2}}>{ehSalvar?"Os anteriores ficam como estão; daquele em diante muda tudo.":"Os anteriores ficam; daquele em diante some e a recorrência termina ali."}</div>
+            </button>
+            {ehSalvar?null:<button onClick={()=>{const it=dlg.item;setDlg(null);apagarTudo(it);}} style={btn(false)}>
+              <div style={{fontSize:14,fontWeight:800,color:C.red}}>Apagar a recorrência toda</div>
+              <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>Para de gerar e, se você quiser, remove todos os futuros.</div>
+            </button>}
+          </>:<>
+            <div style={{fontSize:17,fontWeight:800,color:C.text,marginBottom:4}}>A partir de qual lançamento?</div>
+            <div style={{fontSize:13,color:C.textSub,marginBottom:10}}>{ehSalvar?"Este e os seguintes serão recriados com a configuração nova.":"Este e os seguintes serão apagados."}</div>
+            <div style={{maxHeight:"40vh",overflowY:"auto",marginBottom:8}}>
+              {dlg.datas===null&&<div style={{padding:12,fontSize:13,color:C.textMuted}}>Carregando…</div>}
+              {dlg.datas&&!dlg.datas.length&&<div style={{padding:12,fontSize:13,color:C.textMuted}}>Não há lançamentos futuros criados para esta recorrência. Use "Substituir todos os futuros" para criar.</div>}
+              {(dlg.datas||[]).map(iso=><button key={iso} onClick={()=>ehSalvar?escolherCorte(iso):apagarAPartirDe(dlg.item,iso)}
+                style={{...btn(false),marginBottom:6,fontSize:15,fontWeight:700}}>{fmtD(iso)}</button>)}
+            </div>
+            <button onClick={()=>setDlg({...dlg,etapa:"opcoes"})} style={{width:"100%",padding:"10px",borderRadius:10,border:"none",background:"transparent",color:C.textSub,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Voltar</button>
+          </>}
+          <button onClick={()=>setDlg(null)} style={{width:"100%",padding:"10px",borderRadius:10,border:"none",background:"transparent",color:C.textSub,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancelar</button>
+        </div>
+      </div>;
+    })()}
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 16px 4px",flexWrap:"wrap",gap:8}}>
       {/* [NOVO 03/10, pedido do Marcus] Sem isso, uma recorrência desativada
           sumia da lista pra sempre, sem jeito de abrir e escolher limpar os
@@ -9636,54 +9783,54 @@ function Recorrencias({data,onUpdate}){
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
-      load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}
+      load={load} salvar={salvar} nomeEdit={nomeEdit} setNomeEdit={setNomeEdit} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}
       intervaloSemanasEdit={intervaloSemanasEdit} setIntervaloSemanasEdit={setIntervaloSemanasEdit}
       dataAncoraSemanaEdit={dataAncoraSemanaEdit} setDataAncoraSemanaEdit={setDataAncoraSemanaEdit}/>
     <SecaoRecorrencias titulo="Recorrentes por conta" lista={debitosMensais} cor={C.red} bg={C.redLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
-      load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
+      load={load} salvar={salvar} nomeEdit={nomeEdit} setNomeEdit={setNomeEdit} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
     <SecaoRecorrencias titulo="Trimestrais (conta)" lista={debitosTrimestrais} cor={C.purple} bg={C.purpleLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
-      load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
+      load={load} salvar={salvar} nomeEdit={nomeEdit} setNomeEdit={setNomeEdit} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
     <SecaoRecorrencias titulo="Semestrais (conta)" lista={debitosSemestrais} cor={C.purple} bg={C.purpleLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
-      load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
+      load={load} salvar={salvar} nomeEdit={nomeEdit} setNomeEdit={setNomeEdit} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
     <SecaoRecorrencias titulo="Anuais (conta)" lista={debitosAnuaisConta} cor={C.purple} bg={C.purpleLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
-      load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
+      load={load} salvar={salvar} nomeEdit={nomeEdit} setNomeEdit={setNomeEdit} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
     <SecaoRecorrencias titulo="Recorrentes no cartão" lista={cartaoMensal} cor={C.red} bg={C.redLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
-      load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
+      load={load} salvar={salvar} nomeEdit={nomeEdit} setNomeEdit={setNomeEdit} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
     <SecaoRecorrencias titulo="Trimestrais (cartão)" lista={cartaoTrimestral} cor={C.purple} bg={C.purpleLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
-      load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
+      load={load} salvar={salvar} nomeEdit={nomeEdit} setNomeEdit={setNomeEdit} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
     <SecaoRecorrencias titulo="Semestrais (cartão)" lista={cartaoSemestral} cor={C.purple} bg={C.purpleLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
-      load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
+      load={load} salvar={salvar} nomeEdit={nomeEdit} setNomeEdit={setNomeEdit} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
     <SecaoRecorrencias titulo="Anuais (cartão)" lista={cartaoAnual} cor={C.purple} bg={C.purpleLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
-      load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
+      load={load} salvar={salvar} nomeEdit={nomeEdit} setNomeEdit={setNomeEdit} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
     <SecaoRecorrencias titulo="Receitas recorrentes" lista={receitas} cor={C.blue} bg={C.blueLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
-      load={load} salvar={salvar} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
+      load={load} salvar={salvar} nomeEdit={nomeEdit} setNomeEdit={setNomeEdit} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
     {totalRecorr>0&&!itemsAtivos.length&&<div style={{padding:"20px",textAlign:"center",color:C.textMuted,fontSize:13}}>
       {totalRecorr} itens, nenhum ativo.
     </div>}
@@ -12681,7 +12828,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261012.1910 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261013.0100 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12795,7 +12942,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261012.1910
+      // HTML v3.20261013.0100
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
