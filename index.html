@@ -504,6 +504,24 @@ function _intervaloDCP(dataEnvelope){
   const ini=ancora, fim=new Date(ini); fim.setDate(fim.getDate()+6);
   return {ini,fim};
 }
+// [NOVO 13/10, bug real do Marcus] O envelope DCP tem a data do INÍCIO da semana
+// (desde a reforma de 17/09). Tratar "data < hoje" como atraso fazia o envelope
+// aparecer como VENCIDO/ATRASADO já no 2º dia da semana, e o Marcus fechou o
+// 12 a 18/10 antes da hora. Envelope só está atrasado depois do FIM da semana.
+function dcpSemanaEncerrada(dataEnvelope,hj){
+  if(!dataEnvelope) return false;
+  const {fim}=_intervaloDCP(dataEnvelope);
+  const iso=fim.getFullYear()+"-"+String(fim.getMonth()+1).padStart(2,"0")+"-"+String(fim.getDate()).padStart(2,"0");
+  return iso<hj;
+}
+// [NOVO 13/10, pedido do Marcus] Na lista (Plano/Histórico) o envelope DCP aparece
+// no ÚLTIMO dia da semana. A data gravada (início da semana) continua valendo para
+// o saldo e a projeção -- isto é só onde ele é exibido.
+function dcpDataExibicao(dataEnvelope){
+  if(!dataEnvelope) return dataEnvelope;
+  const {fim}=_intervaloDCP(dataEnvelope);
+  return fim.getFullYear()+"-"+String(fim.getMonth()+1).padStart(2,"0")+"-"+String(fim.getDate()).padStart(2,"0");
+}
 function periodoDCP(dataEnvelope){
   if(!dataEnvelope) return "";
   const {ini,fim}=_intervaloDCP(dataEnvelope);
@@ -846,8 +864,9 @@ function SeletorEnvelopeItem({aba,row,obsAtual,data,onUpdate}){
     </label>}
   </div>;
 }
-function TagEnvelopeDCP({envelope,futuro}){
+function TagEnvelopeDCP({envelope,futuro,pos}){
   if(!envelope) return null;
+  if(pos) return <><TagEnvelopeDCP envelope={envelope} futuro={futuro}/><span style={{fontSize:10,fontWeight:800,marginLeft:4,color:"#B45309"}}>* lançado após o fechamento</span></>;
   return <span style={{fontSize:10,fontWeight:800,marginLeft:6,padding:"2px 7px",borderRadius:5,
     color:futuro?C.textMuted:"#B45309",background:futuro?C.borderLight:"#FEF3E2",
     border:futuro?"none":"1px solid #FCD34D",
@@ -890,8 +909,9 @@ function ValorDCPFechado({item}){
   let o={};try{o=JSON.parse(item.obs||"{}");}catch(e){}
   const fx=o.fx;
   return <span style={{display:"flex",flexDirection:"column",alignItems:"flex-end",flexShrink:0,gap:2}}>
-    <span style={{fontSize:12,fontWeight:700,color:C.textMuted,fontStyle:"italic"}}>Distribuído</span>
+    <span style={{fontSize:12,fontWeight:700,color:C.textMuted,fontStyle:"italic"}}>Distribuído{item.dcpPosValor>0?" *":""}</span>
     {fx&&<BadgeMetaDCP valor={-fx.d}/>}
+    {item.dcpPosValor>0&&<span style={{fontSize:9,fontWeight:700,color:"#B45309",whiteSpace:"nowrap"}}>* {fmt(item.dcpPosValor)} lançado após</span>}
   </span>;
 }
 // [09/08-2] Badge separado do saldo -- mostra "quanto passou/quanto sobra"
@@ -1249,7 +1269,8 @@ function corDoItem(item, hj){
   }
 
   if(item.status==="PROGRAMADO"){
-    if(item.data<hj) return {cor:C.red,selo:"● VENCIDO",bg:bgCat,descCor,confirmadoExtrato};
+    const vencido=cat==="DCP_PROVISAO"?dcpSemanaEncerrada(item.data,hj):item.data<hj;
+    if(vencido) return {cor:C.red,selo:"● VENCIDO",bg:bgCat,descCor,confirmadoExtrato};
     if(obs.dataOriginal&&item.data>obs.dataOriginal) return {cor:C.orange,selo:"● REAGENDADO",bg:bgCat,descCor,confirmadoExtrato};
   }
   // [NOVO 20/07] Aumenta a visibilidade de gasto DCP no dia a dia -- antes
@@ -6848,11 +6869,11 @@ function DCPTab({data,onUpdate,onIrPara}){
   // agrupamento no calculo do total) numa linha so, com "(Nx)" e o total.
   function transacoesDoEnvelope(envData){
     const doFluxo=fluxo.filter(r=>r.categoria==="DCP"&&r.dcpEnvelopeData===envData)
-      .map(r=>({row:r.row,descricao:r.descricao,valor:r.valor,data:r.data,status:r.status,origem:"fluxo"}));
+      .map(r=>({row:r.row,descricao:r.descricao,valor:r.valor,data:r.data,status:r.status,origem:"fluxo",pos:!!r.dcpPosFech}));
     const doCartao=[];
     Object.entries(data.cartaoItens||{}).forEach(([cid,arr])=>{
       (arr||[]).filter(r=>r[10]===envData).forEach(r=>
-        doCartao.push({row:_linhaCartao(r),descricao:r[1],valor:r[2],data:r[0],status:r[7],parcela:r[3],origem:cid}));
+        doCartao.push({row:_linhaCartao(r),descricao:r[1],valor:r[2],data:r[0],status:r[7],parcela:r[3],origem:cid,pos:!!r[12]}));
     });
     const grupos={};
     const semGrupo=[];
@@ -6873,11 +6894,12 @@ function DCPTab({data,onUpdate,onIrPara}){
     doCartao.forEach(t=>{
       const chave=t.origem+"|"+t.descricao+"|"+totalParcelasDe(t.parcela)+"|"+Math.round(Math.abs(t.valor));
       if(!grupos[chave]) grupos[chave]={...t,total:0,parcelas:0};
+      if(t.pos) grupos[chave].pos=true;
       grupos[chave].total+=t.valor;
       grupos[chave].parcelas++;
       if(t.data<grupos[chave].data){ grupos[chave].data=t.data; grupos[chave].row=t.row; grupos[chave].status=t.status; }
     });
-    const agrupadas=Object.values(grupos).map(g=>({row:g.row,descricao:g.descricao,valor:g.total,data:g.data,status:g.status,origem:g.origem,parcelas:g.parcelas}));
+    const agrupadas=Object.values(grupos).map(g=>({row:g.row,descricao:g.descricao,valor:g.total,data:g.data,status:g.status,origem:g.origem,parcelas:g.parcelas,pos:!!g.pos}));
     return [...doFluxo,...agrupadas].sort((a,b)=>a.data<b.data?-1:1);
   }
 
@@ -6901,7 +6923,8 @@ function DCPTab({data,onUpdate,onIrPara}){
             <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 14px",borderBottom:"1px solid "+C.borderLight,background:C.orangeLight}}>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:13,fontWeight:700,color:C.text}}>{nomeExibicao({categoria:"DCP_PROVISAO",descricao:env.descricao})}</div>
-                <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{periodoDCP(env.data)} · {env.status==="EXECUTADO"?"fechado":"aberto"} · {transacoes.length} lançamento(s)</div>
+                <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{periodoDCP(env.data)} · {env.status==="EXECUTADO"?"fechado":"aberto"}{env.dcpPosValor>0?" *":""} · {transacoes.length} lançamento(s)</div>
+                {env.dcpPosValor>0&&<div style={{fontSize:10,fontWeight:700,color:"#B45309",marginTop:1}}>* {fmt(env.dcpPosValor)} lançado(s) após o fechamento</div>}
               </div>
               <ValorDCPProvisao valor={env.valor} dataEnvelope={env.data}/>
               <span style={{fontSize:12,color:C.textMuted,flexShrink:0}}>{aberto?"▲":"▼"}</span>
@@ -6919,6 +6942,7 @@ function DCPTab({data,onUpdate,onIrPara}){
                   {fmtD(t.data)} · {t.origem==="fluxo"?"Fluxo":nomeCartao(t.origem,data)} · {t.status}
                   {t.parcelas>1&&" · total das "+t.parcelas+" parcelas"}
                 </div>
+                {t.pos&&<div style={{fontSize:10,fontWeight:700,color:"#B45309",marginTop:1}}>* lançado após o fechamento</div>}
               </div>
               <span style={{fontSize:12,fontWeight:700,color:t.valor<0?C.red:C.blue}}>{fmt(t.valor)}</span>
               <span style={{fontSize:13,color:C.accent,flexShrink:0}}>→</span>
@@ -7254,6 +7278,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
       Pagamento parcial — o restante (R$ {(Math.abs(item.valor)-numBR(val)).toFixed(2).replace(".",",")}) vira um novo lançamento no Fluxo, na mesma data, editável normalmente.
     </div>}
     {item.categoria==="DCP_PROVISAO"&&execMode&&<div style={{fontSize:10,color:"#B45309",background:C.accentLight,borderRadius:6,padding:"6px 8px",marginBottom:8}}>
+      {!dcpSemanaEncerrada(item.data,hoje())&&<div style={{color:C.red,fontWeight:800,marginBottom:6}}>⚠ Esta semana ainda não terminou ({periodoDCP(item.data)}). Fechar agora encerra a semana antes do fim.</div>}
       Fechamento de semana DCP: a sobra/estouro é redistribuída automaticamente entre as próximas segundas e a linha fecha em R$ 0,00 no Histórico — o valor digitado acima é ignorado. Feche as semanas em ordem (a mais antiga primeiro).
       <label style={{display:"flex",alignItems:"center",gap:6,marginTop:7,paddingTop:7,borderTop:"1px dashed #FBBF24",cursor:"pointer",fontWeight:700}}>
         <input type="checkbox" checked={ignorarDeficitDCP} onChange={e=>setIgnorarDeficitDCP(e.target.checked)}/>
@@ -7629,7 +7654,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
     const add=(r,cartao)=>{
       const dataCompra=r[0];
       if(!dataCompra||dataCompra<=hj) return; // so estritamente futuro -- hoje ja e "aconteceu", mora no Historico
-      (m[dataCompra]=m[dataCompra]||[]).push({row:_linhaCartao(r),descricao:_obsApelidoCartao(_obsCartaoRaw(r))||r[1],valor:r[2],cartao,status:r[7],dcpEnvelope:r[9]||null,dcpEnvelopeData:r[10]||null});
+      (m[dataCompra]=m[dataCompra]||[]).push({row:_linhaCartao(r),descricao:_obsApelidoCartao(_obsCartaoRaw(r))||r[1],valor:r[2],cartao,status:r[7],dcpEnvelope:r[9]||null,dcpEnvelopeData:r[10]||null,dcpPosFech:!!r[12]});
     };
     Object.keys(data.cartaoItens||{}).forEach(cid=>(data.cartaoItens[cid]||[]).forEach(r=>add(r,cid)));
     return m;
@@ -7687,7 +7712,23 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
       return {gdt,itens,spIni,spPorConta};
     });
   },[grupos,saldoHoje,saldoHojePorConta]);
-  const primeiroIdxComSaldo=useMemo(()=>gruposComSaldo.findIndex(g=>g.spIni!=null),[gruposComSaldo]);
+  // [NOVO 13/10, pedido do Marcus] O envelope DCP aparece no ULTIMO dia da semana
+  // dele (so exibicao -- o saldo ja foi calculado acima com a data real).
+  const gruposDisp=useMemo(()=>{
+    const gs=gruposComSaldo.map(g=>({...g,itens:g.itens.filter(i=>i.categoria!=="DCP_PROVISAO")}));
+    gruposComSaldo.forEach(g=>g.itens.filter(i=>i.categoria==="DCP_PROVISAO").forEach(env=>{
+      const alvo=dcpDataExibicao(env.data);
+      let dest=gs.find(x=>x.gdt===alvo);
+      if(!dest){
+        const prox=gs.find(x=>x.gdt>alvo);
+        dest={gdt:alvo,itens:[],spIni:prox?prox.spIni:g.spIni,spPorConta:prox?prox.spPorConta:g.spPorConta,soEnvelope:true};
+        gs.push(dest); gs.sort((a,b)=>a.gdt>b.gdt?1:-1);
+      }
+      dest.itens=[...dest.itens,env];
+    }));
+    return gs.filter(g=>g.itens.length||cartaoPorData[g.gdt]);
+  },[gruposComSaldo,cartaoPorData]);
+  const primeiroIdxComSaldo=useMemo(()=>gruposDisp.findIndex(g=>g.spIni!=null),[gruposDisp]);
 
   // [09/08-2] Badge "pior/melhor que a meta": mesmo padrao ja usado em
   // Timeline (envelopeAtual) pra achar a provisao DCP aberta mais antiga
@@ -7748,7 +7789,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
   const gruposExibidos=useMemo(()=>{
     const b=busca.trim().toUpperCase();
     const filtrarPorConta=contasAtivas.length>1&&contaSelecionada;
-    return gruposComSaldo
+    return gruposDisp
       .map(g=>{
         let itensExibir=g.itens, cartaoExibir=cartaoPorData[g.gdt]||[];
         if(filtrarPorConta){
@@ -7762,7 +7803,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
         return {...g,itensExibir,cartaoExibir};
       })
       .filter(g=>g.itensExibir.length||g.cartaoExibir.length);
-  },[gruposComSaldo,cartaoPorData,busca,contaSelecionada,contasAtivas,contaPorCartao]);
+  },[gruposDisp,cartaoPorData,busca,contaSelecionada,contasAtivas,contaPorCartao]);
 
   if(!prog.length) return <div>
     <div style={{padding:"40px 20px",textAlign:"center",color:C.textMuted,fontSize:14}}>
@@ -7777,7 +7818,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
       contaSelecionada={contaSelecionada} onConta={setContaSelecionada} onSinal={v=>setSinalDias(x=>({n:x.n+1,v}))}/>
     {!busca.trim()&&(()=>{
       const filtrar=contasAtivas.length>1&&contaSelecionada;
-      const pts=gruposExibidos.map(g=>({gdt:g.gdt,sp:filtrar?(g.spPorConta&&g.spPorConta[contaSelecionada]):g.spIni})).filter(x=>x.sp!=null&&isFinite(x.sp));
+      const pts=gruposExibidos.filter(g=>!g.soEnvelope).map(g=>({gdt:g.gdt,sp:filtrar?(g.spPorConta&&g.spPorConta[contaSelecionada]):g.spIni})).filter(x=>x.sp!=null&&isFinite(x.sp));
       const neg=pts.find(x=>x.sp<0);
       const menor=pts.length?pts.reduce((m,x)=>x.sp<m.sp?x:m,pts[0]):null;
       const alvo=neg||menor;
@@ -7786,7 +7827,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
     {busca.trim()&&!gruposExibidos.length&&<div style={{padding:"20px 14px",textAlign:"center",color:C.textMuted,fontSize:13}}>Nada encontrado para "{busca}".</div>}
     {gruposExibidos.map(({gdt,itensExibir,cartaoExibir,spIni,spPorConta},gi)=>{
       const filtrarPorConta=contasAtivas.length>1&&contaSelecionada;
-      const at=gdt<hj,sp=filtrarPorConta?(spPorConta&&spPorConta[contaSelecionada]):spIni;
+      const at=gdt<hj&&(!itensExibir.length||itensExibir.some(i=>i.categoria!=="DCP_PROVISAO"||dcpSemanaEncerrada(i.data,hj))),sp=filtrarPorConta?(spPorConta&&spPorConta[contaSelecionada]):spIni;
       const ehPrimeiro=!busca.trim()&&!filtrarPorConta&&gi===primeiroIdxComSaldo;
       const itemNoDia=itensExibir.some(i=>i.row===conf||(destaque?.tab==="fluxo"&&destaque.row===i.row));
       return <DiaCartao key={gdt} gdt={gdt} atrasado={at} saldo={sp} linhas={_linhasResumoDia(itensExibir,cartaoExibir)}
@@ -7841,7 +7882,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
                   </>;})()}
                 {selo&&<span style={{fontSize:9,fontWeight:700,color:corItem}}>{selo}</span>}
                 {confirmadoExtrato&&<span style={{fontSize:9,background:C.greenLight,color:C.green,padding:"1px 6px",borderRadius:8,fontWeight:700}}>✅ Extrato</span>}
-                <TagEnvelopeDCP envelope={item.categoria!=="DCP_PROVISAO"?item.dcpEnvelope:null} futuro={item.status==="PROGRAMADO"}/>
+                <TagEnvelopeDCP envelope={item.categoria!=="DCP_PROVISAO"?item.dcpEnvelope:null} futuro={item.status==="PROGRAMADO"} pos={!!item.dcpPosFech}/>
                 {(()=>{const ie=infoEnvelopeItem(item);return ie?<TagEnvelopeCustom nome={ie.nome} saldo={ie.saldo}/>:null;})()}
               </div>}
           </div>
@@ -7887,7 +7928,7 @@ function GrupoCartaoDia({cartaoId,itens,data,futuro,onIrPara}){
         background:C.borderLight,opacity:0.8,cursor:onIrPara?"pointer":"default"}}>
       <div style={{flex:1,minWidth:0}}>
         <div style={{fontSize:12,fontWeight:600,color:C.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontStyle:"italic"}}>{c.descricao}</div>
-        {c.dcpEnvelope&&<div style={{marginTop:3}}><TagEnvelopeDCP envelope={c.dcpEnvelope} futuro={!!futuro}/></div>}
+        {c.dcpEnvelope&&<div style={{marginTop:3}}><TagEnvelopeDCP envelope={c.dcpEnvelope} futuro={!!futuro} pos={!!c.dcpPosFech}/></div>}
       </div>
       <span style={{fontSize:12,fontWeight:700,color:C.textMuted,flexShrink:0}}>{fmt(c.valor)}</span>
       <span style={{fontSize:12,color:C.textMuted,flexShrink:0}}>→</span>
@@ -7961,7 +8002,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
     const add=(r,cartao)=>{
       const dataCompra=r[0];
       if(!dataCompra||dataCompra>hj) return;
-      (m[dataCompra]=m[dataCompra]||[]).push({row:_linhaCartao(r),descricao:_obsApelidoCartao(_obsCartaoRaw(r))||r[1],valor:r[2],cartao,status:r[7],dcpEnvelope:r[9]||null,dcpEnvelopeData:r[10]||null});
+      (m[dataCompra]=m[dataCompra]||[]).push({row:_linhaCartao(r),descricao:_obsApelidoCartao(_obsCartaoRaw(r))||r[1],valor:r[2],cartao,status:r[7],dcpEnvelope:r[9]||null,dcpEnvelopeData:r[10]||null,dcpPosFech:!!r[12]});
     };
     Object.keys(data.cartaoItens||{}).forEach(cid=>(data.cartaoItens[cid]||[]).forEach(r=>add(r,cid)));
     return m;
@@ -7993,7 +8034,10 @@ function Historico({data,onUpdate,destaque,onIrPara}){
 
   const grupos=useMemo(()=>{
     const m={};
-    ex.forEach(item=>{ (m[item.data]=m[item.data]||[]).push(item); });
+    // [NOVO 13/10] envelope DCP fechado aparece no ultimo dia da semana dele
+    // (so exibicao; o saldo continua pela data real). Fica no topo do dia.
+    const ordem=[...ex.filter(i=>i.categoria==="DCP_PROVISAO"),...ex.filter(i=>i.categoria!=="DCP_PROVISAO")];
+    ordem.forEach(item=>{ const d=item.categoria==="DCP_PROVISAO"?dcpDataExibicao(item.data):item.data; (m[d]=m[d]||[]).push(item); });
     Object.keys(cartaoPorDataFiltrado).forEach(d=>{if(!m[d])m[d]=[];});
     return Object.entries(m).sort((a,b)=>a[0]<b[0]?1:-1);
   },[ex,cartaoPorDataFiltrado]);
@@ -8005,7 +8049,10 @@ function Historico({data,onUpdate,destaque,onIrPara}){
     {grupos.map(([gdt,itens],gi)=>{
       const filtrarPorConta=contasAtivas.length>1&&contaSelecionada;
       const totalDia=itens.reduce((s,r)=>s+(r.valor||0),0);
-      const spFim=itens.length?(filtrarPorConta?itens[0].saldoRealConta:itens[0].saldoReal):null;
+      // saldo de fim do dia: pelo 1o lancamento "de verdade" do dia; se o dia so tem
+      // o envelope DCP (exibido ali), usa o ultimo lancamento executado ate a data.
+      const ref=itens.find(i=>i.categoria!=="DCP_PROVISAO")||todos.find(x=>x.data<=gdt&&x.categoria!=="DCP_PROVISAO"&&(!filtrarPorConta||(x.forma||"CONTA")===contaSelecionada));
+      const spFim=ref?(filtrarPorConta?ref.saldoRealConta:ref.saldoReal):null;
       const spIni=(spFim!=null&&isFinite(spFim))?(spFim-totalDia):null;
       const cartaoDia=cartaoPorDataFiltrado[gdt]||[];
       const itemNoDia=itens.some(i=>i.row===conf||(destaque?.tab==="historico"&&destaque.row===i.row));
@@ -8032,7 +8079,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
                     </>;})()}
                   {selo&&<span style={{fontSize:9,fontWeight:700,color:corItem}}>{selo}</span>}
                   {confirmadoExtrato&&<span style={{fontSize:9,background:C.greenLight,color:C.green,padding:"1px 6px",borderRadius:8,fontWeight:700}}>✅ Extrato</span>}
-                  <TagEnvelopeDCP envelope={item.categoria!=="DCP_PROVISAO"?item.dcpEnvelope:null} futuro={false}/>
+                  <TagEnvelopeDCP envelope={item.categoria!=="DCP_PROVISAO"?item.dcpEnvelope:null} futuro={false} pos={!!item.dcpPosFech}/>
                   {(()=>{const ie=infoEnvelopeItem(item);return ie?<TagEnvelopeCustom nome={ie.nome} saldo={ie.saldo}/>:null;})()}
                 </div>}
             </div>
@@ -8102,11 +8149,18 @@ function _gerarLinhasTimeline(data,hj){
   const todos=(data.fluxo||[]).filter(r=>r.categoria!=="DCP_PROVISAO");
   const porDia={};
   todos.forEach(r=>{ if(!porDia[r.data]) porDia[r.data]=[]; porDia[r.data].push({origem:"fluxo",r}); });
+  // [NOVO 13/10, pedido do Marcus] O envelope DCP tambem aparece na Timeline, no
+  // ULTIMO dia da semana dele. So exibicao: fica fora da conta de saldo do dia.
+  (data.fluxo||[]).filter(r=>r.categoria==="DCP_PROVISAO").forEach(r=>{
+    const d=dcpDataExibicao(r.data);
+    if(!porDia[d]) porDia[d]=[];
+    porDia[d].push({origem:"dcp",r});
+  });
   const addCartao=(r,cartao)=>{
     const d=r[0];
     if(!d) return;
     if(!porDia[d]) porDia[d]=[];
-    porDia[d].push({origem:"cartao",cartao,linhaCartao:_linhaCartao(r),descricao:r[1],valor:r[2],status:r[7],dcpEnvelope:r[9]||null});
+    porDia[d].push({origem:"cartao",cartao,linhaCartao:_linhaCartao(r),descricao:r[1],valor:r[2],status:r[7],dcpEnvelope:r[9]||null,dcpPosFech:!!r[12]});
   };
   Object.keys(data.cartaoItens||{}).forEach(cid=>(data.cartaoItens[cid]||[]).forEach(r=>addCartao(r,cid)));
   // [24/07] Garante que HOJE sempre tem uma linha, mesmo sem nenhum
@@ -8169,13 +8223,15 @@ function _gerarLinhasTimeline(data,hj){
     });
 
     const dt=parseDateLocal(iso);
+    const itensDCP=brutos.filter(x=>x.origem==="dcp").map(x=>({tipo:"item",ehCartao:false,row:x.r.row,descricao:nomeExibicao(x.r,data),
+        categoriaTxt:periodoDCP(x.r.data),valor:x.r.valor,status:x.r.status,item:x.r}));
     const itensNormais=itensFluxo.map(r=>({tipo:"item",ehCartao:false,row:r.row,descricao:nomeExibicao(r,data),categoriaTxt:
         (r.categoria==="DCP_PROVISAO"?"":(tipoDisplay(r.tipo,data)+(r.categoria&&r.categoria!==r.tipo?" · "+r.categoria:"")+" · "+r.forma)),
         valor:r.valor,status:r.status,item:r}));
     const itensCartao=brutos.filter(x=>x.origem==="cartao").map(x=>({tipo:"item",ehCartao:true,cartao:x.cartao,
-        linhaCartao:x.linhaCartao,descricao:x.descricao,valor:x.valor,status:x.status,dcpEnvelope:x.dcpEnvelope,item:null}));
+        linhaCartao:x.linhaCartao,descricao:x.descricao,valor:x.valor,status:x.status,dcpEnvelope:x.dcpEnvelope,dcpPosFech:x.dcpPosFech,item:null}));
     return {tipo:"dia",data:iso,dataObj:dt,saldo,saldoPorConta,hoje:iso===hj,seg:dt.getDay()===1,
-      itens:[...itensNormais,...itensCartao]};
+      itens:[...itensDCP,...itensNormais,...itensCartao]};
   });
 }
 function parseDateLocal(iso){const[y,m,d]=iso.split("-").map(Number);return new Date(y,m-1,d);}
@@ -8446,7 +8502,9 @@ function Timeline({data,onUpdate,onIrPara}){
                     <div style={{fontWeight:700,fontSize:14}}>{s.item.descricao}</div>
                     <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>{s.item.categoriaTxt}{s.item.status==="EXECUTADO"&&<span style={{marginLeft:5,color:C.green}}>✓</span>}</div>
                   </div>
-                  <div style={{fontWeight:800,fontSize:14,color:s.item.valor<0?C.red:C.green,fontVariantNumeric:"tabular-nums"}}>{fmt(s.item.valor)}</div>
+                  {s.item.item.categoria==="DCP_PROVISAO"
+                    ?(s.item.status==="EXECUTADO"?<ValorDCPFechado item={s.item.item}/>:<ValorDCPProvisao valor={s.item.valor} dataEnvelope={s.item.item.data}/>)
+                    :<div style={{fontWeight:800,fontSize:14,color:s.item.valor<0?C.red:C.green,fontVariantNumeric:"tabular-nums"}}>{fmt(s.item.valor)}</div>}
                 </div>
               </div>
               {/* [25/07] Painel INLINE, mesmo padrao do Fluxo/Historico --
@@ -12828,7 +12886,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261013.0100 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261013.0230 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -12942,7 +13000,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261013.0100
+      // HTML v3.20261013.0230
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
