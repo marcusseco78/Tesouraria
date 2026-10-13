@@ -7289,6 +7289,19 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
   }
 
   const rotuloBotao=item.status==="EXECUTADO"?"Salvar":execMode?"Executar":"Reagendar";
+  // [NOVO 13/10, pedido do Marcus] Executar algo programado pro futuro: a data de
+  // execucao vira HOJE (nunca futura), com aviso e opcao de cancelar.
+  const podeExecutarHoje=item.status==="PROGRAMADO"&&!execMode&&item.categoria!=="DCP_PROVISAO"&&item.data>hj;
+  async function executarHoje(){
+    if(!confirm('Este lançamento está programado para '+fmtD(item.data)+'.\n\nExecutar agora grava a data de execução como HOJE ('+fmtD(hj)+').\n\nProsseguir?')) return;
+    setLoad(true);
+    try{
+      const sinal=neg?-1:1;
+      onUpdate(await api({action:"baixa",row:item.row,valorReal:numBR(val)*sinal,dataReal:hj}));
+      onClose&&onClose();
+    }catch(e){alert(e.message);}
+    setLoad(false);
+  }
 
   // [NOVO 29/07] Indicador de "quando no mês" (Fixo/Nº dia útil/Último dia
   // útil) -- so aparece pra item que realmente veio de Recorrencia ou
@@ -7406,7 +7419,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
     <div style={{display:"flex",gap:8,marginBottom:8}}>
       <div style={{display:"flex",flexDirection:"column",gap:3,flex:1}}>
         <span style={{fontSize:10,color:execMode?"#0B7A56":"#B45309",fontWeight:600,letterSpacing:".05em"}}>{execMode?"DATA DE EXECUÇÃO":"NOVA DATA"}</span>
-        <input type="date" value={dt} onChange={e=>setDt(e.target.value)}
+        <input type="date" value={dt} max={item.status==="EXECUTADO"?hoje():undefined} onChange={e=>setDt(e.target.value)}
           style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+(execMode?"#BFE3D2":C.accent),fontSize:13,fontFamily:"inherit",width:"100%"}}/>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:3,flex:1}}>
@@ -7461,6 +7474,10 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
         {loadPlantoes?"…":"Recalcular"}
       </button>
     </div>}
+    {podeExecutarHoje&&<button onClick={executarHoje} disabled={!!load}
+      style={{width:"100%",marginBottom:8,background:"#fff",color:C.green,border:"1px solid "+C.green,borderRadius:6,padding:"8px",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>
+      ✓ Executar agora (data de execução = hoje)
+    </button>}
     <div style={{display:"flex",gap:8,alignItems:"center"}}>
       <span style={{flex:1,fontSize:11,color:execMode?"#0B7A56":"#B45309"}}>
         {item.status==="EXECUTADO"?"":execMode?"→ Vai para o Histórico":"→ Permanece no Fluxo com nova data"}
@@ -7580,7 +7597,13 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
       // (backend ja trata isso, ver deletar()). Alerta dedicado em vez do
       // texto travado.
       const ehRestanteDeFatura=String(item.obs||"").indexOf('"restanteDeFatura"')>=0;
-      const apagarTravado=ehFonteReceita||(bucket==="DESPESA FIXA"&&temRecorrenciaAtiva)||(bucket==="PAGAMENTO_FATURA"&&!ehRestanteDeFatura)||
+      // [NOVO 13/10, pedido do Marcus] Receita ESPORADICA (lancada pelo "+") nunca e'
+      // gerada sozinha -- apagar uma e' seguro, entao nao trava. So a receita
+      // REGULAR (gerada pela fonte) continua travada.
+      const mFonteRec=String(item.obs||"").match(/FONTE_RECEITA:([A-Z0-9_]+):([A-Za-z0-9_]+):/);
+      const modoRec=mFonteRec?((((data.fontesReceita||[]).find(f=>String(f.nome||"").toUpperCase().replace(/[^A-Z0-9_]/g,"")===mFonteRec[1])||{}).modos||[]).find(md=>md.id===mFonteRec[2])):null;
+      const ehEsporadica=!!modoRec&&String(modoRec.tipoRecorrencia||"").toUpperCase()==="ESPORADICA";
+      const apagarTravado=(ehFonteReceita&&!ehEsporadica)||(bucket==="DESPESA FIXA"&&temRecorrenciaAtiva)||(bucket==="PAGAMENTO_FATURA"&&!ehRestanteDeFatura)||
         (bucket==="PAGAMENTO_EMPRESTIMO"&&item.categoria==="DIVIDA_PARCELADA");
       if(ehRestanteDeFatura&&!apagarTravado) return <div style={{marginTop:8}}>
         <div style={{fontSize:10,color:"#B45309",marginBottom:6,textAlign:"center",lineHeight:1.4}}>
@@ -13036,7 +13059,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261013.1330 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261013.1730 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13150,7 +13173,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261013.1330
+      // HTML v3.20261013.1730
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
