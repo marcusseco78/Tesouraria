@@ -2779,6 +2779,20 @@ function EmprestimosPassivos({data,onUpdate}){
     </div>
     {showForm&&<FormCriarEmprestimo data={data} onSalvo={r=>{onUpdate&&onUpdate(r);setShowForm(false);}} onClose={()=>setShowForm(false)}/>}
     {!emprestimos.length&&!dividasAtivas.length&&<div style={{padding:"30px 16px",textAlign:"center",fontSize:12,color:C.textMuted,fontStyle:"italic"}}>Nenhum item com número de parcelas definido.</div>}
+    {(()=>{
+      const vistos={}; const lista=[];
+      (data.fluxo||[]).forEach(f=>{ const o=_obsDe(f); if(o.parId&&!vistos[o.parId]&&(o.intencao==="EMPRESTIMO_SOCIO"||o.intencao==="EMPRESTIMO_PJ")){ vistos[o.parId]=1; lista.push(o.parId); } });
+      const infos=lista.map(id=>infoDevolucao(id,data)).filter(Boolean).sort((a,b)=>a.dataEmp<b.dataEmp?1:-1);
+      if(!infos.length) return null;
+      return <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:10,padding:10,marginBottom:10}}>
+        <div style={{fontSize:10,fontWeight:800,color:C.purple,letterSpacing:".08em",marginBottom:4}}>EMPRÉSTIMOS ENTRE CONTAS</div>
+        {infos.map(i=><div key={i.parId} style={{borderTop:"1px solid "+C.borderLight,paddingTop:6,marginTop:6}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.text}}>{fmtD(i.dataEmp)} · {fmt(i.valor)}</div>
+          <div style={{fontSize:11,color:C.textMuted}}>{siglaConta(i.de,data)} emprestou para {siglaConta(i.para,data)}</div>
+          <DevolucaoEmprestimo parId={i.parId} data={data} onUpdate={onUpdate}/>
+        </div>)}
+      </div>;
+    })()}
     {emprestimos.length>0&&<div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:10,padding:10}}>
       <div style={{fontSize:10,fontWeight:800,color:C.red,letterSpacing:".08em",marginBottom:8}}>EMPRÉSTIMOS PARCELADOS</div>
       <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:10,background:C.redLight,borderRadius:8,padding:"8px 10px"}}>
@@ -6636,6 +6650,137 @@ function ConciliarExtratoTab({data,onUpdate}){
 // Conciliacao de extrato reconhecendo esses pares automaticamente e a lista
 // estilo "Mesclar" pro caso de nao reconhecer ainda NAO fazem parte desta
 // entrega -- ficam pra depois de testar essa parte com dado real.
+// [NOVO 13/10, pedido do Marcus] Emprestimo entre contas com DEVOLUCAO agendada.
+// O emprestimo e' uma transferencia espelhada com intencao EMPRESTIMO_SOCIO/
+// EMPRESTIMO_PJ; a devolucao e' um segundo par PROGRAMADO no sentido contrario.
+function _obsDe(f){ try{ return JSON.parse(f.obs||"{}"); }catch(e){ return {}; } }
+function infoDevolucao(parId,data){
+  if(!parId) return null;
+  const fl=data.fluxo||[];
+  const orig=fl.filter(f=>_obsDe(f).parId===parId);
+  if(orig.length<2) return null;
+  const o0=_obsDe(orig[0]), o1=_obsDe(orig[1]);
+  if(o0.intencao!=="EMPRESTIMO_SOCIO"&&o0.intencao!=="EMPRESTIMO_PJ") return null;
+  const saiu=orig.find(f=>f.valor<0), entrou=orig.find(f=>f.valor>0);
+  if(!saiu||!entrou) return null;
+  const ids=(o0.devolParIds&&o0.devolParIds.length)?o0.devolParIds:(o0.devolParId?[o0.devolParId]:((o1.devolParIds&&o1.devolParIds.length)?o1.devolParIds:(o1.devolParId?[o1.devolParId]:[])));
+  const devs=ids.map(id=>{
+    const l=fl.filter(f=>_obsDe(f).parId===id);
+    if(!l.length) return null;
+    return {id,data:l[0].data,valor:Math.abs(l[0].valor),executada:l.every(x=>x.status==="EXECUTADO")};
+  }).filter(Boolean).sort((a,b)=>a.data<b.data?-1:1);
+  const valor=Math.abs(saiu.valor);
+  const pago=devs.filter(d=>d.executada).reduce((t,d)=>t+d.valor,0);
+  const agendado=devs.filter(d=>!d.executada).reduce((t,d)=>t+d.valor,0);
+  const restante=Math.round((valor-pago-agendado)*100)/100;
+  return {parId,valor,dataEmp:saiu.data,de:saiu.forma,para:entrou.forma,devs,pago,agendado,restante};
+}
+function _maisDias(n){
+  const d=new Date(); d.setDate(d.getDate()+n);
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+// soma k meses a uma data ISO, mantendo o dia (ou o ultimo dia do mes, se nao existir)
+function _maisMeses(iso,k){
+  const [y,m,d]=iso.split("-").map(Number);
+  const alvo=new Date(y,m-1+k,1);
+  const ult=new Date(alvo.getFullYear(),alvo.getMonth()+1,0).getDate();
+  return alvo.getFullYear()+"-"+String(alvo.getMonth()+1).padStart(2,"0")+"-"+String(Math.min(d,ult)).padStart(2,"0");
+}
+function _dividirParcelas(total,n,primeira){
+  const base=Math.floor(total/n*100)/100;
+  const out=[];let acum=0;
+  for(let i=0;i<n;i++){
+    const v=i===n-1?Math.round((total-acum)*100)/100:base;
+    acum=Math.round((acum+v)*100)/100;
+    out.push({data:_maisMeses(primeira,i),valor:v});
+  }
+  return out;
+}
+function DevolucaoEmprestimo({parId,data,onUpdate,iniciarForm,onFechar}){
+  const info=infoDevolucao(parId,data);
+  const [modo,setModo]=useState(iniciarForm?"uma":null); // null | "uma" | "parcelar" | "editar"
+  const [editId,setEditId]=useState(null);
+  const [dt,setDt]=useState(()=>_maisDias(30));
+  const [val,setVal]=useState(()=>formatarValorInicial(info?info.restante:0));
+  const [nPar,setNPar]=useState("3");
+  const [load,setLoad]=useState(false);
+  const trava=useRef(false);
+  if(!info) return null;
+  const nome=id=>siglaConta(id,data);
+  const abrir=(m)=>{ setModo(m); setEditId(null); setDt(_maisDias(30)); setVal(formatarValorInicial(info.restante>0?info.restante:0)); };
+  const abrirEditar=(d)=>{ setModo("editar"); setEditId(d.id); setDt(d.data); setVal(formatarValorInicial(d.valor)); };
+  const fechar=()=>{ setModo(null); setEditId(null); onFechar&&onFechar(); };
+  const totalForm=numBR(val);
+  const nParN=Math.max(2,Math.min(36,parseInt(nPar,10)||0));
+  const prevParc=modo==="parcelar"&&totalForm>0&&dt?_dividirParcelas(totalForm,nParN,dt):[];
+  async function enviar(payload){
+    if(trava.current) return; trava.current=true; setLoad(true);
+    try{ const r=await api({parId:info.parId,...payload}); onUpdate&&onUpdate(r); fechar(); }
+    catch(e){ alert(e.message); }
+    setLoad(false); trava.current=false;
+  }
+  function confirmar(){
+    const v=numBR(val);
+    if(!v||v<=0){ alert("Valor inválido."); return; }
+    if(!dt){ alert("Informe a data."); return; }
+    if(modo==="editar") return enviar({action:"editarDevolucaoEmprestimo",devolParId:editId,data:dt,valor:v});
+    if(modo==="parcelar"){ if(nParN<2){ alert("Informe 2 ou mais parcelas."); return; } return enviar({action:"agendarDevolucaoEmprestimo",parcelas:prevParc}); }
+    return enviar({action:"agendarDevolucaoEmprestimo",data:dt,valor:v});
+  }
+  async function remover(d){
+    if(!confirm("Remover a devolução de "+fmtD(d.data)+" ("+fmt(d.valor)+")? O empréstimo continua registrado.")) return;
+    setLoad(true);
+    try{ const r=await api({action:"editarDevolucaoEmprestimo",parId:info.parId,devolParId:d.id,remover:true}); onUpdate&&onUpdate(r); }
+    catch(e){ alert(e.message); }
+    setLoad(false);
+  }
+  const btn=(cor,bg)=>({fontSize:11,fontWeight:800,padding:"7px 12px",borderRadius:8,border:bg?"none":"1px solid "+cor,background:bg||"#fff",color:bg?"#fff":cor,cursor:"pointer",fontFamily:"inherit",minHeight:36});
+  const inp={width:"100%",boxSizing:"border-box",padding:"8px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit"};
+  return <div style={{marginTop:8,marginBottom:8,background:"#F5F3FF",border:"1px solid "+C.purple,borderRadius:8,padding:"9px 10px"}}>
+    <div style={{fontSize:10,fontWeight:800,color:C.purple,letterSpacing:".04em"}}>↩ DEVOLUÇÃO · {nome(info.para)} → {nome(info.de)} · emprestado {fmt(info.valor)}</div>
+    <div style={{fontSize:11,color:C.textSub,marginTop:4}}>
+      {info.pago>0&&<span style={{color:C.green,fontWeight:700}}>Devolvido {fmt(info.pago)} · </span>}
+      {info.agendado>0&&<span>Agendado {fmt(info.agendado)} · </span>}
+      <span style={{fontWeight:700,color:info.restante>0.005?"#B45309":C.green}}>{info.restante>0.005?"Falta agendar "+fmt(info.restante):"Tudo coberto"}</span>
+    </div>
+    {info.devs.map(d=><div key={d.id} style={{display:"flex",alignItems:"center",gap:8,marginTop:6,padding:"6px 0",borderTop:"1px solid #E4DFF7"}}>
+      <div style={{flex:1,fontSize:13,fontWeight:700,color:d.executada?C.green:C.text}}>{d.executada?"✓ ":""}{fmtD(d.data)} · {fmt(d.valor)}{d.executada?" · devolvido":""}</div>
+      {!d.executada&&<>
+        <button onClick={()=>abrirEditar(d)} disabled={load} style={btn(C.purple)}>Editar</button>
+        <button onClick={()=>remover(d)} disabled={load} style={btn(C.red)}>✕</button>
+      </>}
+    </div>)}
+    {!modo&&info.restante>0.005&&<div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
+      <button onClick={()=>abrir("uma")} style={btn(C.purple,C.purple)}>{info.devs.length?"+ Outra devolução":"Agendar devolução"}</button>
+      <button onClick={()=>abrir("parcelar")} style={btn(C.purple)}>Parcelar</button>
+    </div>}
+    {modo&&<div style={{marginTop:8}}>
+      <div style={{fontSize:10,fontWeight:800,color:C.purple,marginBottom:6}}>{modo==="editar"?"EDITAR DEVOLUÇÃO":(modo==="parcelar"?"PARCELAR A DEVOLUÇÃO (1 por mês)":"NOVA DEVOLUÇÃO")}</div>
+      <div style={{display:"flex",gap:8}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:9,fontWeight:700,color:C.textMuted,marginBottom:3}}>{modo==="parcelar"?"1ª PARCELA EM":"DATA"}</div>
+          <input type="date" value={dt} onChange={e=>setDt(e.target.value)} style={inp}/>
+        </div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:9,fontWeight:700,color:C.textMuted,marginBottom:3}}>{modo==="parcelar"?"VALOR TOTAL":"VALOR"}</div>
+          <input type="text" inputMode="decimal" value={val} onChange={e=>setVal(e.target.value)} style={inp}/>
+        </div>
+        {modo==="parcelar"&&<div style={{width:64}}>
+          <div style={{fontSize:9,fontWeight:700,color:C.textMuted,marginBottom:3}}>PARCELAS</div>
+          <input type="text" inputMode="numeric" value={nPar} onChange={e=>setNPar(e.target.value.replace(/\D/g,""))} style={inp}/>
+        </div>}
+      </div>
+      {modo==="parcelar"&&prevParc.length>0&&<div style={{fontSize:11,color:C.textSub,marginTop:8,lineHeight:1.6}}>
+        {prevParc.map((x,i)=><div key={i}>{i+1}/{prevParc.length} · {fmtD(x.data)} · <b>{fmt(x.valor)}</b></div>)}
+      </div>}
+      <div style={{display:"flex",gap:8,marginTop:8}}>
+        <button onClick={confirmar} disabled={load} style={btn(C.purple,C.purple)}>{load?"Salvando…":(modo==="editar"?"Salvar":(modo==="parcelar"?"Agendar parcelas":"Agendar"))}</button>
+        <button onClick={fechar} disabled={load} style={btn(C.textSub)}>{modo==="editar"?"Cancelar":"Agora não"}</button>
+      </div>
+      <div style={{fontSize:10,color:C.textMuted,marginTop:6}}>Cada devolução é uma transferência de volta ({nome(info.para)} → {nome(info.de)}), amarrada a este empréstimo e programada.</div>
+    </div>}
+  </div>;
+}
 function TransferenciaEspelhada({data,onUpdate}){
   const contasAtivas=(data.contas||[]).filter(c=>c.ativa!==false);
   const [dataOp,setDataOp]=useState(hoje());
@@ -6677,7 +6822,8 @@ function TransferenciaEspelhada({data,onUpdate}){
       onUpdate(r);
       const nomeC=id=>(contasAtivas.find(c=>c.id===id)||{}).nome||id;
       const itn=(intencoesOk.find(i=>i.id===intencao)||{}).label||"";
-      setRecibo({valor:v,data:dataOp,de:nomeC(origem),para:nomeC(destino),intencao:itn});
+      setRecibo({valor:v,data:dataOp,de:nomeC(origem),para:nomeC(destino),intencao:itn,
+        parId:(intencao==="EMPRESTIMO_SOCIO"||intencao==="EMPRESTIMO_PJ")?(r&&r.parIdNovo):null});
       setValor(""); setApelido(""); setIntencao("");
     }catch(e){ alert(e.message); }
     setLoad(false);
@@ -6696,6 +6842,7 @@ function TransferenciaEspelhada({data,onUpdate}){
       <div style={{fontSize:20,fontWeight:800,color:C.text,fontVariantNumeric:"tabular-nums"}}>{fmt(recibo.valor)}</div>
       <div style={{fontSize:13,color:C.textSub,marginTop:6,lineHeight:1.5}}>{recibo.de} → {recibo.para}<br/>{fmtD(recibo.data)}{recibo.intencao?" · "+recibo.intencao:""}</div>
       <div style={{fontSize:11,color:C.textMuted,marginTop:8}}>Os dois lados já entraram executados e amarrados.</div>
+      {recibo.parId&&<DevolucaoEmprestimo parId={recibo.parId} data={data} onUpdate={onUpdate} iniciarForm={true}/>}
       <button onClick={()=>{ setRecibo(null); setDataOp(hoje()); }}
         style={{width:"100%",padding:"12px",borderRadius:10,background:C.surface,color:C.purple,border:"1px solid "+C.purple,fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit",marginTop:14}}>
         Lançar outra transferência
@@ -7184,6 +7331,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
         </div>
       </div>;
     })()}
+    {(()=>{ const o=_obsDe(item); const pid=o.devolveParId||o.parId; return infoDevolucao(pid,data)?<DevolucaoEmprestimo key={pid} parId={pid} data={data} onUpdate={onUpdate}/>:null; })()}
     {!parInfo&&(()=>{
       // [14/08, NOVO] Transferencia que NUNCA teve parId (lancada direto,
       // fora do mecanismo de espelho -- ex: itens antigos da conciliacao).
@@ -7527,20 +7675,20 @@ function _linhasResumoDia(itens,cartaoItens){
   if(!out.length) out.push("Sem lançamentos");
   return out;
 }
-function DiaCartao({gdt,linhas,saldo,atrasado,abertoInicial,forcarAberto,sinal,vazio,acessorio,children}){
+function DiaCartao({gdt,linhas,saldo,atrasado,abertoInicial,forcarAberto,sinal,vazio,acessorio,children,ehHoje}){
   const [ab,setAb]=useState(!!abertoInicial);
   const nSinal=sinal?sinal.n:0;
   useEffect(()=>{ if(nSinal) setAb(!!sinal.v); },[nSinal]);
   const aberto=!vazio&&(forcarAberto||ab);
   const dd=String(gdt).slice(8,10), mm=Number(String(gdt).slice(5,7));
-  return <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:20,overflow:"hidden",marginBottom:10}}>
+  return <div style={{background:ehHoje?C.accentLight:C.surface,border:ehHoje?"2px solid "+C.accent:"1px solid "+C.border,borderRadius:20,overflow:"hidden",marginBottom:10}}>
     <div onClick={()=>{ if(!vazio) setAb(a=>!a); }}
       style={{padding:"14px 16px",display:"flex",alignItems:"center",gap:12,minHeight:44,cursor:vazio?"default":"pointer"}}>
       <div style={{width:50,textAlign:"center",flexShrink:0}}>
-        <div style={{fontSize:22,fontWeight:800,lineHeight:1,color:atrasado?C.red:C.text}}>{dd}</div>
-        <div style={{fontSize:10,fontWeight:700,color:C.textSub,marginTop:3,letterSpacing:".02em"}}>{diaSemana(gdt)} · {_MES_ABREV[mm-1]||""}</div>
+        <div style={{fontSize:ehHoje?28:22,fontWeight:800,lineHeight:1,color:atrasado?C.red:(ehHoje?C.accent:C.text)}}>{dd}</div>
+        <div style={{fontSize:10,fontWeight:ehHoje?800:700,color:ehHoje?C.accent:C.textSub,marginTop:3,letterSpacing:".02em"}}>{ehHoje?"HOJE":diaSemana(gdt)+" · "+(_MES_ABREV[mm-1]||"")}</div>
       </div>
-      <div style={{flex:1,minWidth:0,fontSize:12,color:C.textSub,fontWeight:500,lineHeight:1.4}}>
+      <div style={{flex:1,minWidth:0,fontSize:12,color:ehHoje?C.text:C.textSub,fontWeight:ehHoje?700:500,lineHeight:1.4}}>
         {atrasado&&<div style={{display:"inline-block",fontSize:10,fontWeight:800,color:C.red,background:C.redLight,padding:"1px 8px",borderRadius:10,marginBottom:3}}>ATRASADO</div>}
         {(linhas||[]).map((l,i)=><div key={i}>{l}</div>)}
       </div>
@@ -7581,7 +7729,8 @@ function CaixaResumoPlano({destaqueDia,envelope}){
     {destaqueDia&&<div style={card}>
       <div style={{fontSize:10,fontWeight:700,letterSpacing:".04em",color:"#A9B6DA"}}>{neg?"PRIMEIRO DIA NEGATIVO":"MENOR SALDO PREVISTO"}</div>
       <div style={{fontSize:30,fontWeight:800,letterSpacing:"-.03em",marginTop:4,color:neg?"#FFB4AC":"#7FE0B5",fontVariantNumeric:"tabular-nums"}}>{destaqueDia.dia}</div>
-      <div style={{fontSize:12,color:"#A9B6DA",fontWeight:600,marginTop:2}}>saldo {fmt(destaqueDia.saldo)}</div>
+      {(()=>{const t=fmt(destaqueDia.saldo);const n=t.length;const fs=n<=9?24:n<=11?21:n<=13?18:15;
+        return <div style={{fontSize:fs,color:"#FFFFFF",fontWeight:800,marginTop:4,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{t}</div>;})()}
     </div>}
     {env&&<div style={card}>
       <div style={{fontSize:10,fontWeight:700,letterSpacing:".04em",color:"#A9B6DA"}}>{envelope.ehAtual?"DCP ATÉ "+periodoDCP(env.data).slice(-5):"PRÓXIMO DCP "+periodoDCP(env.data)}</div>
@@ -7830,7 +7979,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
       const at=gdt<hj&&(!itensExibir.length||itensExibir.some(i=>i.categoria!=="DCP_PROVISAO"||dcpSemanaEncerrada(i.data,hj))),sp=filtrarPorConta?(spPorConta&&spPorConta[contaSelecionada]):spIni;
       const ehPrimeiro=!busca.trim()&&!filtrarPorConta&&gi===primeiroIdxComSaldo;
       const itemNoDia=itensExibir.some(i=>i.row===conf||(destaque?.tab==="fluxo"&&destaque.row===i.row));
-      return <DiaCartao key={gdt} gdt={gdt} atrasado={at} saldo={sp} linhas={_linhasResumoDia(itensExibir,cartaoExibir)}
+      return <DiaCartao key={gdt} gdt={gdt} ehHoje={gdt===hj} atrasado={at} saldo={sp} linhas={_linhasResumoDia(itensExibir,cartaoExibir)}
         vazio={!itensExibir.length&&!cartaoExibir.length} abertoInicial={gi===0} forcarAberto={!!busca.trim()||itemNoDia} sinal={sinalDias}
         acessorio={ehPrimeiro&&(data.cofres||[]).length>0?<button onClick={e=>{e.stopPropagation();setMostrarCofres(v=>!v);}}
           style={{background:"none",border:"none",fontSize:16,cursor:"pointer",padding:4,lineHeight:1,flexShrink:0}} title="Ver Cofres">🏦</button>:null}>
@@ -7863,7 +8012,8 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
           borderLeft:corItem?"3px solid "+corItem:"none"}}>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:13,fontWeight:700,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}</div>
-            <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{item.categoria==="DCP_PROVISAO"?periodoDCP(item.data):(<>{tipoDisplay(item.tipo,data)}{item.categoria&&item.categoria!==item.tipo?" · "+item.categoria:""} · {item.forma}{item.status==="EXECUTADO"?" · ✓ executado":""}</>)}</div>
+            <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{item.categoria==="DCP_PROVISAO"?periodoDCP(item.data):(<>{tipoDisplay(item.tipo,data)}{item.categoria&&item.categoria!==item.tipo?" · "+item.categoria:""} · {item.forma}</>)}</div>
+            {item.status==="EXECUTADO"&&item.categoria!=="DCP_PROVISAO"&&<div style={{fontSize:11,fontWeight:800,color:C.green,marginTop:2}}><span style={{fontSize:15,lineHeight:1,marginRight:3}}>✓</span>executado</div>}
             {/* [24/07] Selos (status, conciliacao, envelope) sempre numa
                 terceira linha propria, com flex-wrap -- antes disputavam
                 espaco com o nome ou o subtitulo e cortavam quando nao
@@ -8056,7 +8206,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
       const spIni=(spFim!=null&&isFinite(spFim))?(spFim-totalDia):null;
       const cartaoDia=cartaoPorDataFiltrado[gdt]||[];
       const itemNoDia=itens.some(i=>i.row===conf||(destaque?.tab==="historico"&&destaque.row===i.row));
-      return <DiaCartao key={gdt} gdt={gdt} saldo={spIni} linhas={_linhasResumoDia(itens,cartaoDia)}
+      return <DiaCartao key={gdt} gdt={gdt} ehHoje={gdt===hj} saldo={spIni} linhas={_linhasResumoDia(itens,cartaoDia)}
         vazio={!itens.length&&!cartaoDia.length} abertoInicial={gi===0} forcarAberto={!!busca.trim()||itemNoDia} sinal={sinalDias}>
         {itens.map(item=>{const {cor:corItem,selo,bg:bgItem,descCor,confirmadoExtrato}=corDoItem(item,hj);const isOpen=conf===item.row;const destacado=destaque?.tab==="historico"&&destaque.row===item.row;return <div key={item.row} id={"hist-item-"+item.row}>
           <div onClick={()=>isOpen?setConf(null):setConf(item.row)}
@@ -12886,7 +13036,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261013.0230 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261013.1330 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13000,7 +13150,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261013.0230
+      // HTML v3.20261013.1330
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
