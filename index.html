@@ -6841,7 +6841,7 @@ function TransferenciaEspelhada({data,onUpdate}){
       <div style={{fontSize:13,fontWeight:800,color:C.green,marginBottom:6}}>✓ Transferência lançada</div>
       <div style={{fontSize:20,fontWeight:800,color:C.text,fontVariantNumeric:"tabular-nums"}}>{fmt(recibo.valor)}</div>
       <div style={{fontSize:13,color:C.textSub,marginTop:6,lineHeight:1.5}}>{recibo.de} → {recibo.para}<br/>{fmtD(recibo.data)}{recibo.intencao?" · "+recibo.intencao:""}</div>
-      <div style={{fontSize:11,color:C.textMuted,marginTop:8}}>Os dois lados já entraram executados e amarrados.</div>
+      <div style={{fontSize:11,color:C.textMuted,marginTop:8}}>{recibo.data>hoje()?"Os dois lados entraram como programados (data futura) e amarrados.":"Os dois lados já entraram executados e amarrados."}</div>
       {recibo.parId&&<DevolucaoEmprestimo parId={recibo.parId} data={data} onUpdate={onUpdate} iniciarForm={true}/>}
       <button onClick={()=>{ setRecibo(null); setDataOp(hoje()); }}
         style={{width:"100%",padding:"12px",borderRadius:10,background:C.surface,color:C.purple,border:"1px solid "+C.purple,fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit",marginTop:14}}>
@@ -7291,6 +7291,14 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
   const rotuloBotao=item.status==="EXECUTADO"?"Salvar":execMode?"Executar":"Reagendar";
   // [NOVO 13/10, pedido do Marcus] Executar algo programado pro futuro: a data de
   // execucao vira HOJE (nunca futura), com aviso e opcao de cancelar.
+  const podeReabrirDCP=item.categoria==="DCP_PROVISAO"&&item.status==="EXECUTADO";
+  async function reabrirDCP(){
+    if(!confirm('Reabrir a semana DCP de '+periodoDCP(item.data)+'?\n\nDesfaz o fechamento: a redistribuição para as semanas seguintes volta atrás e esta semana volta a contar o gasto dela. Só dá para reabrir a última semana fechada.')) return;
+    setLoad(true);
+    try{ onUpdate(await api({action:"reabrirSemanaDCP",row:item.row})); onClose&&onClose(); }
+    catch(e){ alert(e.message); }
+    setLoad(false);
+  }
   const podeExecutarHoje=item.status==="PROGRAMADO"&&!execMode&&item.categoria!=="DCP_PROVISAO"&&item.data>hj;
   async function executarHoje(){
     if(!confirm('Este lançamento está programado para '+fmtD(item.data)+'.\n\nExecutar agora grava a data de execução como HOJE ('+fmtD(hj)+').\n\nProsseguir?')) return;
@@ -7474,6 +7482,10 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
         {loadPlantoes?"…":"Recalcular"}
       </button>
     </div>}
+    {podeReabrirDCP&&<button onClick={reabrirDCP} disabled={!!load}
+      style={{width:"100%",marginBottom:8,background:"#fff",color:"#B45309",border:"1px solid #B45309",borderRadius:6,padding:"8px",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>
+      ↩ Reabrir esta semana DCP (desfaz o fechamento)
+    </button>}
     {podeExecutarHoje&&<button onClick={executarHoje} disabled={!!load}
       style={{width:"100%",marginBottom:8,background:"#fff",color:C.green,border:"1px solid "+C.green,borderRadius:6,padding:"8px",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",minHeight:36}}>
       ✓ Executar agora (data de execução = hoje)
@@ -13059,7 +13071,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261013.1730 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261013.1830 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13173,7 +13185,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261013.1730
+      // HTML v3.20261013.1830
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
