@@ -931,9 +931,16 @@ const bgZ=v=>v<1000?C.redLight:v<5000?C.orangeLight:C.blueLight;
 // "2081,50" -> 2081.5. Sem isso, Number("2081,50") retorna NaN, que vira
 // null no JSON, e a gravacao do valor eh pulada silenciosamente no servidor.
 function numBR(v){
-  // Aceita "2081,50", "2.081,50" ou "2081.50" -- remove ponto de milhar
-  // antes de trocar a virgula decimal por ponto.
-  const limpo = String(v).replace(/\./g, "").replace(",", ".");
+  // [13/10] Numero de verdade volta como esta. Antes, numBR(101.54) virava
+  // "10154" (o ponto decimal era tratado como ponto de milhar) -- foi assim
+  // que o valor/hora da HSI foi de 101,54 para 10.154,00 ao salvar as fontes.
+  if(typeof v==="number") return isFinite(v)?v:0;
+  const t = String(v==null?"":v).trim();
+  // Texto sem virgula e com UM ponto seguido de 1-2 digitos ("101.54") = decimal.
+  // "1.000" (3 digitos) continua sendo milhar.
+  if(!t.includes(",") && /^-?\d+\.\d{1,2}$/.test(t)){ const d=Number(t); return isFinite(d)?d:0; }
+  // Aceita "2081,50", "2.081,50" -- remove ponto de milhar e troca a virgula.
+  const limpo = t.replace(/\./g, "").replace(",", ".");
   const n = Number(limpo);
   return isFinite(n) ? n : 0;
 }
@@ -13071,7 +13078,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261013.1830 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261013.2030 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13185,7 +13192,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261013.1830
+      // HTML v3.20261013.2030
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
