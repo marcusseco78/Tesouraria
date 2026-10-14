@@ -3309,7 +3309,7 @@ function FontesReceita({data,onUpdate}){
       const r=await api({action:"editarContaFonteReceita",nome:nomeFonte,conta:novaConta});
       onUpdate&&onUpdate(r);
       const info=r.contaFonteAlterada;
-      setMsg(info?(nomeFonte+" agora recebe em "+(novaConta==="CONTA PJ"?"Conta PJ":"Conta PF")+" — "+info.ocorrenciasEditadas+" ocorrência(s) futura(s) já ajustada(s)."):null);
+      setMsg(info?(nomeFonte+" agora recebe em "+(((data.contas||[]).find(c=>c.id===novaConta)||{}).nome||(novaConta==="CONTA PJ"?"Conta PJ":novaConta))+" — "+info.ocorrenciasEditadas+" ocorrência(s) futura(s) já ajustada(s)."):null);
     }catch(e){alert(e.message);}
     setLoadConta(null);
   }
@@ -13078,7 +13078,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261013.2030 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261013.2100 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13192,7 +13192,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261013.2030
+      // HTML v3.20261013.2100
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
