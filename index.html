@@ -3032,363 +3032,359 @@ function RegraPlantaoRow({regra,onChange,onRemover}){
   </div>;
 }
 
-function FormModo({modo,onChange,onRemover,podeRemover,onLancarAvulso,contas,contaFonte}){
-  function upd(campo,valor){ onChange({...modo,[campo]:valor}); }
+// ── FONTES DE RECEITA (tela nova, 14/10) ─────────────────────────────────────
+// Lista de fontes -> abre UMA fonte com o "caminho do dinheiro"
+// (Chega / Cai na / Depois move) e duas abas: Regular | Esporadico.
+// Regras de dados NAO mudaram: mesmo CONFIG FONTES_RECEITA_JSON, mesmas acoes
+// do backend (salvarFontesReceita, apagarFuturosFonte, gerarReceitasFontes,
+// editarContaFonteReceita, lancar, lancarTransferenciaEspelhada, deletar).
+const _inpFR={width:"100%",padding:"10px 12px",borderRadius:10,border:"1px solid "+C.border,fontSize:16,fontFamily:"inherit",boxSizing:"border-box",background:"#fff",minHeight:44,color:C.text};
+const _lblFR={display:"block",fontSize:10,fontWeight:700,color:C.textMuted,letterSpacing:".04em",marginBottom:4};
+const _r2=n=>Math.round((Number(n)||0)*100)/100;
+function _normFonte(nome){return String(nome||"").toUpperCase().replace(/[^A-Z0-9_ ]/g,"").replace(/ /g,"");}
+function _marcaRec(obs){const m=String(obs||"").match(/FONTE_RECEITA:([A-Z0-9_]+):([A-Za-z0-9_]+):/);return m?{fonte:m[1],modo:m[2]}:null;}
+function _ehEsp(m){return String((m&&m.tipoRecorrencia)||"REGULAR")==="ESPORADICA";}
+function _tipoPagto(m){ if(m.tipoValor==="ESTAVEL") return "FIXO"; return m.calculada?"PLANTAO":"MANUAL"; }
+function _comTipoPagto(m,t){
+  if(t==="FIXO") return {...m,tipoValor:"ESTAVEL",calculada:false};
+  if(t==="PLANTAO") return {...m,tipoValor:"VARIAVEL",calculada:true};
+  return {...m,tipoValor:"VARIAVEL",calculada:false};
+}
+function _numCampo(v){ return typeof v==="string" ? (numBR(v)||0) : (Number(v)||0); }
+function _tvPadrao(){ return {ativo:false,percentual:0,contaDestino:"",intencao:"LUCROS"}; }
+function _tvCmp(tv){ const t=tv||_tvPadrao(); return {ativo:!!t.ativo,percentual:Number(t.percentual)||0,contaDestino:t.contaDestino||"",intencao:t.intencao||"LUCROS"}; }
+// JSON com chaves em ordem fixa, so pra comparar "mudou ou nao".
+function _stable(o){
+  if(Array.isArray(o)) return o.map(_stable);
+  if(o&&typeof o==="object"){ const r={}; Object.keys(o).sort().forEach(k=>{ if(o[k]!==undefined) r[k]=_stable(o[k]); }); return r; }
+  return o;
+}
+function _cmpFonte(f){
+  if(!f) return null;
+  return _stable({nome:f.nome||"",alias:f.alias||"",conta:f.conta||"CONTA",
+    modos:(f.modos||[]).map(m=>({...m,valorHora:_numCampo(m.valorHora),valorFixo:_numCampo(m.valorFixo),valorReferencia:_numCampo(m.valorReferencia),
+      percDesconto:Number(m.percDesconto)||0,transfVinculada:_tvCmp(m.transfVinculada),obs:m.obs||""}))});
+}
+function _limparFontes(fs){
+  return (fs||[]).map(f=>({...f,modos:(f.modos||[]).map(m=>({...m,valorHora:numBR(m.valorHora)||0,valorFixo:numBR(m.valorFixo)||0,valorReferencia:numBR(m.valorReferencia)||0}))}));
+}
+function _clone(o){ return JSON.parse(JSON.stringify(o||[])); }
+
+function NoCaminho({icone,titulo,resumo,rotuloAcao,defaultOpen,semToggle,children}){
+  const [aberto,setAberto]=useState(!!defaultOpen);
+  const corpoVisivel=semToggle||aberto;
+  return <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:14,overflow:"hidden"}}>
+    <button type="button" onClick={()=>{ if(!semToggle) setAberto(a=>!a); }}
+      style={{width:"100%",display:"flex",alignItems:"center",gap:12,padding:"12px 14px",minHeight:56,background:"none",border:"none",cursor:semToggle?"default":"pointer",textAlign:"left",fontFamily:"inherit"}}>
+      <span style={{width:36,height:36,borderRadius:10,background:C.accentLight,color:C.accent,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,flexShrink:0}}>{icone}</span>
+      <span style={{flex:1,minWidth:0}}>
+        <span style={{display:"block",fontSize:15,fontWeight:800,color:C.text}}>{titulo}</span>
+        <span style={{display:"block",fontSize:12,color:C.textSub,marginTop:2}}>{resumo}</span>
+      </span>
+      {!semToggle&&<span style={{fontSize:12,fontWeight:700,color:C.accent,flexShrink:0}}>{aberto?"Fechar":rotuloAcao}</span>}
+    </button>
+    {corpoVisivel&&<div style={{padding:"12px 14px 14px",borderTop:"1px solid "+C.borderLight}}>{children}</div>}
+  </div>;
+}
+function SetaCaminho(){return <div style={{textAlign:"center",color:C.textMuted,fontSize:16,lineHeight:"16px",margin:"3px 0"}}>↓</div>;}
+function SegFR({opcoes,valor,onChange}){
+  return <div style={{display:"flex",gap:4,background:C.borderLight,borderRadius:12,padding:4,marginBottom:12}}>
+    {opcoes.map(([id,label])=><button key={id} type="button" onClick={()=>onChange(id)}
+      style={{flex:1,minHeight:40,borderRadius:9,border:"none",cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:700,
+        background:valor===id?"#fff":"transparent",color:valor===id?C.accent:C.textSub,boxShadow:valor===id?"0 1px 3px rgba(15,27,61,.12)":"none"}}>{label}</button>)}
+  </div>;
+}
+function PilulaFR({ativo,onClick,children,disabled}){
+  return <button type="button" disabled={disabled} onClick={onClick}
+    style={{minHeight:40,padding:"0 14px",borderRadius:10,border:"1px solid "+(ativo?C.accent:C.border),background:ativo?C.accent:"#fff",color:ativo?"#fff":C.text,
+      fontSize:13,fontWeight:700,cursor:disabled?"default":"pointer",fontFamily:"inherit"}}>{children}</button>;
+}
+function _nomeContaFR(contas,id){
+  const c=(contas||[]).find(x=>x.id===id);
+  if(c) return c.nome||c.id;
+  if(id==="CONTA PJ") return "Conta PJ";
+  if(id==="CONTA"||!id) return "Conta principal";
+  return id;
+}
+
+// "Cai na": conta de recebimento da FONTE (vale para Regular e Esporadico).
+function NoConta({conta,contas,carregando,onEscolher}){
+  const atual=conta||"CONTA";
+  return <NoCaminho icone="🏦" titulo="Cai na" resumo={_nomeContaFR(contas,atual)} rotuloAcao="Trocar">
+    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+      {(contas||[]).map(c=><PilulaFR key={c.id} ativo={atual===c.id} disabled={carregando} onClick={()=>onEscolher(c.id)}>{c.nome||c.id}</PilulaFR>)}
+    </div>
+    <div style={{fontSize:11,color:C.textMuted,marginTop:8,lineHeight:1.4}}>A conta vale para a fonte inteira, nas duas abas. Ao salvar, o app pergunta se ajusta os lançamentos futuros.</div>
+  </NoCaminho>;
+}
+
+// "Depois move": parte do dinheiro vai para outra conta (transferencia vinculada).
+function NoMove({tv,onChange,contas,contaFonte,valorBase}){
+  const t=tv||_tvPadrao();
+  const destinos=(contas||[]).filter(c=>c.id!==(contaFonte||"CONTA"));
+  const pct=Number(t.percentual)||0;
+  const resumo=t.ativo
+    ? (pct+"% → "+_nomeContaFR(contas,t.contaDestino||"")+(valorBase>0?" · "+fmt(_r2(valorBase*pct/100)):""))
+    : "Nada — o dinheiro fica na conta";
+  function upd(c,v){ onChange({...t,[c]:v}); }
+  return <NoCaminho icone="⇄" titulo="Depois move" resumo={resumo} rotuloAcao="Editar">
+    <SegFR opcoes={[["nada","Nada"],["parte","Transferir parte"]]} valor={t.ativo?"parte":"nada"}
+      onChange={v=>{ if(v==="nada") upd("ativo",false); else onChange({...t,ativo:true,contaDestino:t.contaDestino||(destinos[0]&&destinos[0].id)||""}); }}/>
+    {t.ativo&&<>
+      <div style={{display:"flex",gap:10,marginBottom:12}}>
+        <div style={{width:110,flexShrink:0}}>
+          <label style={_lblFR}>PERCENTUAL</label>
+          <input type="number" min="0" max="100" value={t.percentual} onChange={e=>upd("percentual",Number(e.target.value)||0)} style={{..._inpFR,textAlign:"right"}}/>
+        </div>
+        <div style={{flex:1}}>
+          <label style={_lblFR}>PARA</label>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {destinos.map(c=><PilulaFR key={c.id} ativo={t.contaDestino===c.id} onClick={()=>upd("contaDestino",c.id)}>{c.nome||c.id}</PilulaFR>)}
+          </div>
+        </div>
+      </div>
+      <label style={_lblFR}>FINALIDADE</label>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+        {intencoesPermitidas(tipoDaConta(contas,contaFonte||"CONTA"),tipoDaConta(contas,t.contaDestino)).map(o=>
+          <PilulaFR key={o.id} ativo={(t.intencao||"LUCROS")===o.id} onClick={()=>upd("intencao",o.id)}>{o.label}</PilulaFR>)}
+      </div>
+    </>}
+  </NoCaminho>;
+}
+
+// Um pagamento REGULAR da fonte: Chega (como e quando o valor chega) + Cai na + Depois move.
+function ModoRegular({modo,onChange,onRemover,podeRemover,contas,conta,carregandoConta,onEscolherConta,proximos}){
+  function upd(c,v){ onChange({...modo,[c]:v}); }
   function addRegra(){ upd("regras",[...(modo.regras||[]),{dow:1,modo:"toda",ordinais:[],qtd:1}]); }
   function updRegra(i,nova){ upd("regras",(modo.regras||[]).map((r,idx)=>idx===i?nova:r)); }
   function removerRegra(i){ upd("regras",(modo.regras||[]).filter((_,idx)=>idx!==i)); }
-
   const hj=new Date();
   let mesRef=hj.getMonth()-1, anoRef=hj.getFullYear();
   if(mesRef<0){mesRef=11;anoRef--;}
-  const ehEstavel=modo.tipoValor==="ESTAVEL";
-  const ehCalculada=!ehEstavel&&!!modo.calculada;
-  const ehEsporadica=modo.tipoRecorrencia==="ESPORADICA";
-  // valorHora/valorFixo/valorReferencia ficam como STRING mascarada enquanto
-  // o campo esta sendo editado (mesmo padrao de EditorEnvelope) -- nunca
-  // converte pra numero a cada tecla, so na hora de salvar (FontesReceita)
-  // ou aqui no preview via numBR (aceita string mascarada OU numero puro).
-  const plantoesPreview=ehCalculada?_previewPlantoesMes(modo.regras,anoRef,mesRef):0;
-  const valorPreview=ehCalculada
-    ?_round2(plantoesPreview*(Number(modo.horasPlantao)||12)*(numBR(modo.valorHora)||0)*(1-(Number(modo.percDesconto)||0)/100))
-    :(numBR(modo.valorFixo)||0);
-  const liquidoReferenciaPreview=_round2((numBR(modo.valorReferencia)||0)*(1-(Number(modo.percDesconto)||0)/100));
-  function _round2(n){return Math.round(n*100)/100;}
-  // Exibicao do campo mascarado: se o valor ainda for um numero puro (vindo
-  // do backend ou dos padroes FONTES_PADRAO, nunca editado nesta sessao),
-  // formata pra mascara na hora de mostrar; se ja for string (usuario
-  // editou), mostra exatamente o que esta digitado.
+  const tipo=_tipoPagto(modo);
+  const desc=Number(modo.percDesconto)||0;
+  const plantoes=tipo==="PLANTAO"?_previewPlantoesMes(modo.regras,anoRef,mesRef):0;
+  const valorLiq=tipo==="PLANTAO"
+    ?_r2(plantoes*(Number(modo.horasPlantao)||12)*(numBR(modo.valorHora)||0)*(1-desc/100))
+    :tipo==="FIXO"?(numBR(modo.valorFixo)||0)
+    :_r2((numBR(modo.valorReferencia)||0)*(1-desc/100));
   const dispValorHora=typeof modo.valorHora==="string"?modo.valorHora:formatarValorInicial(modo.valorHora);
   const dispValorFixo=typeof modo.valorFixo==="string"?modo.valorFixo:formatarValorInicial(modo.valorFixo);
-  const dispValorReferencia=typeof modo.valorReferencia==="string"?modo.valorReferencia:formatarValorInicial(modo.valorReferencia);
+  const dispValorRef=typeof modo.valorReferencia==="string"?modo.valorReferencia:formatarValorInicial(modo.valorReferencia);
+  const diaTipo=modo.diaTipo||"FIXO";
+  const diaTxt=diaTipo==="FIXO"?"dia "+(modo.diaPagamento||1)+" de cada mês":diaTipo==="N_UTIL"?((modo.diaN||1)+"º dia útil"):"último dia útil";
+  return <div style={{marginBottom:14}}>
+    <NoCaminho icone="R$" titulo="Chega" resumo={fmt(valorLiq)+" · "+diaTxt+(modo.ativo===false?" · pausado":"")} rotuloAcao="Editar" defaultOpen={!modo.id}>
+      <SegFR opcoes={[["PLANTAO","Por plantão"],["FIXO","Valor fixo"],["MANUAL","Manual"]]} valor={tipo} onChange={t=>onChange(_comTipoPagto(modo,t))}/>
+      {tipo==="PLANTAO"&&<>
+        <div style={{display:"flex",gap:10,marginBottom:12}}>
+          <div style={{flex:1.2}}><label style={_lblFR}>VALOR/HORA</label>
+            <input type="text" inputMode="numeric" value={dispValorHora} onChange={e=>upd("valorHora",formatarMoedaInput(e.target.value))} style={{..._inpFR,textAlign:"right"}}/></div>
+          <div style={{flex:1}}><label style={_lblFR}>HORAS POR PLANTÃO</label>
+            <input type="number" value={modo.horasPlantao} onChange={e=>upd("horasPlantao",Number(e.target.value)||12)} style={{..._inpFR,textAlign:"right"}}/></div>
+          <div style={{flex:.9}}><label style={_lblFR}>DESCONTO %</label>
+            <input type="number" value={modo.percDesconto} onChange={e=>upd("percDesconto",Number(e.target.value)||0)} style={{..._inpFR,textAlign:"right"}}/></div>
+        </div>
+        <label style={_lblFR}>REGRA DOS PLANTÕES</label>
+        {(modo.regras||[]).map((r,i)=><RegraPlantaoRow key={i} regra={r} onChange={nova=>updRegra(i,nova)} onRemover={()=>removerRegra(i)}/>)}
+        <button type="button" onClick={addRegra} style={{width:"100%",minHeight:44,background:"none",border:"1px dashed "+C.border,borderRadius:10,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",marginBottom:10,fontFamily:"inherit"}}>+ Adicionar regra</button>
+        <div style={{background:C.greenLight,borderRadius:10,padding:"10px 12px",fontSize:13,color:C.green,fontWeight:700,marginBottom:12}}>
+          Mês de referência ({String(mesRef+1).padStart(2,"0")}/{anoRef}): {plantoes} plantões → {fmt(valorLiq)}
+        </div>
+      </>}
+      {tipo==="FIXO"&&<div style={{marginBottom:12}}><label style={_lblFR}>VALOR FIXO</label>
+        <input type="text" inputMode="numeric" value={dispValorFixo} onChange={e=>upd("valorFixo",formatarMoedaInput(e.target.value))} style={{..._inpFR,textAlign:"right"}}/></div>}
+      {tipo==="MANUAL"&&<>
+        <div style={{display:"flex",gap:10,marginBottom:10}}>
+          <div style={{flex:1.4}}><label style={_lblFR}>VALOR</label>
+            <input type="text" inputMode="numeric" value={dispValorRef} onChange={e=>upd("valorReferencia",formatarMoedaInput(e.target.value))} style={{..._inpFR,textAlign:"right"}}/></div>
+          <div style={{flex:1}}><label style={_lblFR}>DESCONTO %</label>
+            <input type="number" value={modo.percDesconto} onChange={e=>upd("percDesconto",Number(e.target.value)||0)} style={{..._inpFR,textAlign:"right"}}/></div>
+        </div>
+        <div style={{background:C.greenLight,borderRadius:10,padding:"10px 12px",fontSize:13,color:C.green,fontWeight:700,marginBottom:12}}>Líquido: {fmt(valorLiq)}</div>
+      </>}
+      <label style={_lblFR}>QUANDO CAI</label>
+      <SegFR opcoes={[["FIXO","Dia fixo"],["N_UTIL","Nº dia útil"],["ULTIMO_UTIL","Último útil"]]} valor={diaTipo} onChange={v=>upd("diaTipo",v)}/>
+      {diaTipo==="FIXO"&&<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+        <span style={{fontSize:13,color:C.textSub}}>Dia do mês:</span>
+        <input type="number" min="1" max="31" value={modo.diaPagamento} onChange={e=>upd("diaPagamento",Number(e.target.value)||1)} style={{..._inpFR,width:80,textAlign:"center"}}/>
+      </div>}
+      {diaTipo==="N_UTIL"&&<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+        <span style={{fontSize:13,color:C.textSub}}>Qual dia útil:</span>
+        <input type="number" min="1" max="20" value={modo.diaN||1} onChange={e=>upd("diaN",Number(e.target.value)||1)} style={{..._inpFR,width:80,textAlign:"center"}}/>
+      </div>}
+      <label style={_lblFR}>OBSERVAÇÃO (livre)</label>
+      <input type="text" value={modo.obs||""} onChange={e=>upd("obs",e.target.value.toUpperCase())} placeholder="Anotação sobre este pagamento" style={{..._inpFR,marginBottom:12}}/>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.textSub,cursor:"pointer",minHeight:44}}>
+          <input type="checkbox" checked={modo.ativo!==false} onChange={e=>upd("ativo",e.target.checked)} style={{width:20,height:20}}/>Pagamento ativo
+        </label>
+        {podeRemover&&<button type="button" onClick={onRemover} style={{minHeight:44,background:"none",border:"none",color:C.red,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Remover este pagamento</button>}
+      </div>
+    </NoCaminho>
+    <SetaCaminho/>
+    <NoConta conta={conta} contas={contas} carregando={carregandoConta} onEscolher={onEscolherConta}/>
+    <SetaCaminho/>
+    <NoMove tv={modo.transfVinculada} onChange={tv=>upd("transfVinculada",tv)} contas={contas} contaFonte={conta||"CONTA"} valorBase={valorLiq}/>
+    {proximos.length>0&&<div style={{marginTop:10,background:C.surface,border:"1px solid "+C.border,borderRadius:14,padding:"10px 14px"}}>
+      <div style={{fontSize:10,fontWeight:700,color:C.textMuted,letterSpacing:".04em",marginBottom:4}}>JÁ NO FLUXO</div>
+      {proximos.map((r,j)=><div key={j} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:14}}>
+        <span style={{color:C.textSub}}>{fmtD(r.data)}</span><span style={{fontWeight:800,color:C.green}}>{fmt(r.valor)}</span>
+      </div>)}
+    </div>}
+  </div>;
+}
 
-  // [NOVO 05/09-2] Transferencia automatica vinculada a este modo -- so
-  // guarda a configuracao nesta etapa, nenhum lancamento sai daqui ainda.
-  const tv=modo.transfVinculada||{ativo:false,percentual:0,contaDestino:"",intencao:"LUCROS"};
-  function updTv(campo,valor){ upd("transfVinculada",{...tv,[campo]:valor}); }
-  const contasDestinoPossiveis=(contas||[]).filter(c=>c.id!==(contaFonte||"CONTA"));
-
-  // [NOVO 14/07] Lancamento avulso direto daqui, sem precisar navegar ate o
-  // "+" -- pedido do Marcus depois de se confundir achando que "Salvar" (o
-  // botao do rodape da tela, que so grava o CADASTRO) tambem lancava no
-  // Fluxo. Data por calendario + liquido visivel, exatamente como ele pediu.
-  // Nunca sobrescreve modo.valorReferencia/percDesconto -- so LE esses
-  // valores como ponto de partida; o que for digitado aqui fica local, so
-  // desta vez.
-  const [lancarAberto,setLancarAberto]=useState(false);
-  const [dataLanc,setDataLanc]=useState(()=>hoje());
-  const [valorLanc,setValorLanc]=useState("");
-  const [descLanc,setDescLanc]=useState("");
-  const [loadLanc,setLoadLanc]=useState(false);
-  const liquidoLanc=_round2((numBR(valorLanc)||0)*(1-(Number(descLanc)||0)/100));
-  function abrirLancar(){
-    setValorLanc(formatarValorInicial(modo.valorReferencia||0));
-    setDescLanc(String(modo.percDesconto||0));
-    setDataLanc(hoje());
-    setLancarAberto(true);
-  }
-  async function confirmarLancar(){
-    if(!numBR(valorLanc)) return;
-    setLoadLanc(true);
+// Um pagamento ESPORADICO: o valor e a data sao DESTE lancamento.
+// Desconto % e "Depois move" vem preenchidos com o ultimo lancamento (ficam
+// guardados no proprio modo) -- sem "valor padrao" e sem Salvar nesta aba.
+function ModoEsporadico({modo,fonteNome,contas,conta,carregandoConta,onEscolherConta,lancados,onLancar,onApagar,onChangeModo,onRemover,podeRemover}){
+  const [dataL,setDataL]=useState(()=>hoje());
+  const [valor,setValor]=useState("");
+  const [desc,setDesc]=useState(()=>String(modo.percDesconto||0));
+  const [tvL,setTvL]=useState(()=>_tvCmp(modo.transfVinculada));
+  const [carregando,setCarregando]=useState(false);
+  const bruto=numBR(valor)||0;
+  const liquido=_r2(bruto*(1-(Number(desc)||0)/100));
+  const tvAtivo=tvL.ativo&&Number(tvL.percentual)>0&&tvL.contaDestino&&tvL.contaDestino!==(conta||"CONTA");
+  const valorTransf=tvAtivo?_r2(liquido*(Number(tvL.percentual)/100)):0;
+  const futuro=dataL>hoje();
+  const semId=!modo.id;
+  async function lancar(){
+    if(!bruto||semId||carregando) return;
+    setCarregando(true);
     try{
-      await onLancarAvulso({valor:liquidoLanc,data:dataLanc});
-      setLancarAberto(false);
-    }catch(e){alert(e.message);}
-    setLoadLanc(false);
+      await onLancar({valor:liquido,data:dataL,tv:tvL,percDesconto:Number(desc)||0});
+      setValor("");
+    }catch(e){ alert(e.message); }
+    setCarregando(false);
   }
-
-  return <div style={{background:C.borderLight,border:"1px solid "+C.border,borderRadius:10,padding:10,marginBottom:8}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-      <label style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:C.textSub,cursor:"pointer"}}>
-        <input type="checkbox" checked={!!modo.ativo} onChange={e=>upd("ativo",e.target.checked)}/>Ativo
-      </label>
-      {podeRemover&&<button onClick={onRemover} style={{background:"none",border:"1px dashed "+C.border,borderRadius:6,color:C.red,fontSize:10,padding:"3px 8px",cursor:"pointer"}}>Remover este modo</button>}
+  const ordenados=[...lancados].sort((a,b)=>a.data<b.data?1:-1).slice(0,8);
+  const nExec=lancados.filter(r=>r.status==="EXECUTADO").length, nProg=lancados.filter(r=>r.status!=="EXECUTADO").length;
+  return <div style={{marginBottom:14}}>
+    <NoCaminho icone="R$" titulo="Chega" semToggle
+      resumo={semId?"Salve a fonte uma vez para poder lançar":"Data e valor deste lançamento"}>
+      <div style={{display:"flex",gap:10,marginBottom:12}}>
+        <div style={{flex:1}}><label style={_lblFR}>DATA</label>
+          <input type="date" value={dataL} onChange={e=>setDataL(e.target.value)} style={_inpFR}/></div>
+        <div style={{flex:1}}><label style={_lblFR}>VALOR</label>
+          <input type="text" inputMode="numeric" value={valor} onChange={e=>setValor(formatarMoedaInput(e.target.value))} placeholder="0,00" style={{..._inpFR,textAlign:"right"}}/></div>
+      </div>
+      <div style={{display:"flex",gap:10,alignItems:"flex-end"}}>
+        <div style={{width:110,flexShrink:0}}><label style={_lblFR}>DESCONTO %</label>
+          <input type="number" value={desc} onChange={e=>setDesc(e.target.value)} style={{..._inpFR,textAlign:"right"}}/></div>
+        <div style={{flex:1,background:C.greenLight,borderRadius:10,padding:"0 12px",minHeight:44,display:"flex",alignItems:"center",fontSize:14,color:C.green,fontWeight:800}}>
+          Líquido: {fmt(liquido)}
+        </div>
+      </div>
+    </NoCaminho>
+    <SetaCaminho/>
+    <NoConta conta={conta} contas={contas} carregando={carregandoConta} onEscolher={onEscolherConta}/>
+    <SetaCaminho/>
+    <NoMove tv={tvL} onChange={setTvL} contas={contas} contaFonte={conta||"CONTA"} valorBase={liquido}/>
+    <button type="button" onClick={lancar} disabled={!bruto||semId||carregando}
+      style={{width:"100%",minHeight:52,marginTop:12,borderRadius:14,border:"none",background:(!bruto||semId)?C.border:C.accent,color:(!bruto||semId)?C.textMuted:"#fff",fontSize:16,fontWeight:800,cursor:(!bruto||semId)?"default":"pointer",fontFamily:"inherit"}}>
+      {carregando?"Lançando…":bruto?"Lançar "+fmt(liquido)+" em "+fmtD(dataL):"Lançar"}
+    </button>
+    <div style={{fontSize:12,color:C.textMuted,textAlign:"center",marginTop:6,lineHeight:1.4}}>
+      {bruto>0&&<>Cai na {_nomeContaFR(contas,conta||"CONTA")}{tvAtivo?" · "+fmt(valorTransf)+" vai para "+_nomeContaFR(contas,tvL.contaDestino):""}. </>}
+      {futuro?"Data futura entra programada.":"Hoje ou antes entra executada."} Usa o que está na tela, sem precisar salvar.
     </div>
 
-    {/* Eixo A: como o VALOR se comporta */}
-    <div style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
-      <select value={modo.tipoValor||"VARIAVEL"} onChange={e=>upd("tipoValor",e.target.value)}
-        style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",background:C.surface}}>
-        <option value="VARIAVEL">Variável (muda a cada vez)</option>
-        <option value="ESTAVEL">Estável (valor fixo)</option>
-      </select>
-      {!ehEstavel&&<label style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:C.textSub,cursor:"pointer",flexShrink:0}}>
-        <input type="checkbox" checked={!!modo.calculada} onChange={e=>upd("calculada",e.target.checked)}/>Calculada
-      </label>}
-    </div>
-
-    {/* Eixo B: como a RECORRENCIA se comporta */}
-    <select value={modo.tipoRecorrencia||"REGULAR"} onChange={e=>upd("tipoRecorrencia",e.target.value)}
-      style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",marginBottom:6,boxSizing:"border-box",background:C.surface}}>
-      <option value="REGULAR">Regular (gera todo mês)</option>
-      <option value="ESPORADICA">Esporádica (só quando eu lançar)</option>
-    </select>
-    {!ehEsporadica&&<div style={{marginBottom:8}}>
-      <div style={{display:"flex",gap:4,marginBottom:6}}>
-        {[["FIXO","Fixo"],["N_UTIL","Nº útil"],["ULTIMO_UTIL","Último útil"]].map(([id,label])=>
-          <button key={id} type="button" onClick={()=>upd("diaTipo",id)}
-            style={{flex:1,padding:"5px 2px",borderRadius:16,fontSize:9,fontWeight:700,border:"none",cursor:"pointer",
-              background:(modo.diaTipo||"FIXO")===id?C.accent:C.borderLight,color:(modo.diaTipo||"FIXO")===id?"#fff":C.textMuted}}>{label}</button>
-        )}
-      </div>
-      {(modo.diaTipo||"FIXO")==="FIXO"&&<div style={{display:"flex",alignItems:"center",gap:4}}>
-        <label style={{fontSize:10,color:C.textMuted}}>Dia pgto:</label>
-        <input type="number" min="1" max="31" value={modo.diaPagamento} onChange={e=>upd("diaPagamento",Number(e.target.value)||1)}
-          style={{width:40,padding:"5px 6px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"center",fontFamily:"inherit"}}/>
-      </div>}
-      {modo.diaTipo==="N_UTIL"&&<div style={{display:"flex",alignItems:"center",gap:4}}>
-        <label style={{fontSize:10,color:C.textMuted}}>Qual dia útil:</label>
-        <input type="number" min="1" max="20" value={modo.diaN||1} onChange={e=>upd("diaN",Number(e.target.value)||1)}
-          style={{width:40,padding:"5px 6px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"center",fontFamily:"inherit"}}/>
-      </div>}
-      {modo.diaTipo==="ULTIMO_UTIL"&&<div style={{fontSize:10,color:C.textMuted}}>Sempre o último dia útil do mês.</div>}
-    </div>}
-
-    {ehEsporadica&&<div style={{background:C.blueLight,borderRadius:8,padding:"8px 10px",marginBottom:8}}>
-      <div style={{fontSize:11,color:C.blue,marginBottom:lancarAberto?8:0}}>
-        ℹ️ Modo esporádico: nunca gera lançamento sozinho.
-      </div>
-      {!lancarAberto?
-        <button onClick={abrirLancar} style={{background:C.blue,color:"#fff",border:"none",borderRadius:6,padding:"6px 12px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
-          📤 Lançar um pagamento agora
-        </button>
-      :<>
-        <div style={{display:"flex",gap:6,marginBottom:6}}>
-          <div style={{flex:1}}>
-            <label style={{fontSize:9,color:C.textMuted}}>VALOR BRUTO</label>
-            <input type="text" inputMode="numeric" value={valorLanc} onChange={e=>setValorLanc(formatarMoedaInput(e.target.value))}
-              style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit",background:"#fff"}}/>
-          </div>
-          <div style={{width:70,flexShrink:0}}>
-            <label style={{fontSize:9,color:C.textMuted}}>DESCONTO</label>
-            <input type="number" value={descLanc} onChange={e=>setDescLanc(e.target.value)}
-              style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit",background:"#fff"}}/>
-          </div>
-        </div>
-        <input type="date" value={dataLanc} onChange={e=>setDataLanc(e.target.value)}
-          style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",marginBottom:6,boxSizing:"border-box",background:"#fff"}}/>
-        <div style={{fontSize:11,color:C.green,fontWeight:700,background:"#fff",borderRadius:6,padding:"6px 8px",marginBottom:8}}>
-          Líquido: {fmt(liquidoLanc)}
-        </div>
-        <div style={{display:"flex",gap:6}}>
-          <button onClick={confirmarLancar} disabled={loadLanc||!numBR(valorLanc)}
-            style={{flex:1,background:C.blue,color:"#fff",border:"none",borderRadius:6,padding:"7px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
-            {loadLanc?"Lançando…":"Confirmar lançamento"}
-          </button>
-          <button onClick={()=>setLancarAberto(false)} style={{background:"none",border:"1px solid "+C.border,borderRadius:6,color:C.textSub,fontSize:11,padding:"7px 12px",cursor:"pointer"}}>
-            Cancelar
-          </button>
-        </div>
-      </>}
-    </div>}
-
-    {ehCalculada?<>
-      <div style={{display:"flex",gap:6,marginBottom:8}}>
+    <div style={{marginTop:14,background:C.surface,border:"1px solid "+C.border,borderRadius:14,padding:"12px 14px"}}>
+      <div style={{fontSize:15,fontWeight:800,color:C.text}}>Lançados</div>
+      <div style={{fontSize:12,color:C.textSub,marginBottom:ordenados.length?6:0}}>{lancados.length?nExec+" executado(s) · "+nProg+" programado(s)":"Nenhum lançamento ainda"}</div>
+      {ordenados.map((r,j)=><div key={j} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",borderTop:"1px solid "+C.borderLight}}>
         <div style={{flex:1}}>
-          <label style={{fontSize:9,color:C.textMuted}}>VALOR/HORA</label>
-          <input type="text" inputMode="numeric" value={dispValorHora} onChange={e=>upd("valorHora",formatarMoedaInput(e.target.value))}
-            style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit"}}/>
+          <div style={{fontSize:14,fontWeight:800,color:C.text}}>{fmtD(r.data)}</div>
+          <div style={{fontSize:11,color:C.textMuted}}>{r.status==="EXECUTADO"?"Já executado":"Programado"}</div>
         </div>
-        <div style={{flex:1}}>
-          <label style={{fontSize:9,color:C.textMuted}}>HORAS/PLANTÃO</label>
-          <input type="number" value={modo.horasPlantao} onChange={e=>upd("horasPlantao",Number(e.target.value)||12)}
-            style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit"}}/>
-        </div>
-        <div style={{width:70,flexShrink:0}}>
-          <label style={{fontSize:9,color:C.textMuted}}>DESCONTO</label>
-          <input type="number" value={modo.percDesconto} onChange={e=>upd("percDesconto",Number(e.target.value)||0)}
-            style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit"}}/>
-        </div>
+        <div style={{fontSize:14,fontWeight:800,color:C.text}}>{fmt(r.valor)}</div>
+        {r.status==="EXECUTADO"
+          ?<span style={{fontSize:11,fontWeight:700,color:C.green,background:C.greenLight,borderRadius:8,padding:"4px 8px"}}>Executado</span>
+          :<button type="button" onClick={()=>onApagar(r)} style={{minHeight:40,padding:"0 12px",borderRadius:10,border:"1px solid "+C.border,background:"#fff",color:C.red,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Apagar</button>}
+      </div>)}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:"1px solid "+C.borderLight,marginTop:6,paddingTop:6}}>
+        <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.textSub,cursor:"pointer",minHeight:44}}>
+          <input type="checkbox" checked={modo.ativo!==false} onChange={e=>onChangeModo({...modo,ativo:e.target.checked})} style={{width:20,height:20}}/>Ativo
+        </label>
+        {podeRemover&&<button type="button" onClick={onRemover} style={{minHeight:44,background:"none",border:"none",color:C.red,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Remover este pagamento</button>}
       </div>
-      <div style={{fontSize:10,color:C.textMuted,fontWeight:700,marginBottom:4}}>REGRA DOS PLANTÕES</div>
-      {(modo.regras||[]).map((r,i)=><RegraPlantaoRow key={i} regra={r} onChange={nova=>updRegra(i,nova)} onRemover={()=>removerRegra(i)}/>)}
-      <button onClick={addRegra} style={{background:"none",border:"1px dashed "+C.border,borderRadius:6,color:C.teal,fontSize:11,padding:"5px 10px",cursor:"pointer",marginBottom:8}}>
-        + Adicionar regra
-      </button>
-      <div style={{background:C.tealLight,borderRadius:8,padding:"8px 10px",fontSize:11,color:C.teal,fontWeight:600}}>
-        Mês de referência atual ({String(mesRef+1).padStart(2,"0")}/{anoRef}): <b>{plantoesPreview} plantões</b> → {fmt(valorPreview)}
-      </div>
-    </>:ehEstavel?<>
-      <div style={{marginBottom:8}}>
-        <label style={{fontSize:9,color:C.textMuted}}>VALOR FIXO</label>
-        <input type="text" inputMode="numeric" value={dispValorFixo} onChange={e=>upd("valorFixo",formatarMoedaInput(e.target.value))}
-          style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit"}}/>
-      </div>
-    </>:<>
-      {/* Variavel + nao-calculada: o valor de verdade varia a cada vez, mas
-          precisa de um VALOR DE REFERENCIA guardado no cadastro por dois
-          motivos -- (1) se o modo for REGULAR, e esse valor que gera
-          sozinho todo mes (sem ele, geraria R$0,00 -- bug real encontrado
-          13/07); (2) se for ESPORADICA, pre-preenche o lancamento avulso
-          (veja o botao "Lancar um pagamento agora" acima), sempre editavel
-          naquele momento -- nunca sobrescreve esse valor de referencia. */}
-      <div style={{display:"flex",gap:6,marginBottom:6}}>
-        <div style={{flex:1}}>
-          <label style={{fontSize:9,color:C.textMuted}}>VALOR {ehEsporadica?"DE REFERÊNCIA":""}</label>
-          <input type="text" inputMode="numeric" value={dispValorReferencia} onChange={e=>upd("valorReferencia",formatarMoedaInput(e.target.value))}
-            style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit"}}/>
-        </div>
-        <div style={{width:70,flexShrink:0}}>
-          <label style={{fontSize:9,color:C.textMuted}}>DESCONTO</label>
-          <input type="number" value={modo.percDesconto} onChange={e=>upd("percDesconto",Number(e.target.value)||0)}
-            style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit"}}/>
-        </div>
-      </div>
-      <div style={{background:C.tealLight,borderRadius:8,padding:"7px 10px",fontSize:11,color:C.teal,fontWeight:600,marginBottom:8}}>
-        Líquido de referência: {fmt(liquidoReferenciaPreview)}{ehEsporadica?" — editável em cada lançamento, isso aqui é só um valor de partida.":""}
-      </div>
-    </>}
-    <div style={{marginBottom:8}}>
-      <label style={{fontSize:9,color:C.textMuted}}>OBS (livre)</label>
-      <input type="text" value={modo.obs||""} onChange={e=>upd("obs",e.target.value.toUpperCase())} placeholder="Anotação livre sobre esse modo"
-        style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,boxSizing:"border-box",fontFamily:"inherit"}}/>
-    </div>
-
-    {/* [NOVO 05/09-2] Transferencia automatica vinculada a este modo --
-        vale igual pra Regular e Esporadica. Nesta etapa so guarda a
-        configuracao, ainda nao dispara nenhum lancamento sozinho. */}
-    <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:8,padding:"8px 10px"}}>
-      <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.textSub,cursor:"pointer",marginBottom:tv.ativo?8:0}}>
-        <input type="checkbox" checked={!!tv.ativo} onChange={e=>updTv("ativo",e.target.checked)}/>
-        Enviar automaticamente parte desse dinheiro pra outra conta
-      </label>
-      {tv.ativo&&<>
-        <div style={{display:"flex",gap:6,marginBottom:8}}>
-          <div style={{width:70,flexShrink:0}}>
-            <label style={{fontSize:9,color:C.textMuted}}>% A ENVIAR</label>
-            <input type="number" min="0" max="100" value={tv.percentual} onChange={e=>updTv("percentual",Number(e.target.value)||0)}
-              style={{width:"100%",padding:"5px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,textAlign:"right",boxSizing:"border-box",fontFamily:"inherit"}}/>
-          </div>
-        </div>
-        <div style={{marginBottom:8}}>
-          <label style={{fontSize:9,color:C.textMuted}}>PRA QUAL CONTA</label>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:2}}>
-            {contasDestinoPossiveis.map(c=>{
-              const ativoC=tv.contaDestino===c.id;
-              return <button key={c.id} onClick={()=>updTv("contaDestino",c.id)}
-                style={{padding:"5px 10px",borderRadius:8,border:"1px solid "+(ativoC?C.teal:C.border),
-                  background:ativoC?C.teal:"#fff",color:ativoC?"#fff":C.text,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                {c.nome||c.id}
-              </button>;
-            })}
-          </div>
-        </div>
-        <div>
-          <label style={{fontSize:9,color:C.textMuted}}>FINALIDADE</label>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:2}}>
-            {intencoesPermitidas(tipoDaConta(contas,contaFonte||"CONTA"),tipoDaConta(contas,tv.contaDestino)).map(o=>{
-              const ativoI=(tv.intencao||"LUCROS")===o.id;
-              return <button key={o.id} onClick={()=>updTv("intencao",o.id)}
-                style={{padding:"5px 10px",borderRadius:8,border:"1px solid "+(ativoI?C.teal:C.border),
-                  background:ativoI?C.teal:"#fff",color:ativoI?"#fff":C.text,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
-                {o.label}
-              </button>;
-            })}
-          </div>
-        </div>
-      </>}
     </div>
   </div>;
 }
 
 function FontesReceita({data,onUpdate}){
   const salvas=data.fontesReceita||[];
-  const [fontes,setFontes]=useState(()=>salvas.length?salvas:[]);
-  const [loadFonte,setLoadFonte]=useState(null); // nome da fonte gerando individualmente agora
+  const [fontes,setFontes]=useState(()=>_clone(salvas));
+  const [baseline,setBaseline]=useState(()=>_clone(salvas)); // ultimo estado SALVO (comparar "mudou?")
+  const [sel,setSel]=useState(null);      // indice da fonte aberta (null = lista)
+  const [aba,setAba]=useState("reg");     // "reg" | "esp"
+  const [salvando,setSalvando]=useState(false);
   const [msg,setMsg]=useState(null);
-  // [NOVO 09/08] Conta de recebimento por fonte -- resolve o caso real de
-  // HSI (e na pratica HSA/HDWC tambem) serem recebidas pela Intensiva (PJ),
-  // nao pela PF onde o cadastro sempre apontou. Acao propria (nao entra no
-  // "Salvar" geral) porque precisa editar in-place as ocorrencias JA
-  // GERADAS no Fluxo, nao so o cadastro -- mesmo padrao de Recorrencia normal.
+  const [loadConta,setLoadConta]=useState(false);
+  const [loadApagar,setLoadApagar]=useState(false);
+  const [tiposApagar,setTiposApagar]=useState({regular:true,esporadica:true});
   const contasAtivasRec=(data.contas||[]).filter(c=>c.ativa!==false);
-  const [loadConta,setLoadConta]=useState(null); // nome da fonte trocando conta agora
-  async function trocarContaFonte(nomeFonte,novaConta){
-    setLoadConta(nomeFonte);
-    try{
-      const r=await api({action:"editarContaFonteReceita",nome:nomeFonte,conta:novaConta});
-      onUpdate&&onUpdate(r);
-      const info=r.contaFonteAlterada;
-      setMsg(info?(nomeFonte+" agora recebe em "+(((data.contas||[]).find(c=>c.id===novaConta)||{}).nome||(novaConta==="CONTA PJ"?"Conta PJ":novaConta))+" — "+info.ocorrenciasEditadas+" ocorrência(s) futura(s) já ajustada(s)."):null);
-    }catch(e){alert(e.message);}
-    setLoadConta(null);
-  }
 
-  function novoModoVazio(){
-    return {id:"", tipoValor:"VARIAVEL", calculada:false, tipoRecorrencia:"REGULAR",
+  function novoModoVazio(esporadico){
+    return {id:"", tipoValor:"VARIAVEL", calculada:false, tipoRecorrencia:esporadico?"ESPORADICA":"REGULAR",
       diaPagamento:1, diaTipo:"FIXO", diaN:1, ativo:true, obs:"", valorHora:0, horasPlantao:12, percDesconto:0, regras:[],
       transfVinculada:{ativo:false,percentual:0,contaDestino:"",intencao:"LUCROS"}};
   }
-  function atualizarNomeFonte(i,novoNome){ setFontes(fs=>fs.map((f,idx)=>idx===i?{...f,nome:novoNome}:f)); }
-  // [NOVO 17/07] Termos alternativos de identificacao (de onde o dinheiro
-  // realmente vem no extrato -- ex: HDWC cai de uma conta salario do Banco
-  // do Brasil, HSA/HSI caem da conta da Intensiva). So usado por
-  // Conciliacao de Extrato, nunca muda a descricao das linhas geradas.
-  function atualizarAliasFonte(i,novoAlias){ setFontes(fs=>fs.map((f,idx)=>idx===i?{...f,alias:novoAlias}:f)); }
-  function removerFonte(i){ setFontes(fs=>fs.filter((_,idx)=>idx!==i)); }
-  function addFonte(){ setFontes(fs=>[...fs,{nome:"",modos:[novoModoVazio()]}]); }
-  // [NOVO 05/09-2] Modo novo dentro de uma fonte que ja tem a transferencia
-  // vinculada configurada em outro modo herda a mesma config (percentual,
-  // conta, finalidade) -- so pra nao repetir o preenchimento toda hora.
-  // Se nenhum modo da fonte tiver isso ligado ainda, nasce desligado, igual
-  // sempre foi.
-  function addModo(fi){
+  function baselineDe(nome){ return baseline.find(f=>_normFonte(f.nome)===_normFonte(nome)&&String(nome||"").trim()!==""); }
+  function atualizarFonte(i,patch){ setFontes(fs=>fs.map((f,idx)=>idx===i?{...f,...patch}:f)); }
+  function atualizarModo(fi,mi,novo){ setFontes(fs=>fs.map((f,idx)=>idx===fi?{...f,modos:f.modos.map((m,k)=>k===mi?novo:m)}:f)); }
+  function removerModo(fi,mi){
+    if(!window.confirm("Remover este pagamento? A remoção só vale depois de salvar.")) return;
+    setFontes(fs=>fs.map((f,idx)=>idx===fi?{...f,modos:f.modos.filter((_,k)=>k!==mi)}:f));
+  }
+  function addModo(fi,esporadico){
     setFontes(fs=>fs.map((f,idx)=>{
       if(idx!==fi) return f;
-      const modoComTransf=(f.modos||[]).find(m=>m.transfVinculada&&m.transfVinculada.ativo);
-      const novo=novoModoVazio();
-      if(modoComTransf) novo.transfVinculada={...modoComTransf.transfVinculada};
+      const comTransf=(f.modos||[]).find(m=>m.transfVinculada&&m.transfVinculada.ativo);
+      const novo=novoModoVazio(esporadico);
+      if(comTransf) novo.transfVinculada={...comTransf.transfVinculada};
       return {...f,modos:[...(f.modos||[]),novo]};
     }));
   }
-  function atualizarModo(fi,mi,novoModo){ setFontes(fs=>fs.map((f,idx)=>idx===fi?{...f,modos:f.modos.map((m,midx)=>midx===mi?novoModo:m)}:f)); }
-  function removerModo(fi,mi){ setFontes(fs=>fs.map((f,idx)=>idx===fi?{...f,modos:f.modos.filter((_,midx)=>midx!==mi)}:f)); }
-  function carregarPadrao(){ setFontes(FONTES_PADRAO.map(f=>({...f,modos:(f.modos||[]).map(m=>({...m,regras:m.regras?m.regras.map(r=>({...r})):undefined}))}))); }
 
-  // Converte os campos de valor mascarado (string OU numero puro) pra numero
-  // de verdade, EM CADA MODO de cada fonte, e persiste o array INTEIRO em
-  // CONFIG -- usado antes de QUALQUER acao que dependa do estado salvo no
-  // backend (gerar, apagar), pra nunca mais correr o risco de uma acao usar
-  // uma regra desatualizada so porque o Marcus esqueceu de "Salvar" antes.
-  async function persistir(){
-    const fontesLimpo=fontes.map(f=>({
-      ...f,
-      modos:(f.modos||[]).map(m=>({...m,valorHora:numBR(m.valorHora)||0,valorFixo:numBR(m.valorFixo)||0,valorReferencia:numBR(m.valorReferencia)||0}))
-    }));
-    return await api({action:"salvarFontesReceita",fontes:fontesLimpo});
+  // Lancamentos do Fluxo que nasceram de um modo (marcador FONTE_RECEITA:NOME:MODOID:...).
+  function lancamentosDoModo(nomeFonte,modoId){
+    const n=_normFonte(nomeFonte);
+    return (data.fluxo||[]).filter(r=>{ if(r.tipo!=="RECEITA") return false; const m=_marcaRec(r.obs); return m&&m.fonte===n&&m.modo===modoId; });
+  }
+  function proximosDoModo(nomeFonte,modoId){
+    return lancamentosDoModo(nomeFonte,modoId).filter(r=>r.status==="PROGRAMADO").sort((a,b)=>a.data<b.data?-1:1).slice(0,3);
+  }
+  function programadosDaFonte(fluxoArr,nomeFonte){
+    const n=_normFonte(nomeFonte);
+    return (fluxoArr||[]).filter(r=>{ if(r.status!=="PROGRAMADO") return false; const m=_marcaRec(r.obs); return m&&m.fonte===n; });
   }
 
-  // [NOVO 14/07] Lancamento avulso de um modo ESPORADICO, direto do proprio
-  // card (botao "Lancar um pagamento agora" dentro de FormModo) -- e a acao
-  // que de fato registra uma linha no Fluxo pra esse modo. Nao tem nenhuma
-  // relacao com o botao "Salvar" do rodape da tela (esse so grava o
-  // CADASTRO/config, nunca lanca nada sozinho pra modo esporadico -- ponto
-  // de confusao real do Marcus, 14/07). Mesmo formato de marcador que o
-  // motor de geracao automatica usa (FONTE_RECEITA:NOME:MODOID:DATA), so
-  // que aqui SEMPRE via acao "lancar" simples, nunca "gerarReceitasFontes"
-  // (que so atua sobre modos REGULAR).
-  // [NOVO 05/09-3] contaFonte adicionado como parametro -- antes o
-  // lancamento avulso sempre caia em "CONTA" fixo, ignorando a conta
-  // configurada pra fonte (bug pequeno, corrigido de passagem porque a
-  // transferencia vinculada abaixo precisa saber de qual conta a receita
-  // realmente saiu). Depois do lancamento da receita, se o modo tem
-  // transferencia vinculada ativa, lanca o par espelhado tambem -- mesmo
-  // mecanismo/tela que "Movimentação Entre Contas" ja usa, so chamado
-  // automaticamente aqui em vez do Marcus abrir a tela e preencher a mao.
-  async function lancarAvulsoModo(fonteNome,contaFonte,modo,{valor,data}){
-    const nomeNorm=String(fonteNome).toUpperCase().replace(/[^A-Z0-9_ ]/g,"").replace(/ /g,"");
-    const obsMarcador="FONTE_RECEITA:"+nomeNorm+":"+modo.id+":"+data;
+  async function persistir(lista){
+    return await api({action:"salvarFontesReceita",fontes:_limparFontes(lista||fontes)});
+  }
+  function sincronizarComResposta(r,fallback){
+    const nova=r&&r.fontesReceita?_clone(r.fontesReceita):_clone(fallback);
+    setFontes(_clone(nova)); setBaseline(nova);
+    return nova;
+  }
+
+  // Lancamento avulso de um modo ESPORADICO + transferencia vinculada (se houver).
+  async function lancarAvulsoModo(fonteNome,contaFonte,modo,{valor,data:dataL}){
+    const obsMarcador="FONTE_RECEITA:"+_normFonte(fonteNome)+":"+modo.id+":"+dataL;
     const contaOrigem=contaFonte||"CONTA";
-    const r=await api({action:"lancar",data,descricao:(fonteNome+" (ESPORÁDICA)").toUpperCase(),
+    const r=await api({action:"lancar",data:dataL,descricao:(fonteNome+" (ESPORÁDICA)").toUpperCase(),
       valor,tipo:"RECEITA",categoria:"RECEITA",forma:contaOrigem,
-      status:data<=hoje()?"EXECUTADO":"PROGRAMADO",obs:obsMarcador});
+      status:dataL<=hoje()?"EXECUTADO":"PROGRAMADO",obs:obsMarcador});
     onUpdate&&onUpdate(r);
     let msgFinal="Lançamento de "+fonteNome+" registrado no Fluxo.";
     const tv=modo.transfVinculada;
     if(tv&&tv.ativo&&Number(tv.percentual)>0&&tv.contaDestino&&tv.contaDestino!==contaOrigem){
-      const valorTransf=Math.round(valor*(Number(tv.percentual)/100)*100)/100;
+      const valorTransf=_r2(valor*(Number(tv.percentual)/100));
       if(valorTransf>0){
-        const r2=await api({action:"lancarTransferenciaEspelhada",data,valor:valorTransf,
+        const r2=await api({action:"lancarTransferenciaEspelhada",data:dataL,valor:valorTransf,
           contaOrigem,contaDestino:tv.contaDestino,intencao:tv.intencao||"LUCROS"});
         onUpdate&&onUpdate(r2);
         msgFinal+=" Transferência vinculada de "+fmt(valorTransf)+" também lançada.";
@@ -3396,125 +3392,144 @@ function FontesReceita({data,onUpdate}){
     }
     setMsg(msgFinal);
   }
+  // "Guarda a ultima configuracao": grava so desconto e Depois move do modo
+  // esporadico, partindo do estado SALVO -- nunca leva junto edicao pendente
+  // de outra aba.
+  async function lembrarConfigEsporadica(nomeFonte,modoId,patch){
+    const base=baseline.map(f=>_normFonte(f.nome)!==_normFonte(nomeFonte)?f:{...f,modos:(f.modos||[]).map(m=>m.id===modoId?{...m,...patch}:m)});
+    const r=await persistir(base);
+    onUpdate&&onUpdate(r);
+    setBaseline(_clone(base));
+    setFontes(fs=>fs.map(f=>_normFonte(f.nome)!==_normFonte(nomeFonte)?f:{...f,modos:(f.modos||[]).map(m=>m.id===modoId?{...m,...patch}:m)}));
+  }
+  async function lancarEsporadico(fi,mi,{valor,data:dataL,tv,percDesconto}){
+    const f=fontes[fi], m=f.modos[mi];
+    await lancarAvulsoModo(f.nome,f.conta,{...m,transfVinculada:tv},{valor,data:dataL});
+    const bf=baselineDe(f.nome), bm=bf&&(bf.modos||[]).find(x=>x.id===m.id);
+    if(bm&&((Number(bm.percDesconto)||0)!==percDesconto||JSON.stringify(_tvCmp(bm.transfVinculada))!==JSON.stringify(_tvCmp(tv)))){
+      try{ await lembrarConfigEsporadica(f.nome,m.id,{percDesconto,transfVinculada:_tvCmp(tv)}); }
+      catch(e){ console.warn("Nao foi possivel guardar a configuracao do esporadico:",e); }
+    }
+  }
+  async function apagarLancado(r){
+    if(!window.confirm("Apagar o lançamento de "+fmtD(r.data)+" ("+fmt(r.valor)+")?")) return;
+    try{ onUpdate&&onUpdate(await api({action:"deletar",row:r.row})); setMsg("Lançamento de "+fmtD(r.data)+" apagado."); }
+    catch(e){ alert(e.message); }
+  }
 
-  // [NOVO 03/09] Mesmo espírito da fusão Salvar/Regerar de Recorrências,
-  // adaptado pro caso extra que Receita tem e Recorrência não: valor
-  // calculado por plantão pode ter sido corrigido à mão pra um mês
-  // específico (editor de plantões, ou edição direta do valor no Fluxo) --
-  // essas correções não podem ser apagadas sem avisar.
-  function _numCampoModo(v){ return typeof v==="string" ? (numBR(v)||0) : (Number(v)||0); }
-  function _modoAfetaCalculo(antigo,novo){
-    if(!antigo) return false; // modo novo -- nunca gerou nada, nada "programado" pra perguntar sobre
+  async function trocarContaFonte(nomeFonte,novaConta){
+    const r=await api({action:"editarContaFonteReceita",nome:nomeFonte,conta:novaConta});
+    onUpdate&&onUpdate(r);
+    const info=r.contaFonteAlterada;
+    return info?(nomeFonte+" agora recebe em "+_nomeContaFR(data.contas,novaConta)+" — "+info.ocorrenciasEditadas+" ocorrência(s) futura(s) já ajustada(s)."):null;
+  }
+
+  // Mudou valor/regra de um modo REGULAR? (pergunta se aplica ao ja programado)
+  function modoAfetaCalculo(antigo,novo){
+    if(!antigo) return false;
     const camposNum=["valorHora","horasPlantao","percDesconto","valorFixo","valorReferencia","diaPagamento","diaN"];
-    for(const c of camposNum){ if(_numCampoModo(antigo[c])!==_numCampoModo(novo[c])) return true; }
+    for(const c of camposNum){ if(_numCampo(antigo[c])!==_numCampo(novo[c])) return true; }
     if(String(antigo.diaTipo||"FIXO")!==String(novo.diaTipo||"FIXO")) return true;
     if(JSON.stringify(antigo.regras||[])!==JSON.stringify(novo.regras||[])) return true;
-    // [NOVO 05/09-3] Mudar a transferencia vinculada de um modo que JA
-    // estava ativa (percentual, conta ou finalidade diferentes, ou
-    // desligar) tambem entra nessa pergunta -- pode haver meses ja
-    // programados com a transferencia no valor/config antigo, que
-    // precisam ser apagados+regerados pra refletir a mudanca. LIGAR pela
-    // PRIMEIRA vez (tvAntigo nao estava ativo) nao entra aqui -- os meses
-    // ja programados que nunca tiveram transferencia nenhuma ja sao
-    // preenchidos silenciosamente por _sincronizarTransferenciasReceitas,
-    // sem precisar apagar/regerar nada.
-    const tvAntigo=antigo.transfVinculada||{ativo:false,percentual:0,contaDestino:"",intencao:"LUCROS"};
-    const tvNovo=novo.transfVinculada||{ativo:false,percentual:0,contaDestino:"",intencao:"LUCROS"};
-    if(tvAntigo.ativo&&JSON.stringify(tvAntigo)!==JSON.stringify(tvNovo)) return true;
+    const tvA=_tvCmp(antigo.transfVinculada), tvN=_tvCmp(novo.transfVinculada);
+    if(tvA.ativo&&JSON.stringify(tvA)!==JSON.stringify(tvN)) return true;
     return false;
   }
-  // Só lançamentos PROGRAMADO de modo REGULAR contam pra essa pergunta --
-  // Esporádica nunca gera sozinha, então nunca tem "programados" mesmo.
-  function _programadosRegularesDaFonte(fluxoArr,fonte){
-    const nomeNorm=String(fonte.nome||"").toUpperCase().replace(/[^A-Z0-9_ ]/g,"").replace(/ /g,"");
-    const idsRegulares=new Set((fonte.modos||[]).filter(m=>String(m.tipoRecorrencia||"REGULAR")==="REGULAR").map(m=>m.id));
-    return (fluxoArr||[]).filter(r=>{
-      if(r.status!=="PROGRAMADO") return false;
-      const m=String(r.obs||"").match(/FONTE_RECEITA:([A-Z0-9_]+):([A-Za-z0-9_]+):/);
-      return m&&m[1]===nomeNorm&&idsRegulares.has(m[2]);
-    });
+  function programadosRegularesDaFonte(fluxoArr,fonte){
+    const n=_normFonte(fonte.nome);
+    const ids=new Set((fonte.modos||[]).filter(m=>!_ehEsp(m)).map(m=>m.id));
+    return (fluxoArr||[]).filter(r=>{ if(r.status!=="PROGRAMADO") return false; const m=_marcaRec(r.obs); return m&&m.fonte===n&&ids.has(m.modo); });
   }
 
-  async function salvarFonte(fi){
-    const fonte=fontes[fi];
-    const fonteAntiga=salvas.find(f=>String(f.nome||"").toUpperCase()===String(fonte.nome||"").toUpperCase());
-    setLoadFonte(fonte.nome); setMsg(null);
+  async function salvarDetalhe(){
+    const fi=sel, fonte=fontes[fi];
+    const fonteAntiga=baselineDe(fonte.nome);
+    const contaMudou=!!fonteAntiga&&(fonteAntiga.conta||"CONTA")!==(fonte.conta||"CONTA");
+    setSalvando(true); setMsg(null);
     try{
       const r=await persistir();
       onUpdate&&onUpdate(r);
-      let msgFinal=(r.receitasGeradas||0)+" lançamento(s) novo(s) gerado(s)/atualizado(s) no Fluxo."
-        +((r.transferenciasVinculadasGeradas||0)>0?" "+r.transferenciasVinculadasGeradas+" transferência(s) vinculada(s) criada(s).":"");
-
+      const nova=sincronizarComResposta(r,fontes);
+      const idxNovo=nova.findIndex(x=>_normFonte(x.nome)===_normFonte(fonte.nome));
+      if(idxNovo>=0) setSel(idxNovo);
+      let partes=[(r.receitasGeradas||0)+" lançamento(s) novo(s) gerado(s)/atualizado(s) no Fluxo."
+        +((r.transferenciasVinculadasGeradas||0)>0?" "+r.transferenciasVinculadasGeradas+" transferência(s) vinculada(s) criada(s).":"")];
+      if(contaMudou){
+        const n=programadosDaFonte(r.fluxo||data.fluxo,fonte.nome).length;
+        if(n>0&&window.confirm('Ajustar também os '+n+' lançamento(s) futuro(s) programado(s) de "'+fonte.nome+'" para '+_nomeContaFR(data.contas,fonte.conta||"CONTA")+'? O que já foi executado não é tocado.')){
+          const t=await trocarContaFonte(fonte.nome,fonte.conta||"CONTA");
+          if(t) partes=[t];
+        }
+      }
       if(fonteAntiga){
-        const mudouCalculo=(fonte.modos||[]).some(m=>
-          String(m.tipoRecorrencia||"REGULAR")==="REGULAR"&&m.id&&
-          _modoAfetaCalculo((fonteAntiga.modos||[]).find(x=>x.id===m.id),m));
-        if(mudouCalculo){
-          const jaGeradas=_programadosRegularesDaFonte(r.fluxo||data.fluxo,fonteAntiga);
-          if(jaGeradas.length>0&&confirm('Isso muda o valor/regra de "'+fonte.nome+'". Aplicar também aos '+jaGeradas.length+' lançamento(s) já programado(s) — não só nas próximas emissões?')){
+        const mudou=(fonte.modos||[]).some(m=>!_ehEsp(m)&&m.id&&modoAfetaCalculo((fonteAntiga.modos||[]).find(x=>x.id===m.id),m));
+        if(mudou){
+          const jaGeradas=programadosRegularesDaFonte(r.fluxo||data.fluxo,fonteAntiga);
+          if(jaGeradas.length>0&&window.confirm('Isso muda o valor/regra de "'+fonte.nome+'". Aplicar também aos '+jaGeradas.length+' lançamento(s) já programado(s) — não só nas próximas emissões?')){
             const manuais=jaGeradas.filter(x=>String(x.obs||"").indexOf(" MANUAL")!==-1);
-            const preservarManuais=manuais.length>0&&confirm(manuais.length+' desse(s) você editou manualmente. Preservar esse(s) valor(es) (recalcula só o resto)? Cancelar = sobrescreve todos, inclusive os editados à mão.');
+            const preservarManuais=manuais.length>0&&window.confirm(manuais.length+' desse(s) você editou manualmente. Preservar esse(s) valor(es) (recalcula só o resto)? Cancelar = sobrescreve todos, inclusive os editados à mão.');
             const r2=await api({action:"apagarFuturosFonte",fonte:fonte.nome,tipos:["REGULAR"],preservarManuais});
             onUpdate&&onUpdate(r2);
             const r3=await api({action:"gerarReceitasFontes",fonte:fonte.nome});
             onUpdate&&onUpdate(r3);
-            msgFinal=fonte.nome+": recalculado, "+(r3.itensAdicionados||0)+" lançamento(s) gerado(s)."+(preservarManuais?" ("+manuais.length+" editado(s) à mão preservado(s).)":"");
+            partes=[fonte.nome+": recalculado, "+(r3.itensAdicionados||0)+" lançamento(s) gerado(s)."+(preservarManuais?" ("+manuais.length+" editado(s) à mão preservado(s).)":"")];
           }
         }
       }
-      setMsg(msgFinal);
-    }catch(e){alert(e.message);}
-    setLoadFonte(null);
+      setMsg(partes.join(" "));
+    }catch(e){ alert(e.message); }
+    setSalvando(false);
   }
-  // Apaga futuros SEM regerar -- pra quando o Marcus so quer remover (ex:
-  // desativou o modo) sem recriar nada. [15/07] agora com filtro por tipo:
-  // Regular e/ou Esporadica marcados separadamente, nunca um seletor global
-  // de fonte (cada fonte ja tem seu proprio card, isso so vive dentro dele).
-  const [loadApagar,setLoadApagar]=useState(null);
-  const [tiposApagar,setTiposApagar]=useState({});// {nome: {regular:bool, esporadica:bool}}
-  function setTipoApagar(nome,campo,valor){
-    setTiposApagar(prev=>({...prev,[nome]:{...(prev[nome]||{regular:true,esporadica:true}),[campo]:valor}}));
-  }
-  async function apagarFuturosDaFonte(nome){
-    const sel=tiposApagar[nome]||{regular:true,esporadica:true};
+
+  async function apagarFuturos(nome){
     const tipos=[];
-    if(sel.regular)tipos.push("REGULAR");
-    if(sel.esporadica)tipos.push("ESPORADICA");
-    if(!tipos.length){alert("Marque pelo menos um tipo (Regulares ou Esporádicas).");return;}
-    const desc=tipos.length===2?"todos os modos (Regulares e Esporádicas)":tipos[0]==="REGULAR"?"só os modos Regulares":"só os modos Esporádicas";
-    if(!window.confirm("Apagar "+desc+" ainda programados de \""+nome+"\", SEM regerar? Já executados não são tocados."))return;
-    setLoadApagar(nome); setMsg(null);
+    if(tiposApagar.regular) tipos.push("REGULAR");
+    if(tiposApagar.esporadica) tipos.push("ESPORADICA");
+    if(!tipos.length){ alert("Marque pelo menos um tipo (Regulares ou Esporádicas)."); return; }
+    const desc=tipos.length===2?"todos os modos (Regulares e Esporádicos)":tipos[0]==="REGULAR"?"só os modos Regulares":"só os modos Esporádicos";
+    if(!window.confirm('Apagar '+desc+' ainda programados de "'+nome+'", SEM regerar? Já executados não são tocados.')) return;
+    setLoadApagar(true); setMsg(null);
     try{
-      await persistir();
       const r=await api({action:"apagarFuturosFonte",fonte:nome,tipos});
       onUpdate&&onUpdate(r);
       setMsg(nome+": "+(r.apagados||0)+" lançamento(s) apagado(s).");
-    }catch(e){alert(e.message);}
-    setLoadApagar(null);
+    }catch(e){ alert(e.message); }
+    setLoadApagar(false);
+  }
+  async function removerFonteAgora(i){
+    const f=fontes[i];
+    if(!window.confirm('Remover a fonte "'+(f.nome||"sem nome")+'" do cadastro? Os lançamentos já feitos no Fluxo continuam lá.')) return;
+    try{
+      const restante=fontes.filter((_,idx)=>idx!==i);
+      const ehSalva=!!baselineDe(f.nome);
+      if(ehSalva){
+        const r=await persistir(restante);
+        onUpdate&&onUpdate(r);
+        sincronizarComResposta(r,restante);
+      }else{
+        setFontes(restante);
+      }
+      setSel(null);
+    }catch(e){ alert(e.message); }
   }
 
-  // Proximos lancamentos ja gerados no Fluxo pra cada FONTE (soma de todos
-  // os modos dela junto -- o marcador "FONTE_RECEITA:NOME:" ainda casa com
-  // qualquer modo, o id do modo vem depois no marcador) -- so leitura.
-  function proximosDaFonte(nome){
-    const marcador="FONTE_RECEITA:"+String(nome||"").toUpperCase().replace(/[^A-Z0-9_ ]/g,"").replace(/ /g,"")+":";
-    return (data.fluxo||[])
-      .filter(r=>String(r.obs||"").toUpperCase().replace(/ /g,"").indexOf(marcador)===0 && r.status==="PROGRAMADO")
-      .sort((a,b)=>a.data<b.data?-1:1).slice(0,3);
+  function abrir(i){ setSel(i); setAba("reg"); setMsg(null); }
+  function addFonte(){
+    setFontes(fs=>[...fs,{nome:"",modos:[novoModoVazio(false)]}]);
+    setSel(fontes.length); setAba("reg"); setMsg(null);
   }
-  const jaSalva=nome=>salvas.some(f=>String(f.nome||"").toUpperCase()===String(nome||"").toUpperCase());
+  const fonteSel=sel!==null?fontes[sel]:null;
+  const dirty=!!fonteSel&&JSON.stringify(_cmpFonte(fonteSel))!==JSON.stringify(_cmpFonte(baselineDe(fonteSel.nome)));
+  function voltar(){
+    if(dirty&&!window.confirm("Descartar as alterações desta fonte que ainda não foram salvas?")) return;
+    setFontes(_clone(baseline)); setSel(null);
+  }
+  function escolherConta(fi,contaId){ atualizarFonte(fi,{conta:contaId}); }
 
-  // [13/07, 2a rodada] Total mensal discriminado (Regular vs Esporádica) +
-  // média dos últimos 12 meses civis. Agora precisa achar o MODO exato que
-  // gerou cada linha (nao so a fonte) pra saber se aquele modo especifico e
-  // regular ou esporadico -- duas fontes podem ter o mesmo nome de modo
-  // gerando linhas diferentes, entao a chave de busca e nome+idDoModo.
+  // ── Resumo do mes (so leitura) ──
   const resumoMensal=useMemo(()=>{
     const porChaveModo={};
-    fontes.forEach(f=>{
-      const nomeNorm=String(f.nome||"").toUpperCase().replace(/[^A-Z0-9_ ]/g,"").replace(/ /g,"");
-      (f.modos||[]).forEach(m=>{ if(m.id) porChaveModo[nomeNorm+":"+m.id]=m; });
-    });
+    baseline.forEach(f=>{ (f.modos||[]).forEach(m=>{ if(m.id) porChaveModo[_normFonte(f.nome)+":"+m.id]=m; }); });
     const porMes={};
     (data.fluxo||[]).forEach(r=>{
       const m=String(r.obs||"").match(/FONTE_RECEITA:([A-Z0-9_]+):([A-Za-z0-9_]+):(\d{4}-\d{2})/);
@@ -3527,119 +3542,135 @@ function FontesReceita({data,onUpdate}){
       else porMes[chave].regular+=Number(r.valor)||0;
     });
     return porMes;
-  },[data.fluxo,fontes]);
+  },[data.fluxo,baseline]);
   const hojeMesChave=hoje().slice(0,7);
   const mesAtual=resumoMensal[hojeMesChave]||{regular:0,esporadica:0};
   const ultimos12=Object.keys(resumoMensal).filter(m=>m<=hojeMesChave).sort().slice(-12);
-  const mediaSemEsporadicas=ultimos12.length?ultimos12.reduce((s,m)=>s+resumoMensal[m].regular,0)/ultimos12.length:0;
-  const mediaComEsporadicas=ultimos12.length?ultimos12.reduce((s,m)=>s+resumoMensal[m].regular+resumoMensal[m].esporadica,0)/ultimos12.length:0;
+  const mediaSem=ultimos12.length?ultimos12.reduce((s,m)=>s+resumoMensal[m].regular,0)/ultimos12.length:0;
+  const mediaCom=ultimos12.length?ultimos12.reduce((s,m)=>s+resumoMensal[m].regular+resumoMensal[m].esporadica,0)/ultimos12.length:0;
+  const msgBox=msg&&<div style={{margin:"0 0 12px",padding:"10px 12px",borderRadius:10,background:C.greenLight,color:C.green,fontSize:13,fontWeight:600,lineHeight:1.4}}>{msg}</div>;
 
-  return <div style={{padding:12}}>
-    <div style={{fontSize:11,fontWeight:800,color:C.textMuted,letterSpacing:".05em",marginBottom:10}}>
-      RECEITAS ESTRUTURADAS
-    </div>
-    <div style={{fontSize:11,color:C.textMuted,marginBottom:12,fontStyle:"italic"}}>
-      Cada fonte pode ter vários modos de pagamento (ex: HSI regular por plantão + um bônus esporádico). Cada modo calcula sozinho (por plantão), usa valor fixo, ou é lançado manualmente — e modos regulares já lançam a Receita programada nos próximos ~13 meses. Corrija a linha no Fluxo se algo mudar (feriado, plantão cancelado etc). Cada fonte tem seu próprio 💾 Salvar — se a mudança afeta lançamentos já programados, ele pergunta antes de tocar neles.
-    </div>
-
-    {(mesAtual.regular>0||mesAtual.esporadica>0||ultimos12.length>0)&&<div style={{background:C.tealLight,borderRadius:10,padding:"10px 12px",marginBottom:14}}>
-      <div style={{fontSize:11,fontWeight:700,color:C.teal,marginBottom:4}}>
-        Total do mês ({hojeMesChave}): {fmt(mesAtual.regular+mesAtual.esporadica)}
-      </div>
-      <div style={{fontSize:10,color:C.teal,marginBottom:8}}>
-        Regular: {fmt(mesAtual.regular)} · Esporádico: {fmt(mesAtual.esporadica)}
-      </div>
-      <div style={{fontSize:10,color:C.teal,borderTop:"1px solid rgba(0,0,0,0.08)",paddingTop:6}}>
-        Média/mês (últimos {ultimos12.length} mês(es)): {fmt(mediaComEsporadicas)} com esporádicas · {fmt(mediaSemEsporadicas)} sem
-      </div>
-    </div>}
-
-    {!fontes.length&&<div style={{textAlign:"center",padding:"20px 10px"}}>
-      <div style={{fontSize:12,color:C.textMuted,marginBottom:10}}>Nenhuma fonte cadastrada ainda.</div>
-      <button onClick={carregarPadrao} style={{background:C.teal,color:"#fff",border:"none",borderRadius:8,padding:"9px 14px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
-        Carregar HSA / HSI / HDWC-SESSC
-      </button>
-    </div>}
-
-    {fontes.map((f,i)=><div key={i} style={{background:C.surface,border:"1px solid "+C.border,borderRadius:10,padding:12,marginBottom:10}}>
-      <div style={{display:"flex",gap:6,marginBottom:10}}>
-        <input type="text" value={f.nome} onChange={e=>atualizarNomeFonte(i,e.target.value.toUpperCase())} placeholder="Nome da fonte"
-          style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,fontWeight:700,fontFamily:"inherit"}}/>
-        <button onClick={()=>removerFonte(i)} style={{background:"none",border:"1px dashed "+C.border,borderRadius:6,color:C.red,fontSize:11,padding:"0 8px",cursor:"pointer"}}>Remover fonte</button>
-      </div>
-      <div style={{marginBottom:10}}>
-        <input type="text" value={f.alias||""} onChange={e=>atualizarAliasFonte(i,e.target.value.toUpperCase())}
-          placeholder="Termos alternativos no extrato (ex: BANCO DO BRASIL; FOLHA)"
-          style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:11,fontFamily:"inherit",boxSizing:"border-box"}}/>
-        <div style={{fontSize:9,color:C.textMuted,marginTop:2}}>Separe vários com ";". Ajuda a Conciliação de Extrato a reconhecer esse depósito mesmo com nome diferente no banco.</div>
-      </div>
-
-      {contasAtivasRec.length>1&&f.nome&&<div style={{marginBottom:10}}>
-        <div style={{fontSize:9,fontWeight:700,color:C.textMuted,marginBottom:4}}>RECEBIDA EM</div>
-        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-          {contasAtivasRec.map(c=>{
-            const contaAtual=f.conta||"CONTA";
-            const ativo=contaAtual===c.id;
-            return <button key={c.id} disabled={loadConta===f.nome}
-              onClick={()=>{ setFontes(fs=>fs.map((ff,idx)=>idx===i?{...ff,conta:c.id}:ff)); trocarContaFonte(f.nome,c.id); }}
-              style={{padding:"5px 10px",borderRadius:8,border:"1px solid "+(ativo?C.teal:C.border),
-                background:ativo?C.teal:"#fff",color:ativo?"#fff":C.text,fontSize:11,fontWeight:700,
-                cursor:loadConta===f.nome?"default":"pointer",fontFamily:"inherit"}}>{c.nome||c.id}</button>;
-          })}
+  // ── TELA 2: uma fonte aberta ──
+  if(fonteSel){
+    const fi=sel;
+    const ehSalva=!!baselineDe(fonteSel.nome);
+    const modosReg=(fonteSel.modos||[]).map((m,mi)=>({m,mi})).filter(x=>!_ehEsp(x.m));
+    const modosEsp=(fonteSel.modos||[]).map((m,mi)=>({m,mi})).filter(x=>_ehEsp(x.m));
+    const algumAtivo=(fonteSel.modos||[]).some(m=>m.ativo!==false);
+    return <div style={{padding:12,paddingBottom:dirty?96:12}}>
+      <button type="button" onClick={voltar} style={{minHeight:44,background:"none",border:"none",color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",padding:0,fontFamily:"inherit"}}>← Fontes</button>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"4px 0 12px",gap:10}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.textMuted,letterSpacing:".04em"}}>FONTE</div>
+          {ehSalva
+            ?<div style={{fontSize:24,fontWeight:800,color:C.text}}>{fonteSel.nome}</div>
+            :<input type="text" value={fonteSel.nome} onChange={e=>atualizarFonte(fi,{nome:e.target.value.toUpperCase()})} placeholder="Nome da fonte" style={{..._inpFR,fontWeight:800,fontSize:18}}/>}
         </div>
-        <div style={{fontSize:9,color:C.textMuted,marginTop:2}}>Muda a conta de recebimento sozinho — edita as ocorrências futuras já geradas, nunca toca no que já foi executado.</div>
-      </div>}
-
-      {(f.modos||[]).map((m,mi)=><FormModo key={mi} modo={m} podeRemover={(f.modos||[]).length>1}
-        contas={contasAtivasRec} contaFonte={f.conta||"CONTA"}
-        onChange={novo=>atualizarModo(i,mi,novo)} onRemover={()=>removerModo(i,mi)}
-        onLancarAvulso={info=>lancarAvulsoModo(f.nome,f.conta,m,info)}/>)}
-
-      <button onClick={()=>addModo(i)} style={{width:"100%",background:"none",border:"1px dashed "+C.border,borderRadius:8,color:C.teal,fontSize:11,fontWeight:600,padding:"7px",cursor:"pointer",marginBottom:8}}>
-        + Adicionar modo de pagamento
-      </button>
-
-      <div>
-        {proximosDaFonte(f.nome).length>0&&<>
-          <div style={{fontSize:9,color:C.textMuted,fontWeight:700,marginBottom:3}}>PRÓXIMOS JÁ NO FLUXO</div>
-          {proximosDaFonte(f.nome).map((r,j)=><div key={j} style={{fontSize:11,color:C.textSub,display:"flex",justifyContent:"space-between",padding:"2px 0"}}>
-            <span>{fmtD(r.data)}</span><span style={{fontWeight:700,color:C.green}}>{fmt(r.valor)}</span>
-          </div>)}
-        </>}
-        <button onClick={()=>salvarFonte(i)} disabled={loadFonte===f.nome||!f.nome.trim()}
-          style={{width:"100%",background:C.teal,color:"#fff",border:"none",borderRadius:8,padding:"9px",fontSize:12,fontWeight:700,cursor:"pointer",marginTop:6}}>
-          {loadFonte===f.nome?"Salvando…":"💾 Salvar \""+(f.nome||"esta fonte")+"\""}
-        </button>
-        {jaSalva(f.nome)&&<div style={{marginTop:8}}>
-          <div style={{background:C.redLight,border:"1px dashed "+C.red,borderRadius:6,padding:8}}>
-            <div style={{fontSize:9,color:C.red,fontWeight:700,marginBottom:5}}>🗑 APAGAR FUTUROS DESSA FONTE (sem regerar)</div>
-            <div style={{display:"flex",gap:12,marginBottom:6}}>
-              <label style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:C.text,cursor:"pointer"}}>
-                <input type="checkbox" checked={(tiposApagar[f.nome]||{regular:true}).regular!==false} onChange={e=>setTipoApagar(f.nome,"regular",e.target.checked)}/>
-                Regulares
-              </label>
-              <label style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:C.text,cursor:"pointer"}}>
-                <input type="checkbox" checked={(tiposApagar[f.nome]||{esporadica:true}).esporadica!==false} onChange={e=>setTipoApagar(f.nome,"esporadica",e.target.checked)}/>
-                Esporádicas
-              </label>
-            </div>
-            <button onClick={()=>apagarFuturosDaFonte(f.nome)} disabled={loadApagar===f.nome}
-              style={{width:"100%",background:"none",border:"1px solid "+C.red,borderRadius:6,color:C.red,fontSize:11,fontWeight:700,padding:"6px",cursor:"pointer"}}>
-              {loadApagar===f.nome?"Apagando…":"Apagar futuros"}
-            </button>
-          </div>
-          <div style={{fontSize:9,color:C.textMuted,marginTop:5,lineHeight:1.4}}>
-            <b>Salvar</b>: grava as edições. Se mudou valor/alíquota/regra de algum modo Regular, pergunta se aplica também aos lançamentos já programados — e se algum deles foi editado à mão, pergunta se quer preservar. <b>Apagar futuros</b>: só some com o que já estava programado, sem recriar — marque Regulares e/ou Esporádicas conforme o que quer limpar.
-          </div>
-        </div>}
+        <span style={{fontSize:12,fontWeight:700,color:algumAtivo?C.green:C.textMuted,background:algumAtivo?C.greenLight:C.borderLight,borderRadius:20,padding:"5px 12px",flexShrink:0}}>● {algumAtivo?"Ativa":"Pausada"}</span>
       </div>
-    </div>)}
+      {msgBox}
+      <SegFR opcoes={[["reg","Regular"],["esp","Esporádico"]]} valor={aba} onChange={setAba}/>
 
-    <button onClick={addFonte} style={{width:"100%",background:"none",border:"1px dashed "+C.border,borderRadius:8,color:C.teal,fontSize:12,fontWeight:600,padding:"8px",cursor:"pointer",marginBottom:12}}>
-      + Adicionar outra fonte
-    </button>
+      {aba==="reg"&&<>
+        {modosReg.length===0&&<div style={{fontSize:13,color:C.textMuted,textAlign:"center",padding:"14px 0"}}>Nenhum pagamento regular nesta fonte.</div>}
+        {modosReg.map(({m,mi})=><ModoRegular key={mi} modo={m} podeRemover={(fonteSel.modos||[]).length>1}
+          contas={contasAtivasRec} conta={fonteSel.conta} carregandoConta={loadConta}
+          onEscolherConta={c=>escolherConta(fi,c)}
+          proximos={m.id?proximosDoModo(fonteSel.nome,m.id):[]}
+          onChange={novo=>atualizarModo(fi,mi,novo)} onRemover={()=>removerModo(fi,mi)}/>)}
+        <button type="button" onClick={()=>addModo(fi,false)} style={{width:"100%",minHeight:48,background:"none",border:"1px dashed "+C.border,borderRadius:12,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",marginBottom:12,fontFamily:"inherit"}}>+ Adicionar pagamento regular</button>
+      </>}
 
-    {msg&&<div style={{marginTop:8,fontSize:11,color:C.teal,textAlign:"center"}}>{msg}</div>}
+      {aba==="esp"&&<>
+        {modosEsp.length===0&&<div style={{textAlign:"center",padding:"10px 0 14px"}}>
+          <div style={{fontSize:13,color:C.textMuted,marginBottom:10}}>Esta fonte ainda não tem pagamento esporádico (bônus, plantão extra, valor avulso).</div>
+        </div>}
+        {modosEsp.map(({m,mi})=><ModoEsporadico key={mi} modo={m} fonteNome={fonteSel.nome}
+          contas={contasAtivasRec} conta={fonteSel.conta} carregandoConta={loadConta}
+          onEscolherConta={c=>escolherConta(fi,c)}
+          lancados={m.id?lancamentosDoModo(fonteSel.nome,m.id):[]}
+          onLancar={info=>lancarEsporadico(fi,mi,info)} onApagar={apagarLancado}
+          onChangeModo={novo=>atualizarModo(fi,mi,novo)}
+          podeRemover={(fonteSel.modos||[]).length>1} onRemover={()=>removerModo(fi,mi)}/>)}
+        {modosEsp.length===0&&<button type="button" onClick={()=>addModo(fi,true)} style={{width:"100%",minHeight:48,background:"none",border:"1px dashed "+C.border,borderRadius:12,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",marginBottom:12,fontFamily:"inherit"}}>+ Criar pagamento esporádico</button>}
+      </>}
+
+      <details style={{background:C.surface,border:"1px solid "+C.border,borderRadius:14,padding:"4px 14px",marginTop:4}}>
+        <summary style={{minHeight:48,display:"flex",alignItems:"center",cursor:"pointer",listStyle:"none"}}>
+          <div><div style={{fontSize:15,fontWeight:800,color:C.text}}>Avançado</div><div style={{fontSize:12,color:C.textSub}}>Nome no extrato · apagar futuros{!ehSalva?"":" · remover fonte"}</div></div>
+        </summary>
+        <div style={{padding:"6px 0 14px"}}>
+          <label style={_lblFR}>TERMOS NO EXTRATO</label>
+          <input type="text" value={fonteSel.alias||""} onChange={e=>atualizarFonte(fi,{alias:e.target.value.toUpperCase()})} placeholder="ex: BANCO DO BRASIL; FOLHA" style={_inpFR}/>
+          <div style={{fontSize:11,color:C.textMuted,margin:"4px 0 14px",lineHeight:1.4}}>Separe vários com ";". Ajuda a Conciliação de Extrato a reconhecer esse depósito mesmo com nome diferente no banco.</div>
+          {ehSalva&&<div style={{background:C.redLight,border:"1px dashed "+C.red,borderRadius:12,padding:12,marginBottom:12}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.red,marginBottom:8}}>APAGAR FUTUROS DESSA FONTE (sem regerar)</div>
+            <div style={{display:"flex",gap:16,marginBottom:8}}>
+              <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,minHeight:40}}><input type="checkbox" checked={tiposApagar.regular} onChange={e=>setTiposApagar(t=>({...t,regular:e.target.checked}))} style={{width:20,height:20}}/>Regulares</label>
+              <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,minHeight:40}}><input type="checkbox" checked={tiposApagar.esporadica} onChange={e=>setTiposApagar(t=>({...t,esporadica:e.target.checked}))} style={{width:20,height:20}}/>Esporádicos</label>
+            </div>
+            <button type="button" onClick={()=>apagarFuturos(fonteSel.nome)} disabled={loadApagar} style={{width:"100%",minHeight:44,background:"none",border:"1px solid "+C.red,borderRadius:10,color:C.red,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{loadApagar?"Apagando…":"Apagar futuros"}</button>
+            <div style={{fontSize:11,color:C.textMuted,marginTop:6,lineHeight:1.4}}>Só some com o que ainda está programado. Executados não são tocados.</div>
+          </div>}
+          <button type="button" onClick={()=>removerFonteAgora(fi)} style={{width:"100%",minHeight:44,background:"none",border:"1px solid "+C.border,borderRadius:10,color:C.red,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Remover esta fonte do cadastro</button>
+        </div>
+      </details>
+
+      {dirty&&<div style={{position:"sticky",bottom:0,marginTop:14,background:C.surface,borderTop:"1px solid "+C.border,boxShadow:"0 -6px 18px rgba(15,27,61,.08)",padding:"10px 12px",borderRadius:14}}>
+        <button type="button" onClick={salvarDetalhe} disabled={salvando||!String(fonteSel.nome||"").trim()}
+          style={{width:"100%",minHeight:52,borderRadius:14,border:"none",background:C.accent,color:"#fff",fontSize:16,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+          {salvando?"Salvando…":"Salvar alterações"}
+        </button>
+        <div style={{fontSize:11,color:C.textMuted,textAlign:"center",marginTop:6,lineHeight:1.4}}>Se mudar valor, regra ou conta, o app pergunta antes de mexer no que já está programado.</div>
+      </div>}
+    </div>;
+  }
+
+  // ── TELA 1: lista de fontes ──
+  const mesTxt=hojeMesChave.slice(5,7)+"/"+hojeMesChave.slice(0,4);
+  return <div style={{padding:12}}>
+    {(mesAtual.regular>0||mesAtual.esporadica>0||ultimos12.length>0)&&<div style={{background:C.dark,borderRadius:16,padding:"14px 16px",marginBottom:14,color:"#fff"}}>
+      <div style={{fontSize:10,fontWeight:700,letterSpacing:".06em",opacity:.7}}>RECEITAS DE {mesTxt}</div>
+      <div style={{fontSize:30,fontWeight:800,margin:"2px 0 4px"}}>{fmt(mesAtual.regular+mesAtual.esporadica)}</div>
+      <div style={{fontSize:12,opacity:.85}}>Regular {fmt(mesAtual.regular)} · Esporádico {fmt(mesAtual.esporadica)}</div>
+      {ultimos12.length>0&&<div style={{fontSize:11,opacity:.7,borderTop:"1px solid rgba(255,255,255,.15)",marginTop:10,paddingTop:8}}>
+        Média/mês ({ultimos12.length} mês(es)): {fmt(mediaCom)} com esporádicos · {fmt(mediaSem)} sem
+      </div>}
+    </div>}
+    {msgBox}
+    {!fontes.length&&<div style={{textAlign:"center",padding:"20px 10px"}}>
+      <div style={{fontSize:13,color:C.textMuted,marginBottom:10}}>Nenhuma fonte cadastrada ainda.</div>
+      <button type="button" onClick={()=>{ const p=FONTES_PADRAO.map(f=>({...f,modos:(f.modos||[]).map(m=>({...m,regras:m.regras?m.regras.map(r=>({...r})):undefined}))})); setFontes(p); }}
+        style={{minHeight:48,background:C.accent,color:"#fff",border:"none",borderRadius:12,padding:"0 16px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Carregar HSA / HSI / HDWC-SESSC</button>
+      <div style={{fontSize:11,color:C.textMuted,marginTop:8}}>Depois de carregar, abra cada fonte e toque em Salvar.</div>
+    </div>}
+    {fontes.map((f,i)=>{
+      const n=_normFonte(f.nome);
+      const idsReg=new Set((f.modos||[]).filter(m=>!_ehEsp(m)).map(m=>m.id));
+      const idsEsp=new Set((f.modos||[]).filter(m=>_ehEsp(m)).map(m=>m.id));
+      const prog=(data.fluxo||[]).filter(r=>{ if(r.status!=="PROGRAMADO"||r.tipo!=="RECEITA") return false; const m=_marcaRec(r.obs); return m&&m.fonte===n; }).sort((a,b)=>a.data<b.data?-1:1);
+      const proxReg=prog.find(r=>idsReg.has(_marcaRec(r.obs).modo));
+      const proxEsp=prog.find(r=>idsEsp.has(_marcaRec(r.obs).modo));
+      const modoMove=(f.modos||[]).find(m=>m.transfVinculada&&m.transfVinculada.ativo&&Number(m.transfVinculada.percentual)>0);
+      const rota="Cai na "+_nomeContaFR(contasAtivasRec,f.conta||"CONTA")+(modoMove?" → "+modoMove.transfVinculada.percentual+"% para "+_nomeContaFR(contasAtivasRec,modoMove.transfVinculada.contaDestino):"");
+      const ativa=(f.modos||[]).some(m=>m.ativo!==false);
+      return <button key={i} type="button" onClick={()=>abrir(i)}
+        style={{width:"100%",textAlign:"left",background:C.surface,border:"1px solid "+C.border,borderRadius:16,padding:"14px 16px",marginBottom:10,cursor:"pointer",fontFamily:"inherit",display:"block"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span style={{fontSize:17,fontWeight:800,color:C.text}}>{f.nome||"Nova fonte"}{!ativa&&<span style={{fontSize:11,fontWeight:700,color:C.textMuted,marginLeft:8}}>pausada</span>}</span>
+          <span style={{fontSize:18,color:C.textMuted}}>›</span>
+        </div>
+        <div style={{fontSize:12,color:C.textSub,margin:"4px 0 8px"}}>{rota}</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+          <span style={{fontSize:12,color:C.textMuted}}>{proxReg?"Próxima · "+fmtD(proxReg.data):"Sem lançamento regular programado"}</span>
+          {proxReg&&<span style={{fontSize:16,fontWeight:800,color:C.text}}>{fmt(proxReg.valor)}</span>}
+        </div>
+        {proxEsp&&<div style={{marginTop:8,display:"inline-block",background:C.orangeLight,color:C.orange,fontSize:12,fontWeight:700,borderRadius:10,padding:"4px 10px"}}>
+          Esporádico {fmtD(proxEsp.data)} · {fmt(proxEsp.valor)}
+        </div>}
+      </button>;
+    })}
+    <button type="button" onClick={addFonte} style={{width:"100%",minHeight:48,background:"none",border:"1px dashed "+C.border,borderRadius:12,color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Adicionar fonte</button>
   </div>;
 }
 
@@ -13078,7 +13109,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261013.2100 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261014.1830 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13192,7 +13223,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261013.2100
+      // HTML v3.20261014.1830
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
