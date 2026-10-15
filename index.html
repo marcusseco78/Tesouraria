@@ -672,6 +672,11 @@ function _obsApelidoCartao(obsRaw){
 function _obsConfirmadoOfx(obsRaw){
   try{ const o=JSON.parse(obsRaw||"{}"); return !!o.confirmadoOfx; }catch(e){ return false; }
 }
+// [NOVO 15/10] "Ja foi cobrado": previsto que o Marcus viu na notificacao do
+// banco e marcou na mao -- fica amarelo ate o OFX/fatura casar (ai vira par).
+function _obsJaCobrado(obsRaw){
+  try{ const o=JSON.parse(obsRaw||"{}"); return !!o.jaCobrado; }catch(e){ return false; }
+}
 // [ATUALIZADO 06/08, redesenho combinado com o Marcus] O selo forte deixou
 // de significar "veio da fatura fechada" -- agora significa "ja foi
 // classificado com seguranca" (por reconhecimento automatico confiavel ou
@@ -2925,7 +2930,7 @@ function ComprasParceladas({data}){
       return {desl,total};
     }):[];
     return {comprasParceladas:lista,projecaoCiclos:proj};
-  },[data.cartaoPF,data.cartaoPJ,data.config]);
+  },[data.cartaoItens,data.config]);
 
   return <div style={{padding:12}}>
     <div style={{fontSize:11,fontWeight:800,color:C.textMuted,letterSpacing:".05em",marginBottom:10}}>COMPRAS PARCELADAS</div>
@@ -3680,7 +3685,7 @@ function FontesReceita({data,onUpdate}){
 // Fluxo. Ideia do Marcus (11/07): rastrear gasto de um "projeto" (viagem,
 // festa, reforma) sem misturar com o controle DCP semanal.
 function EnvelopesCustom({data,onUpdate}){
-  const envelopes=useMemo(()=>calcularEnvelopesCustom(data),[data.fluxo,data.cartaoPF,data.cartaoPJ,data.config]);
+  const envelopes=useMemo(()=>calcularEnvelopesCustom(data),[data.fluxo,data.cartaoItens,data.config]);
   const [form,setForm]=useState(null); // null=fechado, {} preenchido = form aberto (novo ou edicao)
   const [expandido,setExpandido]=useState(null);
   const [load,setLoad]=useState(false);
@@ -5686,8 +5691,16 @@ function PreviaAppExtrato({n,previa,numero,envelopes,contas,cartoes,data,despesa
 // toca pra selecionar/parear com um OFX solto (mesmo mecanismo do lado
 // banco). Edicao de apelido/categoria desses itens continua pelo caminho
 // normal (⋮) -- fora de escopo aqui, que resolve so o pareamento.
-function LinhaAppIsoladaCartao({aguardando,numero,selecionado,onClickParear,onExcluir,futuro,pareavel}){
+function LinhaAppIsoladaCartao({aguardando,numero,selecionado,onClickParear,onExcluir,futuro,pareavel,jaCobrado,onJaCobrado}){
   const cor=numero?PALETA_PARES[(numero-1)%PALETA_PARES.length]:null;
+  // [NOVO 15/10, pedido do Marcus] Previsto (cinza) -> "Já foi cobrado":
+  // painel pequeno com data real + valor; vira lançamento comum, pintado de
+  // amarelo até o banco confirmar. Estado local antes de qualquer return.
+  const [abrirCobrado,setAbrirCobrado]=useState(false);
+  const [cData,setCData]=useState(hoje());
+  const [cValor,setCValor]=useState(formatarValorInicial(Math.abs(Number(aguardando.valor)||0)));
+  const [cLoad,setCLoad]=useState(false);
+  const amarelo=!!jaCobrado&&!futuro&&!numero&&!selecionado;
   // [NOVO 05/09, mesma ideia do lado OFX] Toque só no texto expande.
   const [expandido,setExpandido]=useState(false);
   // [NOVO 07/09, pedido do Marcus] "futuro" = assinatura/recorrência já
@@ -5704,10 +5717,10 @@ function LinhaAppIsoladaCartao({aguardando,numero,selecionado,onClickParear,onEx
   // previsto dia 14, caiu dia 11). Continua cinza e pontilhada ate ser tocada.
   const bloqueado=futuro&&!pareavel;
   const apagado=futuro&&!numero&&!selecionado;
-  return <div onClick={bloqueado?undefined:onClickParear} style={{
+  return <React.Fragment><div onClick={bloqueado?undefined:onClickParear} style={{
     display:"flex",alignItems:"center",gap:6,padding:"8px 10px",flexWrap:expandido?"wrap":"nowrap",
-    background:apagado?C.borderLight:(cor?cor.bg:(selecionado?"#EEF2FD":C.redLight)),
-    border:"1px "+(apagado?"dashed "+C.textMuted:"solid "+(cor?cor.cor:(selecionado?C.blue:C.red))),
+    background:apagado?C.borderLight:(cor?cor.bg:(selecionado?"#EEF2FD":(amarelo?"#FEF9C3":C.redLight))),
+    border:"1px "+(apagado?"dashed "+C.textMuted:"solid "+(cor?cor.cor:(selecionado?C.blue:(amarelo?"#CA8A04":C.red)))),
     borderRadius:8,width:"90%",marginLeft:"auto",boxSizing:"border-box",cursor:bloqueado?"default":"pointer",
     opacity:apagado?0.8:1,
   }}>
@@ -5731,7 +5744,35 @@ function LinhaAppIsoladaCartao({aguardando,numero,selecionado,onClickParear,onEx
       width:18,height:18,borderRadius:999,border:"none",background:"#fff",color:C.red,fontSize:10,
       fontWeight:800,cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
     }}>🗑</button>}
-  </div>;
+  </div>
+  {futuro&&onJaCobrado&&<div style={{width:"90%",marginLeft:"auto",boxSizing:"border-box",marginTop:3,marginBottom:2}}>
+    {!abrirCobrado
+      ?<button onClick={()=>setAbrirCobrado(true)} style={{display:"block",marginLeft:"auto",background:"none",border:"none",color:C.yellow,fontSize:11,fontWeight:700,cursor:"pointer",padding:"4px 2px",fontFamily:"inherit"}}>
+        ✓ Já foi cobrado
+      </button>
+      :<div style={{background:C.yellowLight,border:"1px solid "+C.yellow,borderRadius:8,padding:10}}>
+        <div style={{fontSize:11,color:C.textSub,marginBottom:6,lineHeight:1.4}}>Você viu a cobrança no banco? Informe a data e o valor reais. O app não marca como confirmado — só o extrato/fatura confirma.</div>
+        <div style={{display:"flex",gap:6,marginBottom:8}}>
+          <input type="date" value={cData} max={hoje()} onChange={e=>setCData(e.target.value)}
+            style={{flex:1,minWidth:0,padding:"8px 10px",borderRadius:7,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit"}}/>
+          <input value={cValor} inputMode="decimal" onChange={e=>setCValor(e.target.value)}
+            style={{flex:1,minWidth:0,padding:"8px 10px",borderRadius:7,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",textAlign:"right"}}/>
+        </div>
+        <div style={{display:"flex",gap:6}}>
+          <button onClick={()=>setAbrirCobrado(false)} disabled={cLoad}
+            style={{flex:1,padding:"9px",borderRadius:8,background:"transparent",border:"1px solid "+C.border,color:C.textSub,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Cancelar</button>
+          <button disabled={cLoad||!cData||!(numBR(cValor)>0)} onClick={async()=>{
+              setCLoad(true);
+              try{ await onJaCobrado(cData,Math.abs(numBR(cValor))); setAbrirCobrado(false); }
+              finally{ setCLoad(false); }
+            }}
+            style={{flex:2,padding:"9px",borderRadius:8,background:C.yellow,border:"none",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+            {cLoad?"Salvando…":"Marcar como cobrado"}
+          </button>
+        </div>
+      </div>}
+  </div>}
+  </React.Fragment>;
 }
 
 function ConciliarExtratoTab({data,onUpdate}){
@@ -6983,41 +7024,11 @@ function Ferramentas({onIrPara}){
         </div>
       </div>;
     })}
-    <div style={{padding:"14px 0 0"}}>
-      <BotaoFaseCNomenclatura/>
-    </div>
   </div>;
-}
-
-// [TEMPORARIO 16/09] Botao de uso unico -- Fase C (parte 1): cria os
-// campos novos de nome automatico (Categoria/Banco/Nome personalizado/
-// toggle) em Contas e Cartões. NÃO liga o nome automático pros 2
-// cadastros que já existem -- só prepara o terreno. REMOVER este
-// componente e o botão junto na próxima versão.
-function BotaoFaseCNomenclatura(){
-  const[loading,setLoading]=useState(false);
-  const[feito,setFeito]=useState(false);
-  async function rodar(){
-    if(!confirm("Isso adiciona os campos novos pro nome automático (Categoria/Banco/Nome personalizado) em Contas e Cartões, e preenche a Categoria dos 2 cartões existentes (Platinum/Micro Business). Não muda o nome que já aparece hoje. Rodar uma vez só — confirma?"))return;
-    setLoading(true);
-    try{
-      const r=await api({action:"preencherFaseCNomenclatura"});
-      setFeito(true);
-      alert((r.camposPreenchidos||0)+" campo(s) preenchido(s):\n"+(r.detalhe||[]).join("\n"));
-    }catch(e){ alert(e.message); }
-    setLoading(false);
-  }
-  if(feito)return null;
-  return <button onClick={rodar} disabled={loading}
-    style={{width:"100%",padding:"8px",borderRadius:10,background:"#E8EDFB",color:"#2347C5",border:"1px dashed #93C5FD",fontSize:11,fontWeight:700,cursor:loading?"default":"pointer",fontFamily:"inherit"}}>
-    {loading?"…":"🔵 Reforma de nomenclatura — Fase C, campos de nome automático (1x)"}
-  </button>;
 }
 
 function DCPTab({data,onUpdate,onIrPara}){
   const fluxo=data.fluxo||[];
-  const cartaoPF=data.cartaoPF||[];
-  const cartaoPJ=data.cartaoPJ||[];
   const [expandido,setExpandido]=useState(null); // data (chave) do envelope aberto
 
   // Todos os envelopes (linhas DCP_PROVISAO) existentes, em ordem cronologica
@@ -7462,9 +7473,12 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
         </button>
       </div>
     </div>}
+    {item.status==="EXECUTADO"&&item.categoria!=="DCP_PROVISAO"&&<div style={{fontSize:11,fontWeight:700,color:C.green,marginBottom:8}}>
+      ✓ Já executado — mudar data ou valor aqui corrige o histórico.
+    </div>}
     <div style={{display:"flex",gap:8,marginBottom:8}}>
       <div style={{display:"flex",flexDirection:"column",gap:3,flex:1}}>
-        <span style={{fontSize:10,color:execMode?"#0B7A56":"#B45309",fontWeight:600,letterSpacing:".05em"}}>{execMode?"DATA DE EXECUÇÃO":"NOVA DATA"}</span>
+        <span style={{fontSize:10,color:execMode?"#0B7A56":"#B45309",fontWeight:600,letterSpacing:".05em"}}>{execMode?"DATA DE EXECUÇÃO":item.status==="EXECUTADO"?"DATA":"NOVA DATA"}</span>
         <input type="date" value={dt} max={item.status==="EXECUTADO"?hoje():undefined} onChange={e=>setDt(e.target.value)}
           style={{padding:"5px 8px",borderRadius:6,border:"1px solid "+(execMode?"#BFE3D2":C.accent),fontSize:13,fontFamily:"inherit",width:"100%"}}/>
       </div>
@@ -7492,7 +7506,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
         Ciclo atípico — não propagar essa sobra/estouro pro próximo ciclo (fica registrado como perdoado, pra auditoria)
       </label>
     </div>}
-    {fc&&<div style={{background:"#fff",border:"1px dashed "+C.teal,borderRadius:6,padding:8,marginBottom:8}}>
+    {fc&&item.status!=="EXECUTADO"&&<div style={{background:"#fff",border:"1px dashed "+C.teal,borderRadius:6,padding:8,marginBottom:8}}>
       <div style={{fontSize:10,color:C.teal,fontWeight:700,marginBottom:4}}>PLANTÕES/VALOR DIFERENTES ESSE MÊS?</div>
       <div style={{fontSize:10,color:C.textMuted,marginBottom:6}}>Deixe valor/hora e alíquota em branco pra usar o padrão da fonte — preencha só o que for diferente neste mês específico.</div>
       <div style={{display:"flex",gap:6,marginBottom:6}}>
@@ -7834,7 +7848,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
   // Envelopes customizados: nome pra cada lancamento classificado + o
   // lancamento MAIS RECENTE de cada envelope carrega o saldo corrente
   // junto da etiqueta, como pedido (11/07) -- os demais so mostram o nome.
-  const envelopesCustom=useMemo(()=>calcularEnvelopesCustom(data),[data.fluxo,data.cartaoPF,data.cartaoPJ,data.config]);
+  const envelopesCustom=useMemo(()=>calcularEnvelopesCustom(data),[data.fluxo,data.cartaoItens,data.config]);
   const envelopesPorId=useMemo(()=>{const m={};envelopesCustom.forEach(e=>m[e.id]=e);return m;},[envelopesCustom]);
   const ultimoPorChave=useMemo(()=>{
     const m={};
@@ -8177,7 +8191,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
   const [contaSelecionada,setContaSelecionada]=useState(null);
   useEffect(()=>{ if(!contaSelecionada&&contasAtivas.length) setContaSelecionada(contasAtivas[0].id); },[contasAtivas,contaSelecionada]);
 
-  const envelopesCustom=useMemo(()=>calcularEnvelopesCustom(data),[data.fluxo,data.cartaoPF,data.cartaoPJ,data.config]);
+  const envelopesCustom=useMemo(()=>calcularEnvelopesCustom(data),[data.fluxo,data.cartaoItens,data.config]);
   const envelopesPorId=useMemo(()=>{const m={};envelopesCustom.forEach(e=>m[e.id]=e);return m;},[envelopesCustom]);
   const ultimoPorChave=useMemo(()=>{
     const m={};
@@ -10340,7 +10354,7 @@ function BotaoLancar({data,onUpdate,onIrPara}){
   const [contaLancamento,setContaLancamento]=useState("");
   useEffect(()=>{ if(!contaLancamento&&contasAtivasLanc.length) setContaLancamento(contasAtivasLanc[0].id); },[contasAtivasLanc,contaLancamento]);
   const CATS=["DCP","DESPESA FIXA","RECEITA","DEPOSITO_AVULSO","DIVIDA_PARCELADA","DIVIDA_NAO_PARCELADA","EXTRAORDINARIA","INVESTIMENTO"];
-  const envelopesAbertos=useMemo(()=>calcularEnvelopesCustom(data).filter(e=>!e.encerrado),[data.fluxo,data.cartaoPF,data.cartaoPJ,data.config]);
+  const envelopesAbertos=useMemo(()=>calcularEnvelopesCustom(data).filter(e=>!e.encerrado),[data.fluxo,data.cartaoItens,data.config]);
 
   // [NOVO 13/07] Lancamento manual de Receita Esporadica -- fonte cadastrada
   // com tipoRecorrencia=ESPORADICA nunca gera sozinha (ver
@@ -11290,37 +11304,6 @@ function ResetCartao({cartao, data, onUpdate}){
   </div>;
 }
 
-function ImportarAssinaturas({onUpdate}){
-  const [load, setLoad]=useState(false);
-
-  async function executar(){
-    setLoad(true);
-    try{
-      const r=await api({action:"importarAssinaturasIniciais"});
-      onUpdate(r);
-      const d=r._diagnosticoImportacao;
-      const c=d&&d.correcaoDestino;
-      const corrTxt=(c&&c.corrigidos>0)?("\n\nCorrigidos (destino indevido): "+c.corrigidos+
-        "\nRemovidos do PF: "+c.linhasRemovidasPF+"\nRemovidos do PJ: "+c.linhasRemovidasPJ):"";
-      const txt=d?("\n\nNovos: "+d.itensNovos+"\nJá existiam: "+d.itensJaExistentes+
-        "\nCiclos verificados: "+d.preenchimentoCartao.ciclosVerificados+
-        "\nAdicionados PF: "+d.preenchimentoCartao.itensAdicionadosPF+
-        "\nAdicionados PJ: "+d.preenchimentoCartao.itensAdicionadosPJ+corrTxt):"";
-      alert("Assinaturas importadas!"+txt);
-    }catch(e){alert("Erro: "+e.message);}
-    setLoad(false);
-  }
-
-  return <div>
-    <button onClick={executar} disabled={load}
-      style={{width:"100%",padding:"8px",borderRadius:10,background:"transparent",
-        color:C.textMuted,fontSize:11,fontWeight:600,border:"1px dashed "+C.border,
-        cursor:load?"default":"pointer",fontFamily:"inherit",marginBottom:12}}>
-      {load?"Importando...":"📥 Importar/reparar assinaturas de cartão"}
-    </button>
-  </div>;
-}
-
 // ── ABA CARTÕES ───────────────────────────────────────────────────────────────
 function Cartoes({data,onUpdate,destaque,onIrPara}){
   const [desvinculandoCartao,setDesvinculandoCartao]=useState(null); // [CORRIGIDO 01/10 -- estava no componente errado (ConciliarCartao, só o uploader), causando "is not defined" na lista de verdade, que vive aqui em Cartoes]
@@ -11599,9 +11582,26 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
           }
         }else{
           const rowApp=Number(appId.replace("app_",""));
+          // [NOVO 14/10] Lê a linha ANTES de vincular: se ela é uma ocorrência de
+          // despesa fixa cadastrada (ex.: assinatura prevista), depois do pareamento
+          // oferece guardar o nome que o banco usa (ALIAS_CSV) -- assim o mês seguinte
+          // reconhece sozinho, igual ao caminho "+ -> Despesa Fixa".
+          const linhaAppPar=rows.find(x=>_linhaCartao(x)===rowApp);
+          const fxPar=linhaAppPar?despesasFixasCartao.find(f=>f.desc.toUpperCase().trim()===String(linhaAppPar[1]||"").toUpperCase().trim()):null;
           const r=await api({action:"vincularCompraCartao",cartao,row:rowApp,
             descricaoCsv:item.title,valorCsv:item.amount,dataCsv:item.date,parcelaCsv:item.parcela,fitid:item.fitid||""});
           onUpdate(r);
+          if(fxPar){
+            const tituloBanco=String(item.title||"").toUpperCase().trim();
+            const jaTem=fxPar.alias.split(";").map(a=>a.toUpperCase().trim()).filter(Boolean).includes(tituloBanco);
+            if(tituloBanco&&tituloBanco!==fxPar.desc.toUpperCase().trim()&&!jaTem
+              &&window.confirm('Lembrar que "'+item.title+'" no banco é a despesa fixa "'+fxPar.desc+'"? Nos próximos meses o app reconhece sozinho.')){
+              try{
+                const aliasCombinado=fxPar.alias?(fxPar.alias+";"+item.title):item.title;
+                onUpdate(await api({action:"editarRecorrencia",descricao:fxPar.desc,campo:"ALIAS_CSV",valor:aliasCombinado,resumo:"",forcarAlias:true}));
+              }catch(eAlias){ alert("Pareou, mas não consegui guardar o nome do banco: "+eAlias.message); }
+            }
+          }
           setConciliacao(c=>c?{...c,
             aguardandoFatura:(c.aguardandoFatura||[]).filter(a=>a.row!==rowApp),
             confirmadosFatura:[...(c.confirmadosFatura||[]),{row:rowApp}]}:c);
@@ -12209,9 +12209,9 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
             geracao de 12 ciclos -- ja roda sozinha na viradaCiclo, (4) sync
             de valor de fatura -- ja roda sozinha em sincronizarFaturas no
             carregamento. Sem sentido como botao visivel; a funcao
-            ImportarAssinaturas continua definida (nao removida do arquivo,
-            sem risco nenhum deixar parada) caso um dia precise dela de
-            novo, so nao esta mais na tela. */}
+            [15/10] ImportarAssinaturas, importarAssinaturasIniciais e
+            corrigirDestinoIndevido foram APAGADAS de vez (codigo morto,
+            com PF/PJ fixos). */}
         {/* [REMOVIDO 28/08, pedido do Marcus] "Corrigir vencimento" era
             remendo pontual de 04/08 pra um bug especifico de calculo na
             fronteira do mes -- a causa raiz ja foi corrigida na formula na
@@ -12526,6 +12526,16 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
       {novosDoCSV.length>0&&<div style={{fontSize:10,color:C.textMuted,padding:"0 4px 8px",lineHeight:1.4}}>
         Toca num 🏦 solto, depois num 📱 solto, pra parear.
       </div>}
+      {/* [NOVO 15/10, pedido do Marcus] Legenda das cores da lista. */}
+      <div style={{display:"flex",flexWrap:"wrap",gap:"6px 12px",padding:"0 4px 8px",fontSize:10,color:C.textSub,lineHeight:1.3}}>
+        {[
+          {bg:C.redLight,bd:"1px solid "+C.red,t:"manual ou do banco, sem par"},
+          {bg:C.borderLight,bd:"1px dashed "+C.textMuted,t:"previsto"},
+          {bg:"#FEF9C3",bd:"1px solid #CA8A04",t:"previsto já cobrado, sem par"},
+        ].map(l=><span key={l.t} style={{display:"inline-flex",alignItems:"center",gap:5}}>
+          <span style={{width:14,height:10,borderRadius:3,background:l.bg,border:l.bd,flexShrink:0}}/>{l.t}
+        </span>)}
+      </div>
       {(()=>{
         let dataAnterior=null;
         return linhasCombinadas.map((linha,i)=>{
@@ -12598,6 +12608,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
               {cabecalhoData}
               <LinhaAppIsoladaCartao aguardando={{row:linhaR,desc:apelidoAtual||r[1],valor:r[2],categoria:r[5],parcela:r[3],envelopeId:_obsEnvelopeId(_obsCartaoRaw(r))}}
                 numero={parIdParaNumero[idApp]}
+                jaCobrado={_obsJaCobrado(_obsCartaoRaw(r))}
                 selecionado={selecionadoPar&&selecionadoPar.id===idApp}
                 onClickParear={()=>tocarPareamento(idApp,"app")}
                 onExcluir={()=>excluirAguardandoCartao({row:linhaR,desc:apelidoAtual||r[1],valor:r[2]})}
@@ -12679,6 +12690,12 @@ function Cartoes({data,onUpdate,destaque,onIrPara}){
                 numero={linhaR!=null?parIdParaNumero["app_"+linhaR]:undefined}
                 selecionado={linhaR!=null&&selecionadoPar&&selecionadoPar.id==="app_"+linhaR}
                 onClickParear={linhaR!=null?(()=>tocarPareamento("app_"+linhaR,"app")):undefined}
+                onJaCobrado={linhaR!=null?(async(dataISO,valor)=>{
+                  try{
+                    const r2=await api({action:"marcarPrevistoCobrado",cartao,row:linhaR,data:dataISO,valor});
+                    onUpdate(r2);
+                  }catch(e){ alert(e.message); throw e; }
+                }):undefined}
               />
             </React.Fragment>;
           }
@@ -13109,7 +13126,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261014.1830 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261015.0400 · Script {(data&&data.scriptVersion)||"—"}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13223,7 +13240,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261014.1830
+      // HTML v3.20261015.0400
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
