@@ -4055,7 +4055,9 @@ function CardCofre({cofre,onUpdate,data}){
       if(ehRV){
         const papel=papelInput.trim().toUpperCase();
         const cotacao=numBR(cotacaoInput);
-        const quantidade=numBR(qtdInput);
+        // [NOVO 15/10] Quantidade e fracionada (ex.: "4.2644") e o campo guarda ponto
+        // decimal; numBR leria 4.2644 como milhar (42644). Converte direto.
+        const quantidade=Number(String(qtdInput).trim().replace(",","."))||0;
         if(!papel){ alert("Informe o papel (ticker), ex: BBAS3."); setLoad(false); return; }
         if(!cotacao){ alert("Informe a cotação."); setLoad(false); return; }
         if(!quantidade){ alert("Informe a quantidade de ações."); setLoad(false); return; }
@@ -13126,7 +13128,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261015.0400 · Script {(data&&data.scriptVersion)||"—"}
+            HTML v3.20261016.1730 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13240,7 +13242,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261015.0400
+      // HTML v3.20261016.1730
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
