@@ -1568,6 +1568,8 @@ function KPI({label,value,sub,color,bg,raw}){const neg=typeof raw==="number"&&ra
 
 // ── CICLO CARD ────────────────────────────────────────────────────────────────
 function CicloCard({fluxo,nome,atual,dcpResumo,basais,data}){
+  const [verSaidas,setVerSaidas]=useState(false);
+  const [ordemSaidas,setOrdemSaidas]=useState("data");
   const hj=hoje();
   const rows=fluxo; // [17/10] linhas ja separadas por DATA no Dashboard (nao pelo nome gravado em CICLO)
   const receitas=rows.filter(r=>r.tipo==="RECEITA").reduce((s,r)=>s+r.valor,0);
@@ -1613,6 +1615,46 @@ function CicloCard({fluxo,nome,atual,dcpResumo,basais,data}){
       <div style={{marginBottom:6}}><Label>Saldo p/ Despesas Cotidianas (DCP)</Label></div>
       <BarraDCP semanas={dcpResumo.semanas} base={dcpResumo.base}/>
     </div>}
+    {(()=>{
+      // [NOVO 17/10, pedido do Marcus] Lista as linhas que somadas dao o valor de "Saídas"
+      // (mesma conta do KPI: tudo que nao e RECEITA). Transferencias entram com o sinal
+      // proprio, por isso o total e a soma das linhas, nao a soma dos valores absolutos.
+      const lista=rows.filter(r=>r.tipo!=="RECEITA").sort(ordemSaidas==="valor"?((a,b)=>a.valor-b.valor):((a,b)=>a.data<b.data?-1:a.data>b.data?1:0));
+      if(!lista.length) return null;
+      const soma=lista.reduce((s,r)=>s+r.valor,0);
+      const brutas=lista.reduce((s,r)=>s+(r.valor<0?-r.valor:0),0); // base das porcentagens: so o que saiu
+      return <div style={{borderTop:"1px solid "+C.border,paddingTop:10,marginBottom:10}}>
+        <button onClick={()=>setVerSaidas(v=>!v)} style={{width:"100%",minHeight:44,padding:"10px 14px",borderRadius:12,border:"1px solid "+C.border,background:C.surface,color:C.accent,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span>{verSaidas?"Ocultar":"Ver"} as {lista.length} saídas deste ciclo</span><span>{verSaidas?"▲":"▼"}</span>
+        </button>
+        {verSaidas&&<div style={{marginTop:8}}>
+          <div style={{display:"flex",gap:6,marginBottom:6}}>
+            {[["data","Por data"],["valor","Maiores primeiro"]].map(([k,l])=><button key={k} onClick={()=>setOrdemSaidas(k)}
+              style={{padding:"4px 12px",borderRadius:20,border:"1px solid "+(ordemSaidas===k?C.accent:C.border),background:ordemSaidas===k?C.accentLight:C.surface,color:ordemSaidas===k?C.accent:C.textSub,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>)}
+          </div>
+          {lista.map((r,i)=>{
+            const pct=r.valor<0&&brutas>0?(-r.valor)/brutas*100:null;
+            return <div key={r.row||i} style={{padding:"6px 4px",borderBottom:"1px solid "+C.borderLight,fontSize:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+                <span style={{display:"flex",gap:6,minWidth:0,flex:1}}>
+                  <span style={{color:C.textMuted,flexShrink:0,fontVariantNumeric:"tabular-nums"}}>{fmtD(r.data).slice(0,5)}</span>
+                  <span style={{color:r.status==="EXECUTADO"?C.text:C.textSub,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.status==="EXECUTADO"?"✓ ":""}{r.descricao}</span>
+                </span>
+                <span style={{fontWeight:700,color:r.valor<0?C.red:C.green,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{fmt(r.valor)}</span>
+              </div>
+              {pct!=null&&<div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
+                <div style={{flex:1,height:5,borderRadius:3,background:C.borderLight,overflow:"hidden"}}><div style={{width:Math.max(pct,1.5)+"%",height:"100%",background:C.red,opacity:.75,borderRadius:3}}/></div>
+                <span style={{fontSize:10,color:C.textMuted,minWidth:34,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{pct.toFixed(1).replace(".",",")}%</span>
+              </div>}
+            </div>;
+          })}
+          <div style={{display:"flex",justifyContent:"space-between",padding:"8px 4px 0",fontSize:13,fontWeight:800}}>
+            <span style={{color:C.text}}>Soma</span><span style={{color:soma<0?C.red:C.green,fontVariantNumeric:"tabular-nums"}}>{fmt(soma)}</span>
+          </div>
+          <div style={{fontSize:10,color:C.textMuted,marginTop:4}}>✓ = já executado. Porcentagem = fatia de tudo que saiu no ciclo ({fmt(brutas)}). Transferências que entram não têm barra.</div>
+        </div>}
+      </div>;
+    })()}
     {extras.length>0&&<div style={{borderTop:"1px solid "+C.border,paddingTop:10}}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
         <Label>Compromissos além dos Gastos Fixos</Label><span style={{fontSize:9,color:C.textMuted}}>cartões + emp.</span></div>
@@ -13180,7 +13222,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261017.1800 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261017.2000 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13294,7 +13336,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261017.1800
+      // HTML v3.20261017.2000
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
