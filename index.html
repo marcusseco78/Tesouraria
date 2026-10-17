@@ -1569,7 +1569,7 @@ function KPI({label,value,sub,color,bg,raw}){const neg=typeof raw==="number"&&ra
 // ── CICLO CARD ────────────────────────────────────────────────────────────────
 function CicloCard({fluxo,nome,atual,dcpResumo,basais,data}){
   const hj=hoje();
-  const rows=fluxo.filter(r=>r.ciclo===nome);
+  const rows=fluxo; // [17/10] linhas ja separadas por DATA no Dashboard (nao pelo nome gravado em CICLO)
   const receitas=rows.filter(r=>r.tipo==="RECEITA").reduce((s,r)=>s+r.valor,0);
   const saidas=Math.abs(rows.filter(r=>r.tipo!=="RECEITA").reduce((s,r)=>s+r.valor,0));
   // [GENERALIZADO 17/09] Antes so somava CARTAO PF/PJ literal -- agora
@@ -1699,15 +1699,20 @@ function Dashboard({data,onUpdate,estouro}){
   const ml=useMemo(()=>{const f=fluxo.filter(r=>r.data>=hj&&r.saldoProjetado!=null);return f.length?f.reduce((m,r)=>r.saldoProjetado<m.saldoProjetado?r:m,f[0]):null;},[fluxo,hj]);
   const [periodo,setPeriodo]=useState(12); // quantos ciclos mostrar no grafico: 3, 6 ou 12
   const [zoomX,setZoomX]=useState(80); // espaco horizontal por ponto -- "zoom" sem gesto de pinca
+  // [CORRIGIDO 17/10, achado real do Marcus] Os ciclos agora saem da DATA de cada
+  // lancamento (com o ano), nao do nome gravado na coluna CICLO. Uma linha com o
+  // nome errado (ex.: STELLANTIS de 23/10 marcada "SET/OUT") fazia o "proximo
+  // ciclo" voltar para um ciclo que ja passou e somar o ciclo inteiro (R$ 82 mil).
+  const cicloDia=Math.min(28,Math.max(1,parseInt(cfg.CICLO_DIA)||16));
+  const cicloKey=(iso)=>{const y=+iso.slice(0,4),m=+iso.slice(5,7),d=+iso.slice(8,10);let yy=y,mm=m;if(d<cicloDia){mm--;if(mm<1){mm=12;yy--;}}return yy*12+mm-1;};
+  const cicloNomeDeKey=(k)=>{const M=["JAN","FEV","MAR","ABR","MAI","JUN","JUL","AGO","SET","OUT","NOV","DEZ"];return M[k%12]+"/"+M[(k+1)%12];};
   const ciclosOrdenados=useMemo(()=>{
-    const vistos=new Set(),lista=[];
-    fluxo.filter(r=>r.data>=hj).sort((a,b)=>a.data<b.data?-1:1).forEach(r=>{
-      if(r.ciclo&&!vistos.has(r.ciclo)){vistos.add(r.ciclo);lista.push(r.ciclo);}
-    });
-    return lista;
-  },[fluxo,hj]);
+    const vistos=new Set();
+    fluxo.forEach(r=>{if(r.data&&r.data>=hj)vistos.add(cicloKey(r.data));});
+    return [...vistos].sort((a,b)=>a-b);
+  },[fluxo,hj,cicloDia]);
   const ciclosVisiveis=useMemo(()=>new Set(ciclosOrdenados.slice(0,periodo)),[ciclosOrdenados,periodo]);
-  const chartPts=useMemo(()=>{const m={};fluxo.forEach(r=>{if(r.data>=hj&&r.saldoProjetado!=null&&(!r.ciclo||ciclosVisiveis.has(r.ciclo)))m[r.data]={d:r.data,v:r.saldoProjetado};});return Object.values(m).sort((a,b)=>a.d>b.d?1:-1);},[fluxo,hj,ciclosVisiveis]);
+  const chartPts=useMemo(()=>{const m={};fluxo.forEach(r=>{if(r.data>=hj&&r.saldoProjetado!=null&&ciclosVisiveis.has(cicloKey(r.data)))m[r.data]={d:r.data,v:r.saldoProjetado};});return Object.values(m).sort((a,b)=>a.d>b.d?1:-1);},[fluxo,hj,ciclosVisiveis,cicloDia]);
   // [FIX 16/07] Antes pegava os 3 primeiros nomes de ciclo unicos de TODO o
   // historico do Fluxo, sem olhar a data -- coincidentemente sempre certo
   // ate hoje, porque o sistema nasceu no proprio ciclo JUN/JUL (primeiro da
@@ -1797,7 +1802,7 @@ function Dashboard({data,onUpdate,estouro}){
       </div>
       <Chart pts={chartPts} zoomX={zoomX}/>
     </Card>
-    {ciclos.map((n,i)=><CicloCard key={n} fluxo={fluxo} nome={n} atual={i===0} dcpResumo={dcpResumo} basais={basais} data={data}/>)}
+    {ciclos.map((k,i)=><CicloCard key={k} fluxo={fluxo.filter(r=>r.data&&cicloKey(r.data)===k)} nome={cicloNomeDeKey(k)} atual={i===0} dcpResumo={dcpResumo} basais={basais} data={data}/>)}
     <div style={{height:8}}/>
   </div>;
 }
@@ -13175,7 +13180,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261017.0300 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261017.1800 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13289,7 +13294,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261017.0300
+      // HTML v3.20261017.1800
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
