@@ -1364,11 +1364,13 @@ function _tmEnd(j,ok){
   const mostra=(tela)=>{
     const p=[];
     if(t){ p.push("acao "+(t.acaoMs/1000).toFixed(1)); p.push("codigo "+(t.codigoMs/1000).toFixed(1)+(t.cacheHit?"(cache)":"(Drive)")); p.push("eval "+(t.evalMs/1000).toFixed(1)); }
-    if(g){ p.push("recarga "+((g.ajusteMs+g.leituraMs)/1000).toFixed(1)); }
+    if(g){ if(g.preMs!=null) p.push("edicao "+(g.preMs/1000).toFixed(1)); p.push("recarga "+((g.ajusteMs+g.leituraMs)/1000).toFixed(1)); }
     if(srv!=null) p.push("rede/Google ~"+Math.max(0,total-srv-(tela||0)).toFixed(1));
     else p.push("(sem tempos do servidor)");
     if(tela!=null) p.push("tela "+tela.toFixed(1));
-    _TM.el.textContent=linha1+"\n"+p.join(" | ");
+    let extra="";
+    if(g&&g.detalhe){ const d=Object.keys(g.detalhe).map(k=>[k,g.detalhe[k]]).filter(x=>x[1]>=100).sort((x,y)=>y[1]-x[1]).slice(0,6); if(d.length) extra="\n"+d.map(x=>x[0]+" "+(x[1]/1000).toFixed(1)).join(" | "); }
+    _TM.el.textContent=linha1+"\n"+p.join(" | ")+extra;
   };
   mostra(null);
   // "tela": do fim da resposta ate a proxima pintura (aprox.)
@@ -13173,7 +13175,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261016.2200 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261017.0300 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13287,7 +13289,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261016.2200
+      // HTML v3.20261017.0300
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
