@@ -1334,14 +1334,57 @@ function tocarSom(tipo){
   }catch(e){}
 }
 
+// [NOVO 16/10] Medidor de tempo SEMPRE visivel (faixa fixa no topo, nao bloqueia toque).
+// Enquanto espera: contador ao vivo. Ao terminar: total sentido, e o quanto cada parte
+// levou (servidor devolve j._timing). "rede/Google" = total - servidor - tela.
+// Desligar: localStorage tesouraria_tempos = "0".
+const _TM={el:null,iv:null,t0:0,acao:""};
+function _tmOn(){ try{ return localStorage.getItem("tesouraria_tempos")!=="0"; }catch(e){ return true; } }
+function _tmBox(){
+  if(_TM.el) return _TM.el;
+  const d=document.createElement("div");
+  d.style.cssText="position:fixed;top:0;left:0;right:0;z-index:99999;pointer-events:none;background:rgba(15,27,61,.9);color:#fff;font:600 10px/1.3 monospace;padding:2px 6px;white-space:pre-wrap;display:none";
+  document.body.appendChild(d); _TM.el=d; return d;
+}
+function _tmStart(payload){
+  if(!_tmOn()) return;
+  _TM.t0=performance.now(); _TM.acao=(payload&&payload.action)||"?";
+  const el=_tmBox(); el.style.display="block";
+  clearInterval(_TM.iv);
+  _TM.iv=setInterval(()=>{ el.textContent="\u23F3 "+_TM.acao+"  "+((performance.now()-_TM.t0)/1000).toFixed(1)+"s"; },100);
+}
+function _tmEnd(j,ok){
+  if(!_tmOn()||!_TM.el) return;
+  clearInterval(_TM.iv);
+  const tResp=performance.now();
+  const total=(tResp-_TM.t0)/1000;
+  const t=j&&j._timing, g=j&&j.tempos;
+  const srv=t?t.totalMs/1000:null;
+  const linha1=(ok?"\u2714 ":"\u2716 ")+_TM.acao+"  total "+total.toFixed(1)+"s";
+  const mostra=(tela)=>{
+    const p=[];
+    if(t){ p.push("acao "+(t.acaoMs/1000).toFixed(1)); p.push("codigo "+(t.codigoMs/1000).toFixed(1)+(t.cacheHit?"(cache)":"(Drive)")); p.push("eval "+(t.evalMs/1000).toFixed(1)); }
+    if(g){ p.push("recarga "+((g.ajusteMs+g.leituraMs)/1000).toFixed(1)); }
+    if(srv!=null) p.push("rede/Google ~"+Math.max(0,total-srv-(tela||0)).toFixed(1));
+    else p.push("(sem tempos do servidor)");
+    if(tela!=null) p.push("tela "+tela.toFixed(1));
+    _TM.el.textContent=linha1+"\n"+p.join(" | ");
+  };
+  mostra(null);
+  // "tela": do fim da resposta ate a proxima pintura (aprox.)
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{ mostra((performance.now()-tResp)/1000); }));
+}
+
 async function api(payload){
   tocarSom("inicio");
+  _tmStart(payload);
   let r,j;
   try{
     r=await fetch(getApiUrl(),{method:"POST",redirect:"follow",
       headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(payload)});
     j=await r.json();
   }catch(e){
+    _tmEnd(null,false);
     tocarSom("erro");
     // [NOVO 29/09] Achado real com o Marcus: o servidor GRAVAVA e a resposta falhava
     // depois (pagina de erro do Google em vez de JSON) -- o erro cru ("Unexpected
@@ -1351,11 +1394,13 @@ async function api(payload){
     throw err;
   }
   if(!j.ok){
+    _tmEnd(j,false);
     tocarSom("erro");
     const err=new Error(j.error||"O servidor devolveu um erro sem descrição. A operação PODE ter sido gravada mesmo assim.");
     if(!j.error) err.incerto=true;
     throw err;
   }
+  _tmEnd(j,true);
   tocarSom("sucesso");
   return j;
 }
@@ -13128,7 +13173,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261016.1730 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261016.2200 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13242,7 +13287,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261016.1730
+      // HTML v3.20261016.2200
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
