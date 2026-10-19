@@ -1570,6 +1570,8 @@ function KPI({label,value,sub,color,bg,raw}){const neg=typeof raw==="number"&&ra
 function CicloCard({fluxo,nome,atual,dcpResumo,basais,data}){
   const [verSaidas,setVerSaidas]=useState(false);
   const [ordemSaidas,setOrdemSaidas]=useState("data");
+  const [contaLista,setContaLista]=useState(""); // [18/10] "" = contas juntas
+  const [verReceitas,setVerReceitas]=useState(false);
   const hj=hoje();
   const rows=fluxo; // [17/10] linhas ja separadas por DATA no Dashboard (nao pelo nome gravado em CICLO)
   const receitas=rows.filter(r=>r.tipo==="RECEITA").reduce((s,r)=>s+r.valor,0);
@@ -1616,42 +1618,82 @@ function CicloCard({fluxo,nome,atual,dcpResumo,basais,data}){
       <BarraDCP semanas={dcpResumo.semanas} base={dcpResumo.base}/>
     </div>}
     {(()=>{
-      // [NOVO 17/10, pedido do Marcus] Lista as linhas que somadas dao o valor de "Saídas"
-      // (mesma conta do KPI: tudo que nao e RECEITA). Transferencias entram com o sinal
-      // proprio, por isso o total e a soma das linhas, nao a soma dos valores absolutos.
-      const lista=rows.filter(r=>r.tipo!=="RECEITA").sort(ordemSaidas==="valor"?((a,b)=>a.valor-b.valor):((a,b)=>a.data<b.data?-1:a.data>b.data?1:0));
-      if(!lista.length) return null;
-      const soma=lista.reduce((s,r)=>s+r.valor,0);
-      const brutas=lista.reduce((s,r)=>s+(r.valor<0?-r.valor:0),0); // base das porcentagens: so o que saiu
-      return <div style={{borderTop:"1px solid "+C.border,paddingTop:10,marginBottom:10}}>
-        <button onClick={()=>setVerSaidas(v=>!v)} style={{width:"100%",minHeight:44,padding:"10px 14px",borderRadius:12,border:"1px solid "+C.border,background:C.surface,color:C.accent,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <span>{verSaidas?"Ocultar":"Ver"} as {lista.length} saídas deste ciclo</span><span>{verSaidas?"▲":"▼"}</span>
-        </button>
-        {verSaidas&&<div style={{marginTop:8}}>
-          <div style={{display:"flex",gap:6,marginBottom:6}}>
-            {[["data","Por data"],["valor","Maiores primeiro"]].map(([k,l])=><button key={k} onClick={()=>setOrdemSaidas(k)}
-              style={{padding:"4px 12px",borderRadius:20,border:"1px solid "+(ordemSaidas===k?C.accent:C.border),background:ordemSaidas===k?C.accentLight:C.surface,color:ordemSaidas===k?C.accent:C.textSub,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>)}
-          </div>
-          {lista.map((r,i)=>{
-            const pct=r.valor<0&&brutas>0?(-r.valor)/brutas*100:null;
-            return <div key={r.row||i} style={{padding:"6px 4px",borderBottom:"1px solid "+C.borderLight,fontSize:12}}>
-              <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
-                <span style={{display:"flex",gap:6,minWidth:0,flex:1}}>
-                  <span style={{color:C.textMuted,flexShrink:0,fontVariantNumeric:"tabular-nums"}}>{fmtD(r.data).slice(0,5)}</span>
-                  <span style={{color:r.status==="EXECUTADO"?C.text:C.textSub,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.status==="EXECUTADO"?"✓ ":""}{r.descricao}</span>
-                </span>
-                <span style={{fontWeight:700,color:r.valor<0?C.red:C.green,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{fmt(r.valor)}</span>
-              </div>
-              {pct!=null&&<div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
-                <div style={{flex:1,height:5,borderRadius:3,background:C.borderLight,overflow:"hidden"}}><div style={{width:Math.max(pct,1.5)+"%",height:"100%",background:C.red,opacity:.75,borderRadius:3}}/></div>
-                <span style={{fontSize:10,color:C.textMuted,minWidth:34,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{pct.toFixed(1).replace(".",",")}%</span>
-              </div>}
-            </div>;
-          })}
-          <div style={{display:"flex",justifyContent:"space-between",padding:"8px 4px 0",fontSize:13,fontWeight:800}}>
-            <span style={{color:C.text}}>Soma</span><span style={{color:soma<0?C.red:C.green,fontVariantNumeric:"tabular-nums"}}>{fmt(soma)}</span>
-          </div>
-          <div style={{fontSize:10,color:C.textMuted,marginTop:4}}>✓ = já executado. Porcentagem = fatia de tudo que saiu no ciclo ({fmt(brutas)}). Transferências que entram não têm barra.</div>
+      // [NOVO 18/10, pedido do Marcus] Listas de SAIDAS e de RECEITAS do ciclo, com pilulas por conta
+      // (Juntas | cada conta). As pilulas mudam SO as listas -- o quadro do ciclo (KPIs) nao muda.
+      // Fatura de cartao entra (ela e uma linha do FLUXO); compra individual do cartao nao existe no
+      // FLUXO (fica nas abas CARTAO_*), entao nao ha contagem dupla.
+      // Transferencias entre contas proprias ficam num grupo a parte, fora da base das porcentagens.
+      const contasAt=(data.contas||[]).filter(c=>c.ativa!==false);
+      const contaIdDe=(f)=>{const x=String(f||"CONTA");if(contasAt.some(c=>c.id===x))return x;const u=x.toUpperCase();const t=u==="CONTA PJ"?"PJ":u==="CONTA"?"PF":null;const c=t&&contasAt.find(k=>k.tipo===t);return c?c.id:x;};
+      const ehTransf=(r)=>String(r.tipo||r.categoria||"").toUpperCase().indexOf("TRANSFERENCIA")>=0;
+      const noFiltro=(r)=>!contaLista||contaIdDe(r.forma)===contaLista;
+      const ordena=(l,desc)=>[...l].sort(ordemSaidas==="valor"?((a,b)=>desc?b.valor-a.valor:a.valor-b.valor):((a,b)=>a.data<b.data?-1:a.data>b.data?1:0));
+      const saidasTodas=rows.filter(r=>r.tipo!=="RECEITA");
+      const receitasTodas=rows.filter(r=>r.tipo==="RECEITA");
+      if(!saidasTodas.length&&!receitasTodas.length) return null;
+      const saidasSel=saidasTodas.filter(noFiltro);
+      const gastos=ordena(saidasSel.filter(r=>!ehTransf(r)),false);
+      const transf=ordena(saidasSel.filter(ehTransf),false);
+      const recs=ordena(receitasTodas.filter(noFiltro),true);
+      const brutas=gastos.reduce((s,r)=>s+(r.valor<0?-r.valor:0),0); // base das porcentagens: so gastos que sairam (sem transferencias)
+      const somaGastos=gastos.reduce((s,r)=>s+r.valor,0);
+      const somaTransf=transf.reduce((s,r)=>s+r.valor,0);
+      const somaRecs=recs.reduce((s,r)=>s+r.valor,0);
+      const Pilulas=()=>contasAt.length>1?<div style={{display:"flex",gap:6,marginBottom:6,flexWrap:"wrap"}}>
+        {[["","Juntas"],...contasAt.map(c=>[c.id,c.nome])].map(([k,l])=><button key={k||"todas"} onClick={()=>setContaLista(k)}
+          style={{padding:"4px 12px",borderRadius:20,border:"1px solid "+(contaLista===k?C.accent:C.border),background:contaLista===k?C.accent:C.surface,color:contaLista===k?"#fff":C.textSub,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>)}
+      </div>:null;
+      const Ordem=()=><div style={{display:"flex",gap:6,marginBottom:6}}>
+        {[["data","Por data"],["valor","Maiores primeiro"]].map(([k,l])=><button key={k} onClick={()=>setOrdemSaidas(k)}
+          style={{padding:"4px 12px",borderRadius:20,border:"1px solid "+(ordemSaidas===k?C.accent:C.border),background:ordemSaidas===k?C.accentLight:C.surface,color:ordemSaidas===k?C.accent:C.textSub,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>)}
+      </div>;
+      const Linha=({r,pct})=><div style={{padding:"6px 4px",borderBottom:"1px solid "+C.borderLight,fontSize:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+          <span style={{display:"flex",gap:6,minWidth:0,flex:1}}>
+            <span style={{color:C.textMuted,flexShrink:0,fontVariantNumeric:"tabular-nums"}}>{fmtD(r.data).slice(0,5)}</span>
+            <span style={{color:r.status==="EXECUTADO"?C.text:C.textSub,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.status==="EXECUTADO"?"✓ ":""}{r.descricao}</span>
+          </span>
+          <span style={{fontWeight:700,color:r.valor<0?C.red:C.green,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{fmt(r.valor)}</span>
+        </div>
+        {pct!=null&&<div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
+          <div style={{flex:1,height:5,borderRadius:3,background:C.borderLight,overflow:"hidden"}}><div style={{width:Math.max(pct,1.5)+"%",height:"100%",background:C.red,opacity:.75,borderRadius:3}}/></div>
+          <span style={{fontSize:10,color:C.textMuted,minWidth:34,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{pct.toFixed(1).replace(".",",")}%</span>
+        </div>}
+      </div>;
+      const Soma=({rotulo,v,forte})=><div style={{display:"flex",justifyContent:"space-between",padding:"6px 4px 0",fontSize:forte?13:12,fontWeight:forte?800:600}}>
+        <span style={{color:forte?C.text:C.textSub}}>{rotulo}</span><span style={{color:v<0?C.red:C.green,fontVariantNumeric:"tabular-nums"}}>{fmt(v)}</span>
+      </div>;
+      const Botao=({aberto,onClick,texto})=><button onClick={onClick} style={{width:"100%",minHeight:44,padding:"10px 14px",borderRadius:12,border:"1px solid "+C.border,background:C.surface,color:C.accent,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span>{aberto?"Ocultar":"Ver"} {texto}</span><span>{aberto?"▲":"▼"}</span>
+      </button>;
+      return <div style={{borderTop:"1px solid "+C.border,paddingTop:10,marginBottom:10,display:"flex",flexDirection:"column",gap:8}}>
+        {saidasTodas.length>0&&<div>
+          <Botao aberto={verSaidas} onClick={()=>setVerSaidas(v=>!v)} texto={"as "+saidasSel.length+" saídas deste ciclo"}/>
+          {verSaidas&&<div style={{marginTop:8}}>
+            <Pilulas/><Ordem/>
+            {gastos.map((r,i)=><Linha key={r.row||i} r={r} pct={r.valor<0&&brutas>0?(-r.valor)/brutas*100:null}/>)}
+            {gastos.length===0&&<div style={{fontSize:11,color:C.textMuted,padding:"6px 4px"}}>Nenhum gasto nesta conta neste ciclo.</div>}
+            {transf.length>0&&<div style={{marginTop:10}}>
+              <div style={{fontSize:10,color:C.textMuted,textTransform:"uppercase",letterSpacing:".06em",padding:"0 4px 2px"}}>Transferências entre contas (fora das porcentagens)</div>
+              {transf.map((r,i)=><Linha key={r.row||("t"+i)} r={r} pct={null}/>)}
+            </div>}
+            <div style={{marginTop:6}}>
+              {transf.length>0&&<Soma rotulo="Gastos" v={somaGastos}/>}
+              {transf.length>0&&<Soma rotulo="Transferências (líquido)" v={somaTransf}/>}
+              <Soma rotulo="Soma" v={somaGastos+somaTransf} forte/>
+            </div>
+            <div style={{fontSize:10,color:C.textMuted,marginTop:4}}>✓ = já executado. Porcentagem = fatia dos gastos do ciclo ({fmt(brutas)}), sem as transferências entre contas. Fatura do cartão entra; compra individual do cartão não (já está na fatura).{contaLista?"":" Em \"Juntas\" a Soma é igual ao quadro \"Saídas\"."}</div>
+          </div>}
+        </div>}
+        {receitasTodas.length>0&&<div>
+          <Botao aberto={verReceitas} onClick={()=>setVerReceitas(v=>!v)} texto={"as "+recs.length+" receitas deste ciclo"}/>
+          {verReceitas&&<div style={{marginTop:8}}>
+            <Pilulas/><Ordem/>
+            {recs.map((r,i)=><Linha key={r.row||i} r={r} pct={null}/>)}
+            {recs.length===0&&<div style={{fontSize:11,color:C.textMuted,padding:"6px 4px"}}>Nenhuma receita nesta conta neste ciclo.</div>}
+            <Soma rotulo="Soma" v={somaRecs} forte/>
+            <div style={{fontSize:10,color:C.textMuted,marginTop:4}}>✓ = já recebido. Só receitas de verdade; recebimento de lucros é transferência e fica na lista de saídas.{contaLista?"":" Em \"Juntas\" a Soma é igual ao quadro \"Receitas\"."}</div>
+          </div>}
         </div>}
       </div>;
     })()}
@@ -9427,7 +9469,7 @@ function Conversar({data,onUpdate,initTxt,onInitDone,msgs,setMsgs}){
 
 
 // ── RECORRÊNCIAS ──────────────────────────────────────────────────────────────
-function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCartao,neg,setNeg,val,setVal,dia,setDia,diaTipoEdit,setDiaTipoEdit,diaNEdit,setDiaNEdit,tolerancia,setTolerancia,alias,setAlias,envelopePadrao,setEnvelopePadrao,destinoEdit,setDestinoEdit,regerar,load,salvar,apagar,data,formaEdit,setFormaEdit,intervaloSemanasEdit,setIntervaloSemanasEdit,dataAncoraSemanaEdit,setDataAncoraSemanaEdit,nomeEdit,setNomeEdit}){
+function SecaoRecorrencias({titulo,totalEquiv,resumo,pctTotal,itemExtra,modoNovo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCartao,neg,setNeg,val,setVal,dia,setDia,diaTipoEdit,setDiaTipoEdit,diaNEdit,setDiaNEdit,tolerancia,setTolerancia,alias,setAlias,envelopePadrao,setEnvelopePadrao,destinoEdit,setDestinoEdit,regerar,load,salvar,apagar,data,formaEdit,setFormaEdit,intervaloSemanasEdit,setIntervaloSemanasEdit,dataAncoraSemanaEdit,setDataAncoraSemanaEdit,nomeEdit,setNomeEdit}){
   // [CORRIGIDO 11/08] Faltava esta linha -- SecaoRecorrencias usava
   // contasAtivasRecEdit (pra montar o seletor de conta no painel de edicao)
   // sem nunca declarar nem receber como prop. So disparava quando havia
@@ -9467,15 +9509,26 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
   // foco e, no celular, fechando o teclado. Com a funcao aqui fora (mesma
   // identidade sempre), React so atualiza o DOM, nunca remonta.
   if(!lista.length) return null;
+  // [NOVO 19/10, visual novo] valores de saida em marinho (saida normal nao e alerta), entrada em verde;
+  // titulo marinho; fundo da linha aberta = C.bg; rotulos do painel em cinza.
+  bg=C.bg;
+  const corT=(cor===C.red||cor===C.purple||cor===C.accent)?C.dark:cor;
+  const corL=C.textMuted;
+  cor=C.accent;
   return <div style={{marginBottom:8,borderTop:"2px solid "+C.border,paddingTop:6}}>
-    <div style={{padding:"8px 16px 4px",display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-      <span style={{fontSize:11,fontWeight:800,color:cor,textTransform:"uppercase",letterSpacing:".1em"}}>{titulo}</span>
-      <span style={{fontSize:11,color:C.textMuted}}>{lista.length} itens · {fmt(lista.reduce((s,r)=>s+r.valor,0))}/ciclo</span>
+    <div style={{padding:"8px 16px 4px",display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
+      <span style={{fontSize:11,fontWeight:800,color:corT,textTransform:"uppercase",letterSpacing:".1em"}}>{titulo}</span>
+      <span style={{fontSize:11,color:C.textMuted,textAlign:"right"}}>{resumo!=null?resumo:(lista.length+" itens · "+(totalEquiv!=null?fmt(totalEquiv)+"/mês":fmt(lista.reduce((s,r)=>s+r.valor,0))+"/ciclo"))}</span>
     </div>
+    {pctTotal!=null&&<div style={{padding:"0 16px 8px",display:"flex",alignItems:"center",gap:10}}>
+      <div style={{flex:1,height:10,borderRadius:5,background:C.borderLight,overflow:"hidden"}}><div style={{width:Math.max(pctTotal,1.5)+"%",height:"100%",background:C.accent,borderRadius:5}}/></div>
+      <span style={{fontSize:11,fontWeight:700,color:C.textSub,minWidth:78,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{pctTotal.toFixed(0)}% do total</span>
+    </div>}
     {lista.map(item=>{const isOpen=edit===item.idx;return <div key={item.idx}>
-      <div onClick={()=>isOpen?setEdit(null):abrir(item)}
-        style={{display:"flex",alignItems:"center",gap:10,padding:"13px 16px",
-          borderBottom:"1px solid "+C.borderLight,background:isOpen?bg:C.surface,cursor:"pointer"}}>
+      {(()=>{const ex=itemExtra?itemExtra(item):{};return <div onClick={()=>isOpen?setEdit(null):abrir(item)}
+        style={{padding:"10px 16px",minHeight:56,boxSizing:"border-box",
+          borderBottom:"1px solid "+C.borderLight,background:isOpen?bg:C.surface,cursor:"pointer",opacity:ex.fade&&!isOpen?.72:1}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:14,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginBottom:4}}>
             {item.desc}{String(item.ativo).toUpperCase()==="N"&&<span style={{marginLeft:6,fontSize:10,fontWeight:700,color:C.red,background:C.redLight,borderRadius:4,padding:"1px 5px"}}>DESATIVADA</span>}
@@ -9484,32 +9537,37 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
             <span style={{fontSize:11,background:C.borderLight,borderRadius:5,padding:"2px 7px",color:C.textSub,fontWeight:600}}>{fmtDia(item.diaVenc,ehCartao(item))}</span>
             {item.parcTotal>0&&<span style={{fontSize:11,color:C.textMuted}}>{item.parcAtual}/{item.parcTotal} parcelas</span>}
             <span style={{fontSize:10,color:C.textMuted}}>{nomeDestinoRecorrencia(item,data)}</span>
-            {item.tolerancia!=null&&item.tolerancia!==""&&<span style={{fontSize:10,background:"#FEF3E2",color:"#B45309",borderRadius:5,padding:"2px 6px",fontWeight:600}}>
+            {item.tolerancia!=null&&item.tolerancia!==""&&<span style={{fontSize:10,background:C.borderLight,color:C.textSub,borderRadius:5,padding:"2px 6px",fontWeight:600}}>
               {Number(item.tolerancia)===0?"não posterga":"posterga até "+item.tolerancia+"d"}
             </span>}
-            {item.alias&&<span style={{fontSize:10,background:C.blueLight,color:C.blue,borderRadius:5,padding:"2px 6px",fontWeight:600}}>
+            {item.alias&&<span style={{fontSize:10,background:C.borderLight,color:C.textSub,borderRadius:5,padding:"2px 6px",fontWeight:600}}>
               🏷 apelido no banco
             </span>}
-            {(()=>{const p=periodicidadeInfo(item.obs);return p&&<span style={{fontSize:10,background:C.purpleLight,color:C.purple,borderRadius:5,padding:"2px 6px",fontWeight:600}}>
+            {(()=>{const p=periodicidadeInfo(item.obs);return p&&<span style={{fontSize:10,background:C.borderLight,color:C.textSub,borderRadius:5,padding:"2px 6px",fontWeight:600}}>
               📅 {p.label} ({p.meses})
             </span>;})()}
+            {ex.envNome&&<span style={{fontSize:10,background:C.accentLight,color:C.accent,borderRadius:5,padding:"2px 6px",fontWeight:700}}>{ex.envNome}</span>}
           </div>
         </div>
         <div style={{textAlign:"right",flexShrink:0,marginRight:6}}>
-          <div style={{fontSize:16,fontWeight:800,color:cor,fontVariantNumeric:"tabular-nums"}}>{fmt(item.valor)}</div>
-          <div style={{fontSize:10,color:C.textMuted,marginTop:2}}>{item.tipo}</div>
+          <div style={{fontSize:16,fontWeight:800,color:item.valor<0?C.dark:C.green,fontVariantNumeric:"tabular-nums"}}>{fmt(item.valor)}</div>
+          {modoNovo
+            ?(ex.eq!=null&&Math.abs(Math.abs(ex.eq)-Math.abs(item.valor))>0.5&&<div style={{fontSize:10,color:C.textMuted,marginTop:2}}>≈ {fmt(ex.eq)}/mês</div>)
+            :<div style={{fontSize:10,color:C.textMuted,marginTop:2}}>{item.tipo}</div>}
         </div>
         <span style={{fontSize:11,color:C.textMuted}}>{isOpen?"▲":"▼"}</span>
-      </div>
+        </div>
+        {ex.pct!=null&&<div style={{height:5,borderRadius:3,background:C.borderLight,overflow:"hidden",marginTop:8}}><div style={{width:Math.max(ex.pct,1.5)+"%",height:"100%",background:C.accent,opacity:.85,borderRadius:3}}/></div>}
+      </div>;})()}
       {isOpen&&<div style={{background:bg,padding:"12px 16px",borderBottom:"1px solid "+C.border}}>
         <div style={{marginBottom:10}}>
-          <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Nome</div>
+          <div style={{fontSize:10,color:corL,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Nome</div>
           <input type="text" value={nomeEdit} onChange={e=>setNomeEdit(e.target.value)}
             style={{width:"100%",boxSizing:"border-box",padding:"10px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",background:"#fff"}}/>
           <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Muda o nome nos lançamentos futuros também. O que já foi executado/pago mantém o nome antigo.</div>
         </div>
         <div style={{marginBottom:10}}>
-          <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Destino</div>
+          <div style={{fontSize:10,color:corL,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Destino</div>
           {/* [NOVO 03/09, pedido do Marcus] Era select "Conta/Cartão PF/Cartão
               PJ" +, só quando "Conta" selecionado, um SEGUNDO seletor de
               pílulas pra escolher qual conta -- 2 seletores empilhados pra
@@ -9540,7 +9598,7 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
         </div>
         <div style={{display:"flex",gap:10,marginBottom:10}}>
           <div style={{flex:1}}>
-            <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Valor</div>
+            <div style={{fontSize:10,color:corL,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Valor</div>
             <div style={{display:"flex",gap:4}}>
               <button type="button" onClick={()=>setNeg(n=>!n)}
                 style={{width:28,flexShrink:0,borderRadius:8,border:"1px solid "+C.border,
@@ -9552,7 +9610,7 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
             </div>
           </div>
           <div style={{flex:1}}>
-            <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Vencimento</div>
+            <div style={{fontSize:10,color:corL,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Vencimento</div>
             {!ehCartao(item)&&itemEhSemanal(item)?<>
               <select value={dia} onChange={e=>setDia(e.target.value)}
                 style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,
@@ -9564,7 +9622,7 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
               {/* [NOVO 08/09, "a cada X semanas"] Só aparece pra recorrência
                   semanal de conta -- cartão nunca tem recorrência semanal. */}
               <div style={{marginTop:8}}>
-                <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>A cada quantas semanas</div>
+                <div style={{fontSize:10,color:corL,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>A cada quantas semanas</div>
                 <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
                   <input type="number" min="1" value={intervaloSemanasEdit} onChange={e=>setIntervaloSemanasEdit(e.target.value)}
                     style={{width:70,padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,textAlign:"center",fontFamily:"inherit"}}/>
@@ -9600,20 +9658,20 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
           <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Pra mudar a periodicidade, apague esta recorrência e crie uma nova com o mês de referência certo.</div>
         </div>;})()}
         <div style={{marginBottom:10}}>
-          <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Dias de tolerância (atraso sem virar problema)</div>
+          <div style={{fontSize:10,color:corL,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Dias de tolerância (atraso sem virar problema)</div>
           <input type="text" inputMode="numeric" value={tolerancia} onChange={e=>setTolerancia(e.target.value.replace(/\D/g,""))}
             placeholder="ex: 30 (0 = não pode atrasar)"
             style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",boxSizing:"border-box"}}/>
         </div>
         <div style={{marginBottom:10}}>
-          <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Termos alternativos (como o banco/extrato pode chamar esse gasto)</div>
+          <div style={{fontSize:10,color:corL,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Termos alternativos (como o banco/extrato pode chamar esse gasto)</div>
           <input value={alias} onChange={e=>setAlias(e.target.value.toUpperCase())}
             placeholder="ex: ZELT; IMOBILIARIA"
             style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
           <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Separe vários termos com ";". Ajuda a Conciliação (de Fatura ou de Extrato) a reconhecer o mesmo gasto mesmo quando o banco usa um nome diferente. Não muda o nome exibido no app.</div>
         </div>
         {data&&<div style={{marginBottom:10}}>
-          <div style={{fontSize:10,color:cor,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Envelope padrão (opcional)</div>
+          <div style={{fontSize:10,color:corL,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Envelope padrão (opcional)</div>
           <select value={envelopePadrao} onChange={e=>setEnvelopePadrao(e.target.value)}
             style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",background:C.surface,boxSizing:"border-box"}}>
             <option value="">Nenhum</option>
@@ -9623,7 +9681,7 @@ function SecaoRecorrencias({titulo,lista,cor,bg,edit,setEdit,abrir,fmtDia,ehCart
         </div>}
         <div style={{display:"flex",gap:8}}>
           <button onClick={()=>salvar(item)} disabled={load}
-            style={{flex:1,background:cor,color:"#fff",borderRadius:8,padding:"8px",fontSize:13,fontWeight:700,border:"none",cursor:"pointer"}}>
+            style={{flex:1,background:C.accent,color:"#fff",borderRadius:8,padding:"8px",fontSize:13,fontWeight:700,border:"none",cursor:"pointer"}}>
             {load?"…":"Salvar"}
           </button>
           <button onClick={()=>setEdit(null)}
@@ -9683,6 +9741,7 @@ function Recorrencias({data,onUpdate}){
   const [showForm,setShowForm]=useState(false);
   const [loadTolerancia,setLoadTolerancia]=useState(false);
   const [verTodas,setVerTodas]=useState(false);
+  const [visao,setVisao]=useState("envelope"); // [NOVO 18/10] "tipo" (como sempre foi) | "envelope" (agrupado por envelope, soma dos itens fixos)
   // [NOVO 03/10, pedido do Marcus] Recorrência desativada some da lista --
   // sem acesso de volta a ela, não tem como abrir o "Apagar esta
   // recorrência" e escolher limpar os lançamentos futuros que já tinham
@@ -9744,7 +9803,7 @@ function Recorrencias({data,onUpdate}){
   };
   const ehCartao=r=>{
     const d=String(r.destino||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
-    return d==="CARTAOPF"||d==="CARTAOPJ";
+    return d.indexOf("CARTAO")===0; // [18/10] antes so reconhecia "CARTAO PF"/"CARTAO PJ" literal; cartao com ID novo (CARTAO_INT.CC.NU-MC.MCB) caia em "por conta"
   };
   // [11/08, CORRIGIDO -- bug real do Marcus] Mesmo motor unico do backend
   // (_ehSemanalRecorrencia) -- obs.freq e' a fonte de verdade agora, o
@@ -10056,6 +10115,49 @@ function Recorrencias({data,onUpdate}){
   }
 
   const totalRecorr=(data.recorr||[]).length;
+  // [NOVO 18/10, pedido do Marcus] Visao "Por envelope" na aba Despesas Fixas: usa o envelope que ja existe
+  // (ENVELOPE_PADRAO da recorrencia), sem campo novo. Aqui e' a SOMA DOS ITENS FIXOS (previsto); o realizado
+  // mes a mes continua na aba de Envelopes. Total em equivalente mensal: semanal x 52/12 (/ a cada N semanas),
+  // trimestral /3, semestral /6, anual /12.
+  const mensalEquiv=r=>{
+    const base=Math.abs(r.valor);
+    let f=1;
+    if(ehSemanal(r)&&!ehCartao(r)) f=(52/12)/Math.max(1,r.intervaloSemanas||1);
+    else{const p=periodicidadeInfo(r.obs); if(p) f=p.meses.split(", ").length/12;}
+    return -base*f;
+  };
+  const somaEquiv=l=>l.reduce((t,r)=>t+mensalEquiv(r),0);
+  const envCadastro=parseEnvelopesCustom(data);
+  const gruposEnv=[...envCadastro.map(e=>({id:e.id,nome:e.nome||"(sem nome)",lista:[]})),{id:"",nome:"Sem envelope",lista:[],semEnv:true}];
+  debitosTodos.forEach(r=>{const g=gruposEnv.find(x=>!x.semEnv&&x.id===r.envelopePadrao)||gruposEnv[gruposEnv.length-1];g.lista.push(r);});
+  gruposEnv.forEach(g=>{g.lista.sort(sortDia);g.total=somaEquiv(g.lista);});
+  const gruposEnvComItens=gruposEnv.filter(g=>g.lista.length);
+  const totalGeralEnv=somaEquiv(debitosTodos);
+  const propsBase={edit,setEdit,abrir,fmtDia,ehCartao,neg,setNeg,val,setVal,dia,setDia,diaTipoEdit,setDiaTipoEdit,diaNEdit,setDiaNEdit,tolerancia,setTolerancia,alias,setAlias,envelopePadrao,setEnvelopePadrao,destinoEdit,setDestinoEdit,regerar,load,salvar,nomeEdit,setNomeEdit,apagar,data,formaEdit,setFormaEdit,intervaloSemanasEdit,setIntervaloSemanasEdit,dataAncoraSemanaEdit,setDataAncoraSemanaEdit};
+  const nomeEnvDe=r=>{const e=envCadastro.find(x=>x.id===r.envelopePadrao);return e?(e.nome||"(sem nome)"):null;};
+  const ehPeriodico=r=>!!periodicidadeInfo(r.obs)||(ehSemanal(r)&&!ehCartao(r)&&(r.intervaloSemanas||1)>1);
+  // Por vencimento: "Toda semana" primeiro, depois Dia 1..31, depois dia util / ultimo util. Soma so mensais e semanais (todo semana).
+  const vencGrupos=[];
+  (()=>{
+    const mapa={};
+    const chave=r=>{
+      if(ehSemanal(r)&&!ehCartao(r)) return {k:"0",t:"Toda semana",o:0};
+      if(r.diaTipo==="ULTIMO_UTIL") return {k:"u99",t:"Último dia útil",o:300};
+      if(r.diaTipo==="N_UTIL") return {k:"u"+r.diaN,t:r.diaN+"º dia útil",o:200+r.diaN};
+      const n=parseInt(r.diaVenc)||0;
+      return n>0?{k:"d"+n,t:"Dia "+n,o:n}:{k:"x",t:"Sem dia",o:999};
+    };
+    debitosTodos.forEach(r=>{const c=chave(r);if(!mapa[c.k]){mapa[c.k]={...c,lista:[]};vencGrupos.push(mapa[c.k]);}mapa[c.k].lista.push(r);});
+    vencGrupos.sort((a,b)=>a.o-b.o);
+    vencGrupos.forEach(g=>{
+      g.lista.sort((a,b)=>String(a.desc).localeCompare(String(b.desc)));
+      const somaveis=g.lista.filter(r=>!ehPeriodico(r));
+      g.soma=somaveis.reduce((t,r)=>t-Math.abs(r.valor),0);
+      g.fora=g.lista.length-somaveis.length;
+    });
+  })();
+  const semEnvQtd=debitosTodos.filter(r=>!nomeEnvDe(r)).length;
+
   return <div style={{paddingBottom:16}}>
     {dlg&&(()=>{
       const ehSalvar=dlg.acao==="salvar";
@@ -10127,16 +10229,16 @@ function Recorrencias({data,onUpdate}){
         onSalvo={async()=>{setShowForm(false);const d=await api({action:"getData"});if(d)onUpdate(d);}}
         onClose={()=>setShowForm(false)}/>
     </div>}
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,padding:"8px 16px"}}>
-      <div style={{background:C.redLight,borderRadius:12,padding:"10px 12px"}}>
+    {visao==="freq"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,padding:"8px 16px"}}>
+      <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:16,padding:"10px 12px"}}>
         <div style={{fontSize:10,color:C.textMuted,textTransform:"uppercase",letterSpacing:".05em"}}>Total gastos fixos</div>
-        <div style={{fontSize:16,fontWeight:800,color:C.red,marginTop:2}}>{fmt(-debitosTodos.reduce((s,r)=>s+Math.abs(r.valor),0))}</div>
+        <div style={{fontSize:16,fontWeight:800,color:C.dark,marginTop:2}}>{fmt(-debitosTodos.reduce((s,r)=>s+Math.abs(r.valor),0))}</div>
       </div>
-      <div style={{background:C.blueLight,borderRadius:12,padding:"10px 12px"}}>
+      <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:16,padding:"10px 12px"}}>
         <div style={{fontSize:10,color:C.textMuted,textTransform:"uppercase",letterSpacing:".05em"}}>Total receitas fixas</div>
-        <div style={{fontSize:16,fontWeight:800,color:C.blue,marginTop:2}}>{fmt(receitas.reduce((s,r)=>s+r.valor,0))}</div>
+        <div style={{fontSize:16,fontWeight:800,color:C.green,marginTop:2}}>{fmt(receitas.reduce((s,r)=>s+r.valor,0))}</div>
       </div>
-    </div>
+    </div>}
     <div style={{padding:"0 16px 8px"}}>
       <div style={{display:"flex",gap:8}}>
         <button onClick={preencherTolerancia} disabled={loadTolerancia}
@@ -10170,6 +10272,25 @@ function Recorrencias({data,onUpdate}){
       Aba RECORRENCIAS nao encontrada. Atualize o script e toque Script.
       Abas: {(data.sheets||[]).join(", ")||"—"}
     </div>}
+    <div style={{display:"flex",gap:6,padding:"8px 16px 4px"}}>
+      {[["envelope","Por envelope"],["venc","Por vencimento"],["freq","Por frequência"]].map(([k,l])=><button key={k} onClick={()=>setVisao(k)}
+        style={{padding:"6px 14px",borderRadius:20,border:"1px solid "+(visao===k?C.accent:C.border),background:visao===k?C.accent:C.surface,color:visao===k?"#fff":C.textSub,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>)}
+    </div>
+    {(visao==="envelope"||visao==="venc")&&debitosTodos.length>0&&<div style={{margin:"6px 16px 10px",padding:"16px 18px",background:C.dark,borderRadius:20,color:"#fff"}}>
+      <div style={{fontSize:10,fontWeight:800,letterSpacing:".1em",opacity:.7}}>DESPESAS FIXAS POR MÊS</div>
+      <div style={{fontSize:30,fontWeight:800,marginTop:4,fontVariantNumeric:"tabular-nums"}}>{fmt(totalGeralEnv)}</div>
+      <div style={{fontSize:12,opacity:.75,marginTop:2}}>{debitosTodos.length} itens · {gruposEnvComItens.filter(g=>!g.semEnv).length} {gruposEnvComItens.filter(g=>!g.semEnv).length===1?"envelope":"envelopes"}{semEnvQtd>0?" · "+semEnvQtd+" sem envelope":""}</div>
+      <div style={{fontSize:10,opacity:.55,marginTop:8}}>Soma dos itens fixos (previsto), em equivalente mensal: semanais ×4,33, trimestrais ÷3, semestrais ÷6, anuais ÷12. O realizado mês a mês fica na aba Envelopes.</div>
+    </div>}
+    {visao==="envelope"&&gruposEnvComItens.map(g=><SecaoRecorrencias key={g.id||"sem"} {...propsBase} modoNovo titulo={g.nome} totalEquiv={g.total}
+      resumo={g.lista.length+(g.lista.length===1?" item · ":" itens · ")+fmt(g.total)+"/mês"} pctTotal={totalGeralEnv?g.total/totalGeralEnv*100:0}
+      itemExtra={r=>({pct:g.total?mensalEquiv(r)/g.total*100:0,eq:mensalEquiv(r)})}
+      lista={g.lista} cor={C.dark} bg={C.bg}/>)}
+    {visao==="venc"&&vencGrupos.map(g=><SecaoRecorrencias key={g.k||"v"} {...propsBase} modoNovo titulo={g.t} totalEquiv={null}
+      resumo={g.lista.length+(g.lista.length===1?" item · ":" itens · ")+fmt(g.soma)+(g.k==="0"?"/semana":"")+(g.fora>0?" (+"+g.fora+" fora da soma)":"")}
+      itemExtra={r=>({eq:mensalEquiv(r),envNome:nomeEnvDe(r),fade:ehPeriodico(r)})}
+      lista={g.lista} cor={C.dark} bg={C.bg}/>)}
+    {visao==="freq"&&<>
     <SecaoRecorrencias titulo="Recorrentes semanais" lista={debitosSemanais} cor={C.red} bg={C.redLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
@@ -10217,6 +10338,7 @@ function Recorrencias({data,onUpdate}){
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
       tolerancia={tolerancia} setTolerancia={setTolerancia} alias={alias} setAlias={setAlias} envelopePadrao={envelopePadrao} setEnvelopePadrao={setEnvelopePadrao} destinoEdit={destinoEdit} setDestinoEdit={setDestinoEdit} regerar={regerar}
       load={load} salvar={salvar} nomeEdit={nomeEdit} setNomeEdit={setNomeEdit} apagar={apagar} data={data} formaEdit={formaEdit} setFormaEdit={setFormaEdit}/>
+    </>}
     <SecaoRecorrencias titulo="Receitas recorrentes" lista={receitas} cor={C.blue} bg={C.blueLight}
       edit={edit} setEdit={setEdit} abrir={abrir} fmtDia={fmtDia} ehCartao={ehCartao}
       neg={neg} setNeg={setNeg} val={val} setVal={setVal} dia={dia} setDia={setDia} diaTipoEdit={diaTipoEdit} setDiaTipoEdit={setDiaTipoEdit} diaNEdit={diaNEdit} setDiaNEdit={setDiaNEdit}
@@ -13222,7 +13344,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261017.2000 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261019.0200 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13336,7 +13458,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261017.2000
+      // HTML v3.20261019.0200
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
