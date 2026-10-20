@@ -6946,9 +6946,17 @@ function DevolucaoEmprestimo({parId,data,onUpdate,iniciarForm,onFechar}){
     const v=numBR(val);
     if(!v||v<=0){ alert("Valor inválido."); return; }
     if(!dt){ alert("Informe a data."); return; }
-    if(modo==="editar") return enviar({action:"editarDevolucaoEmprestimo",devolParId:editId,data:dt,valor:v});
-    if(modo==="parcelar"){ if(nParN<2){ alert("Informe 2 ou mais parcelas."); return; } return enviar({action:"agendarDevolucaoEmprestimo",parcelas:prevParc}); }
-    return enviar({action:"agendarDevolucaoEmprestimo",data:dt,valor:v});
+    // [NOVO 20/10, pedido do Marcus] Devolver mais que o emprestado (juros): pergunta antes e manda comJuros.
+    const outrosJa=modo==="editar"?(info.pago+info.agendado-((info.devs.find(d=>d.id===editId)||{}).valor||0)):(info.pago+info.agendado);
+    const excede=Math.round((outrosJa+v-info.valor)*100)/100;
+    let comJuros=false;
+    if(excede>0.005){
+      if(!confirm("Esta devolução passa do valor emprestado ("+fmt(info.valor)+") em "+fmt(excede)+".\n\nÉ juros? Se sim, toque em OK. Se foi erro de digitação, toque em Cancelar e corrija o valor.")) return;
+      comJuros=true;
+    }
+    if(modo==="editar") return enviar({action:"editarDevolucaoEmprestimo",devolParId:editId,data:dt,valor:v,comJuros});
+    if(modo==="parcelar"){ if(nParN<2){ alert("Informe 2 ou mais parcelas."); return; } return enviar({action:"agendarDevolucaoEmprestimo",parcelas:prevParc,comJuros}); }
+    return enviar({action:"agendarDevolucaoEmprestimo",data:dt,valor:v,comJuros});
   }
   async function remover(d){
     if(!confirm("Remover a devolução de "+fmtD(d.data)+" ("+fmt(d.valor)+")? O empréstimo continua registrado.")) return;
@@ -6964,7 +6972,7 @@ function DevolucaoEmprestimo({parId,data,onUpdate,iniciarForm,onFechar}){
     <div style={{fontSize:11,color:C.textSub,marginTop:4}}>
       {info.pago>0&&<span style={{color:C.green,fontWeight:700}}>Devolvido {fmt(info.pago)} · </span>}
       {info.agendado>0&&<span>Agendado {fmt(info.agendado)} · </span>}
-      <span style={{fontWeight:700,color:info.restante>0.005?"#B45309":C.green}}>{info.restante>0.005?"Falta agendar "+fmt(info.restante):"Tudo coberto"}</span>
+      <span style={{fontWeight:700,color:info.restante>0.005?"#B45309":C.green}}>{info.restante>0.005?"Falta agendar "+fmt(info.restante):(info.restante<-0.005?"Tudo coberto · inclui "+fmt(-info.restante)+" de juros":"Tudo coberto")}</span>
     </div>
     {info.devs.map(d=><div key={d.id} style={{display:"flex",alignItems:"center",gap:8,marginTop:6,padding:"6px 0",borderTop:"1px solid #E4DFF7"}}>
       <div style={{flex:1,fontSize:13,fontWeight:700,color:d.executada?C.green:C.text}}>{d.executada?"✓ ":""}{fmtD(d.data)} · {fmt(d.valor)}{d.executada?" · devolvido":""}</div>
@@ -6973,9 +6981,11 @@ function DevolucaoEmprestimo({parId,data,onUpdate,iniciarForm,onFechar}){
         <button onClick={()=>remover(d)} disabled={load} style={btn(C.red)}>✕</button>
       </>}
     </div>)}
-    {!modo&&info.restante>0.005&&<div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
-      <button onClick={()=>abrir("uma")} style={btn(C.purple,C.purple)}>{info.devs.length?"+ Outra devolução":"Agendar devolução"}</button>
-      <button onClick={()=>abrir("parcelar")} style={btn(C.purple)}>Parcelar</button>
+    {!modo&&<div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
+      {info.restante>0.005
+        ?<button onClick={()=>abrir("uma")} style={btn(C.purple,C.purple)}>{info.devs.length?"+ Outra devolução":"Agendar devolução"}</button>
+        :<button onClick={()=>abrir("uma")} style={btn(C.purple)}>+ Devolução extra (juros)</button>}
+      {info.restante>0.005&&<button onClick={()=>abrir("parcelar")} style={btn(C.purple)}>Parcelar</button>}
     </div>}
     {modo&&<div style={{marginTop:8}}>
       <div style={{fontSize:10,fontWeight:800,color:C.purple,marginBottom:6}}>{modo==="editar"?"EDITAR DEVOLUÇÃO":(modo==="parcelar"?"PARCELAR A DEVOLUÇÃO (1 por mês)":"NOVA DEVOLUÇÃO")}</div>
@@ -13348,7 +13358,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261020.0500 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261020.0600 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13462,7 +13472,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261020.0500
+      // HTML v3.20261020.0600
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();

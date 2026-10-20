@@ -1,4 +1,4 @@
-// VERSAO: v3.20261020.0030
+// VERSAO: v3.20261020.0600
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -406,7 +406,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261020.0030",
+    scriptVersion: "v3.20261020.0600",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -4045,7 +4045,14 @@ function agendarDevolucaoEmprestimo(ss, p) {
     somaNova += Math.abs(Number(it.valor));
   });
   if (jaSomado + somaNova > valorEmp + 0.005) {
-    throw new Error("As devolucoes passam do valor emprestado (" + valorEmp.toFixed(2) + "). Ja ha " + jaSomado.toFixed(2) + " agendado/devolvido.");
+    // [NOVO 20/10, pedido do Marcus] Devolver MAIS que o emprestado (juros) e permitido, mas so com
+    // confirmacao explicita do app (p.comJuros) -- protege de erro de digitacao. Teto de seguranca: 2x.
+    if (!p.comJuros) {
+      throw new Error("As devolucoes passam do valor emprestado (" + valorEmp.toFixed(2) + "). Ja ha " + jaSomado.toFixed(2) + " agendado/devolvido. Se a diferenca for juros, confirme no app.");
+    }
+    if (jaSomado + somaNova > valorEmp * 2 + 0.005) {
+      throw new Error("As devolucoes passam de 2x o valor emprestado (" + valorEmp.toFixed(2) + ") -- confira o valor.");
+    }
   }
 
   var contaDevedora = String(ladoEntrou.vals[5] || "").toUpperCase().trim();
@@ -4110,7 +4117,11 @@ function editarDevolucaoEmprestimo(ss, p) {
       var l = _linhasPorParId(ss, id);
       if (l.length) outras += Math.abs(Number(l[0].vals[2]) || 0);
     });
-    if (outras + valor > valorEmp + 0.005) throw new Error("As devolucoes passariam do valor emprestado (" + valorEmp.toFixed(2) + ").");
+    if (outras + valor > valorEmp + 0.005) {
+      // [NOVO 20/10] Mesma regra do agendar: so passa do emprestado (juros) com confirmacao do app.
+      if (!p.comJuros) throw new Error("As devolucoes passariam do valor emprestado (" + valorEmp.toFixed(2) + "). Se a diferenca for juros, confirme no app.");
+      if (outras + valor > valorEmp * 2 + 0.005) throw new Error("As devolucoes passariam de 2x o valor emprestado (" + valorEmp.toFixed(2) + ") -- confira o valor.");
+    }
     var d = parseDateBRT(p.data);
     var ciclo = calcCiclo(d);
     dev.forEach(function(l) {
