@@ -1343,7 +1343,9 @@ function _tmOn(){ try{ return localStorage.getItem("tesouraria_tempos")!=="0"; }
 function _tmBox(){
   if(_TM.el) return _TM.el;
   const d=document.createElement("div");
-  d.style.cssText="position:fixed;top:0;left:0;right:0;z-index:99999;pointer-events:none;background:rgba(15,27,61,.9);color:#fff;font:600 10px/1.3 monospace;padding:2px 6px;white-space:pre-wrap;display:none";
+  d.style.cssText="position:fixed;top:0;left:0;right:0;z-index:99999;pointer-events:none;background:rgba(15,27,61,.9);color:#fff;font:600 10px/1.3 monospace;padding:2px 6px;white-space:pre-wrap;display:none;min-height:39px;box-sizing:border-box";
+  // [19/10] A faixa empurra a pagina para baixo (reserva 3 linhas) em vez de cobrir a versao do HTML/script no topo.
+  document.body.style.paddingTop="39px";
   document.body.appendChild(d); _TM.el=d; return d;
 }
 function _tmStart(payload){
@@ -1363,7 +1365,7 @@ function _tmEnd(j,ok){
   const linha1=(ok?"\u2714 ":"\u2716 ")+_TM.acao+"  total "+total.toFixed(1)+"s";
   const mostra=(tela)=>{
     const p=[];
-    if(t){ p.push("acao "+(t.acaoMs/1000).toFixed(1)); p.push("codigo "+(t.codigoMs/1000).toFixed(1)+(t.cacheHit?"(cache)":"(Drive)")); p.push("eval "+(t.evalMs/1000).toFixed(1)); }
+    if(t){ p.push("acao "+(t.acaoMs/1000).toFixed(1)); p.push("codigo "+(t.codigoMs/1000).toFixed(1)+"("+(t.origem||(t.cacheHit?"cache":"Drive"))+")"); p.push("eval "+(t.evalMs/1000).toFixed(1)); }
     if(g){ if(g.preMs!=null) p.push("edicao "+(g.preMs/1000).toFixed(1)); p.push("recarga "+((g.ajusteMs+g.leituraMs)/1000).toFixed(1)); }
     if(srv!=null) p.push("rede/Google ~"+Math.max(0,total-srv-(tela||0)).toFixed(1));
     else p.push("(sem tempos do servidor)");
@@ -13344,7 +13346,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261019.0200 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261020.0010 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13458,7 +13460,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261019.0200
+      // HTML v3.20261020.0010
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
