@@ -2735,6 +2735,7 @@ function FormCriarEmprestimo({onSalvo,onClose,data}){
   const [dataCredito,setDataCredito]=useState(hoje());
   const [primeiraParcela,setPrimeiraParcela]=useState("");
   const [recibo,setRecibo]=useState(null);
+  const [creditoJa,setCreditoJa]=useState(false);
   const contasAtivasForm=(data&&data.contas||[]).filter(c=>c.ativa!==false);
   const [contaUI,setContaUI]=useState("");
   useEffect(()=>{ if(!contaUI&&contasAtivasForm.length) setContaUI(contasAtivasForm[0].id); },[contasAtivasForm]);
@@ -2751,7 +2752,7 @@ function FormCriarEmprestimo({onSalvo,onClose,data}){
     const forma=contaUI||"CONTA";
     try{
       // 1. Credito recebido -- lancamento unico, categoria RECEITA
-      await api({action:"lancar",data:dataCredito,
+      if(!creditoJa) await api({action:"lancar",data:dataCredito,
         descricao:desc.toUpperCase()+" - CRÉDITO RECEBIDO",
         valor:Math.abs(numBR(valorTotal)),tipo:"RECEITA",categoria:"RECEITA",
         forma,status:"EXECUTADO",obs:JSON.stringify({origemEmprestimo:desc})});
@@ -2765,7 +2766,7 @@ function FormCriarEmprestimo({onSalvo,onClose,data}){
         tipo:"EMPRESTIMO",intervalo_meses:1,obs:"",envelope_padrao:envelopeId,alias_csv:aliasCsv.trim().toUpperCase()});
       onSalvo(r);
       const nomeConta=(contasAtivasForm.find(c=>c.id===contaUI)||{}).nome||contaUI;
-      setRecibo("Crédito de "+fmt(Math.abs(numBR(valorTotal)))+" lançado em "+fmtD(dataCredito)+" na conta "+nomeConta+" · "+parcelas+" parcela(s), a 1ª em "+fmtD(primeiraParcela)+". No Histórico, busque por \""+desc+"\" ou procure o dia "+fmtD(dataCredito)+" (toque em Carregar mais).");
+      setRecibo((creditoJa?"Crédito não lançado (você disse que já existe) · ":"Crédito de "+fmt(Math.abs(numBR(valorTotal)))+" lançado em "+fmtD(dataCredito)+" na conta "+nomeConta+" · ")+parcelas+" parcela(s), a 1ª em "+fmtD(primeiraParcela)+". No Histórico, busque por \""+desc+"\" ou procure o dia "+fmtD(dataCredito)+" (toque em Carregar mais).");
     }catch(e){alert(e.message);}
     setLoad(false);
   }
@@ -2824,6 +2825,10 @@ function FormCriarEmprestimo({onSalvo,onClose,data}){
         </select>
         <div style={{fontSize:9,color:C.textMuted,marginTop:3}}>Todas as parcelas já nascem marcadas nesse envelope, sem precisar marcar uma por uma.</div>
       </div>}
+      <label style={{display:"flex",alignItems:"center",gap:8,fontSize:12,fontWeight:600,color:C.text,minHeight:44,cursor:"pointer"}}>
+        <input type="checkbox" checked={creditoJa} onChange={e=>setCreditoJa(e.target.checked)} style={{width:20,height:20}}/>
+        O crédito já está lançado (veio do extrato) — criar só as parcelas
+      </label>
       <div style={{fontSize:11,color:C.textMuted,fontStyle:"italic"}}>
         Lança o crédito na data informada (categoria Receita) e já monta o cronograma completo de parcelas — a primeira já aparece agendada, sem esperar virada de ciclo.
       </div>
