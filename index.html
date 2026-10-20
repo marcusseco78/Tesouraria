@@ -9490,6 +9490,14 @@ function SecaoRecorrencias({titulo,totalEquiv,resumo,pctTotal,itemExtra,modoNovo
   // recalcular local como contasAtivasRecEdit -- precisam vir como prop
   // de verdade (adicionadas na assinatura acima e em toda chamada
   // <SecaoRecorrencias .../> mais abaixo no arquivo).
+  const [avancado,setAvancado]=useState(false);
+  // [NOVO 19/10] estilos do painel de edicao (visual novo)
+  const LAB={fontSize:11,fontWeight:700,color:C.textMuted,textTransform:"uppercase",letterSpacing:".06em",marginBottom:6};
+  const DICA={fontSize:11,color:C.textMuted,marginTop:6,lineHeight:1.4};
+  const INP={width:"100%",boxSizing:"border-box",height:48,padding:"0 14px",borderRadius:12,border:"1px solid "+C.border,fontSize:16,fontFamily:"inherit",background:"#fff",color:C.text};
+  const SEGC={display:"flex",background:C.borderLight,borderRadius:12,padding:3,gap:2};
+  const SEGB=ativo=>({flex:1,minHeight:42,borderRadius:10,border:ativo?"1px solid "+C.border:"1px solid transparent",background:ativo?C.surface:"transparent",color:ativo?C.dark:C.textMuted,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"});
+  const PIL=ativo=>({minHeight:40,padding:"0 14px",borderRadius:20,fontSize:13,fontWeight:700,border:"1px solid "+(ativo?C.accent:C.border),background:ativo?C.accent:C.surface,color:ativo?"#fff":C.textSub,cursor:"pointer",fontFamily:"inherit"});
   const contasAtivasRecEdit=(data.contas||[]).filter(c=>c.ativa!==false);
   // [11/08, CORRIGIDO] Mesma logica de _ehSemanalRecorrencia (backend) e
   // ehSemanal (Recorrencias, componente pai) -- feita local aqui tambem
@@ -9561,138 +9569,118 @@ function SecaoRecorrencias({titulo,totalEquiv,resumo,pctTotal,itemExtra,modoNovo
         </div>
         {ex.pct!=null&&<div style={{height:5,borderRadius:3,background:C.borderLight,overflow:"hidden",marginTop:8}}><div style={{width:Math.max(ex.pct,1.5)+"%",height:"100%",background:C.accent,opacity:.85,borderRadius:3}}/></div>}
       </div>;})()}
-      {isOpen&&<div style={{background:bg,padding:"12px 16px",borderBottom:"1px solid "+C.border}}>
-        <div style={{marginBottom:10}}>
-          <div style={{fontSize:10,color:corL,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Nome</div>
-          <input type="text" value={nomeEdit} onChange={e=>setNomeEdit(e.target.value)}
-            style={{width:"100%",boxSizing:"border-box",padding:"10px 12px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",background:"#fff"}}/>
-          <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Muda o nome nos lançamentos futuros também. O que já foi executado/pago mantém o nome antigo.</div>
+      {isOpen&&<div style={{background:bg,padding:"14px 16px 16px",borderBottom:"1px solid "+C.border}}>
+        {/* [NOVO 19/10, visual novo, Lote 1B] Mesmo conteudo e mesma logica do painel antigo; so o desenho mudou:
+            campos de 48 px, controles segmentados, pilulas de destino/envelope, "Avancado" recolhido. */}
+        <div style={{marginBottom:14}}>
+          <div style={LAB}>Nome</div>
+          <input type="text" value={nomeEdit} onChange={e=>setNomeEdit(e.target.value)} style={INP}/>
+          <div style={DICA}>Muda o nome nos lançamentos futuros também. O que já foi executado/pago mantém o nome antigo.</div>
         </div>
-        <div style={{marginBottom:10}}>
-          <div style={{fontSize:10,color:corL,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Destino</div>
-          {/* [NOVO 03/09, pedido do Marcus] Era select "Conta/Cartão PF/Cartão
-              PJ" +, só quando "Conta" selecionado, um SEGUNDO seletor de
-              pílulas pra escolher qual conta -- 2 seletores empilhados pra
-              uma coisa só. Agora é 1 seletor de pílulas só, com todas as
-              contas ativas E os 2 cartões lado a lado -- mesmo padrão que
-              FormNovaRecorr (cadastro) já usa internamente (destinoUI unificado),
-              só que em pílula em vez de dropdown. */}
-          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+        <div style={{marginBottom:14}}>
+          <div style={LAB}>Valor</div>
+          <div style={{display:"flex",gap:8}}>
+            <div style={{...SEGC,width:150,flexShrink:0}}>
+              <button type="button" onClick={()=>setNeg(true)} style={SEGB(neg)}>Saída</button>
+              <button type="button" onClick={()=>setNeg(false)} style={SEGB(!neg)}>Entrada</button>
+            </div>
+            <input type="text" inputMode="numeric" value={val} onChange={e=>setVal(formatarMoedaInput(e.target.value))}
+              style={{...INP,textAlign:"right",fontWeight:800,color:neg?C.dark:C.green}}/>
+          </div>
+        </div>
+        <div style={{marginBottom:14}}>
+          <div style={LAB}>Vencimento</div>
+          {!ehCartao(item)&&itemEhSemanal(item)?<>
+            <select value={dia} onChange={e=>setDia(e.target.value)} style={{...INP,background:C.surface}}>
+              {DIAS_SEMANA_LABEL.map((nome,i)=>
+                <option key={i} value={String(i)}>{(i===0||i===6?"Todo ":"Toda ")+nome.toLowerCase()+(i===0||i===6?"":"-feira")}</option>
+              )}
+            </select>
+            {/* [NOVO 08/09, "a cada X semanas"] Só aparece pra recorrência semanal de conta -- cartão nunca tem recorrência semanal. */}
+            <div style={{marginTop:10}}>
+              <div style={LAB}>A cada quantas semanas</div>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <input type="number" min="1" value={intervaloSemanasEdit} onChange={e=>setIntervaloSemanasEdit(e.target.value)}
+                  style={{...INP,width:84,textAlign:"center"}}/>
+                {parseInt(intervaloSemanasEdit)>1&&<input type="date" value={dataAncoraSemanaEdit} onChange={e=>setDataAncoraSemanaEdit(e.target.value)}
+                  style={{...INP,flex:1,width:"auto"}}/>}
+              </div>
+              {parseInt(intervaloSemanasEdit)>1&&<div style={DICA}>Data = próxima ocorrência real. Mudar isso sempre pede pra regerar os futuros.</div>}
+            </div>
+          </>
+          :<>
+            <div style={{...SEGC,marginBottom:8}}>
+              {[["FIXO","Dia fixo"],["N_UTIL","Dia útil"],["ULTIMO_UTIL","Último dia útil"]].map(([id,label])=>
+                <button key={id} type="button" onClick={()=>setDiaTipoEdit(id)} style={SEGB(diaTipoEdit===id)}>{label}</button>
+              )}
+            </div>
+            {diaTipoEdit==="FIXO"&&<select value={dia} onChange={e=>setDia(e.target.value)} style={{...INP,background:C.surface}}>
+              {[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31].map(d=>
+                <option key={d} value={String(d)}>{"Dia "+d+" do mês"}</option>
+              )}
+            </select>}
+            {diaTipoEdit==="N_UTIL"&&<input type="number" min="1" max="20" value={diaNEdit} onChange={e=>setDiaNEdit(e.target.value)}
+              style={{...INP,textAlign:"center"}}/>}
+          </>}
+        </div>
+        {(()=>{const p=periodicidadeInfo(item.obs);return p&&<div style={{marginBottom:14}}>
+          <div style={LAB}>Periodicidade</div>
+          <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:12,padding:"10px 12px"}}>
+            <div style={{fontSize:14,color:C.text,fontWeight:700}}>{p.label} <span style={{fontWeight:500,color:C.textSub}}>— dispara em: {p.meses}</span></div>
+            <div style={DICA}>Pra mudar a periodicidade, apague esta recorrência e crie uma nova com o mês de referência certo.</div>
+          </div>
+        </div>;})()}
+        <div style={{marginBottom:14}}>
+          <div style={LAB}>Destino</div>
+          {/* [NOVO 03/09, pedido do Marcus] 1 seletor de pilulas so, com todas as contas ativas E os cartoes lado a lado. */}
+          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
             {contasAtivasRecEdit.map(c=>{
               const ativo=destinoEdit==="FLUXO"&&formaEdit===c.id;
-              return <button key={"c_"+c.id} type="button" onClick={()=>{setDestinoEdit("FLUXO");setFormaEdit(c.id);}}
-                style={{padding:"7px 12px",borderRadius:16,fontSize:12,fontWeight:700,border:"none",cursor:"pointer",
-                  background:ativo?C.accent:C.borderLight,color:ativo?"#fff":C.textMuted}}>
-                {c.nome}
-              </button>;
+              return <button key={"c_"+c.id} type="button" onClick={()=>{setDestinoEdit("FLUXO");setFormaEdit(c.id);}} style={PIL(ativo)}>{c.nome}</button>;
             })}
             {(data.cartoes||[]).filter(c=>c.ativo).map(c=>{
               const cid="CARTAO_"+c.id;
-              const ativo=destinoEdit===cid;
-              return <button key={cid} type="button" onClick={()=>setDestinoEdit(cid)}
-                style={{padding:"7px 12px",borderRadius:16,fontSize:12,fontWeight:700,border:"none",cursor:"pointer",
-                  background:ativo?C.accent:C.borderLight,color:ativo?"#fff":C.textMuted}}>
-                {nomeCartao(c.id,data)}
-              </button>;
+              return <button key={cid} type="button" onClick={()=>setDestinoEdit(cid)} style={PIL(destinoEdit===cid)}>{nomeCartao(c.id,data)}</button>;
             })}
           </div>
-          <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Muda só as próximas ocorrências geradas — o que já foi lançado num lado fica onde está.</div>
+          <div style={DICA}>Muda só as próximas ocorrências geradas — o que já foi lançado num lado fica onde está.</div>
         </div>
-        <div style={{display:"flex",gap:10,marginBottom:10}}>
-          <div style={{flex:1}}>
-            <div style={{fontSize:10,color:corL,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Valor</div>
-            <div style={{display:"flex",gap:4}}>
-              <button type="button" onClick={()=>setNeg(n=>!n)}
-                style={{width:28,flexShrink:0,borderRadius:8,border:"1px solid "+C.border,
-                  background:neg?C.redLight:C.blueLight,color:neg?C.red:C.blue,fontWeight:800,fontSize:14,cursor:"pointer"}}>
-                {neg?"−":"+"}
-              </button>
-              <input type="text" inputMode="numeric" value={val} onChange={e=>setVal(formatarMoedaInput(e.target.value))}
-                style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,textAlign:"right",fontFamily:"inherit"}}/>
-            </div>
+        {data&&<div style={{marginBottom:14}}>
+          <div style={LAB}>Envelope</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+            <button type="button" onClick={()=>setEnvelopePadrao("")} style={PIL(!envelopePadrao)}>Nenhum</button>
+            {parseEnvelopesCustom(data).map(env=><button key={env.id} type="button" onClick={()=>setEnvelopePadrao(env.id)} style={PIL(envelopePadrao===env.id)}>{env.nome}</button>)}
           </div>
-          <div style={{flex:1}}>
-            <div style={{fontSize:10,color:corL,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Vencimento</div>
-            {!ehCartao(item)&&itemEhSemanal(item)?<>
-              <select value={dia} onChange={e=>setDia(e.target.value)}
-                style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,
-                  fontSize:13,fontFamily:"inherit",background:C.surface}}>
-                {DIAS_SEMANA_LABEL.map((nome,i)=>
-                  <option key={i} value={String(i)}>{(i===0||i===6?"Todo ":"Toda ")+nome.toLowerCase()+(i===0||i===6?"":"-feira")}</option>
-                )}
-              </select>
-              {/* [NOVO 08/09, "a cada X semanas"] Só aparece pra recorrência
-                  semanal de conta -- cartão nunca tem recorrência semanal. */}
-              <div style={{marginTop:8}}>
-                <div style={{fontSize:10,color:corL,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>A cada quantas semanas</div>
-                <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
-                  <input type="number" min="1" value={intervaloSemanasEdit} onChange={e=>setIntervaloSemanasEdit(e.target.value)}
-                    style={{width:70,padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,textAlign:"center",fontFamily:"inherit"}}/>
-                  {parseInt(intervaloSemanasEdit)>1&&<input type="date" value={dataAncoraSemanaEdit} onChange={e=>setDataAncoraSemanaEdit(e.target.value)}
-                    style={{flex:1,padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit"}}/>}
-                </div>
-                {parseInt(intervaloSemanasEdit)>1&&<div style={{fontSize:9,color:C.textMuted,marginTop:3}}>Data = próxima ocorrência real. Mudar isso sempre pede pra regerar os futuros.</div>}
-              </div>
-            </>
-            :<>
-              <div style={{display:"flex",gap:4,marginBottom:6}}>
-                {[["FIXO","Fixo"],["N_UTIL","Nº útil"],["ULTIMO_UTIL","Último útil"]].map(([id,label])=>
-                  <button key={id} type="button" onClick={()=>setDiaTipoEdit(id)}
-                    style={{flex:1,padding:"5px 2px",borderRadius:16,fontSize:9,fontWeight:700,border:"none",cursor:"pointer",
-                      background:diaTipoEdit===id?C.accent:C.borderLight,color:diaTipoEdit===id?"#fff":C.textMuted}}>{label}</button>
-                )}
-              </div>
-              {diaTipoEdit==="FIXO"&&<select value={dia} onChange={e=>setDia(e.target.value)}
-                style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,
-                  fontSize:13,fontFamily:"inherit",background:C.surface}}>
-                {[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31].map(d=>
-                  <option key={d} value={String(d)}>{"Dia "+d+" do mês"}</option>
-                )}
-              </select>}
-              {diaTipoEdit==="N_UTIL"&&<input type="number" min="1" max="20" value={diaNEdit} onChange={e=>setDiaNEdit(e.target.value)}
-                style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",textAlign:"center",boxSizing:"border-box"}}/>}
-            </>}
+          <div style={DICA}>Toda ocorrência futura já nasce marcada nesse envelope. Ao salvar, também aplica retroativo em tudo que já existe (inclusive já pago/executado).</div>
+        </div>}
+        <button type="button" onClick={()=>setAvancado(v=>!v)}
+          style={{width:"100%",minHeight:44,borderRadius:12,border:"1px solid "+C.border,background:C.surface,color:C.textSub,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0 14px",marginBottom:avancado?10:14}}>
+          <span>Avançado <span style={{fontWeight:500,color:C.textMuted}}>· tolerância e apelidos no banco</span></span><span>{avancado?"▲":"▼"}</span>
+        </button>
+        {avancado&&<div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:12,padding:"12px 12px 4px",marginBottom:14}}>
+          <div style={{marginBottom:12}}>
+            <div style={LAB}>Dias de tolerância (atraso sem virar problema)</div>
+            <input type="text" inputMode="numeric" value={tolerancia} onChange={e=>setTolerancia(e.target.value.replace(/\D/g,""))}
+              placeholder="ex: 30 (0 = não pode atrasar)" style={INP}/>
           </div>
-        </div>
-        {(()=>{const p=periodicidadeInfo(item.obs);return p&&<div style={{marginBottom:10,background:C.purpleLight,borderRadius:8,padding:"8px 10px"}}>
-          <div style={{fontSize:10,color:C.purple,fontWeight:700,textTransform:"uppercase"}}>Periodicidade</div>
-          <div style={{fontSize:13,color:C.text,fontWeight:600,marginTop:2}}>{p.label} — dispara em: {p.meses}</div>
-          <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Pra mudar a periodicidade, apague esta recorrência e crie uma nova com o mês de referência certo.</div>
-        </div>;})()}
-        <div style={{marginBottom:10}}>
-          <div style={{fontSize:10,color:corL,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Dias de tolerância (atraso sem virar problema)</div>
-          <input type="text" inputMode="numeric" value={tolerancia} onChange={e=>setTolerancia(e.target.value.replace(/\D/g,""))}
-            placeholder="ex: 30 (0 = não pode atrasar)"
-            style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",boxSizing:"border-box"}}/>
-        </div>
-        <div style={{marginBottom:10}}>
-          <div style={{fontSize:10,color:corL,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Termos alternativos (como o banco/extrato pode chamar esse gasto)</div>
-          <input value={alias} onChange={e=>setAlias(e.target.value.toUpperCase())}
-            placeholder="ex: ZELT; IMOBILIARIA"
-            style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
-          <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Separe vários termos com ";". Ajuda a Conciliação (de Fatura ou de Extrato) a reconhecer o mesmo gasto mesmo quando o banco usa um nome diferente. Não muda o nome exibido no app.</div>
-        </div>
-        {data&&<div style={{marginBottom:10}}>
-          <div style={{fontSize:10,color:corL,fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>Envelope padrão (opcional)</div>
-          <select value={envelopePadrao} onChange={e=>setEnvelopePadrao(e.target.value)}
-            style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",background:C.surface,boxSizing:"border-box"}}>
-            <option value="">Nenhum</option>
-            {parseEnvelopesCustom(data).map(env=><option key={env.id} value={env.id}>{env.nome}</option>)}
-          </select>
-          <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Toda ocorrência futura gerada por esta recorrência já nasce marcada nesse envelope, sem precisar marcar item por item. Ao salvar, também aplica retroativo em tudo que já existe (inclusive já pago/executado).</div>
+          <div style={{marginBottom:8}}>
+            <div style={LAB}>Termos alternativos (como o banco chama esse gasto)</div>
+            <input value={alias} onChange={e=>setAlias(e.target.value.toUpperCase())} placeholder="ex: ZELT; IMOBILIARIA" style={INP}/>
+            <div style={DICA}>Separe vários termos com ";". Ajuda a Conciliação (de Fatura ou de Extrato) a reconhecer o mesmo gasto mesmo quando o banco usa um nome diferente. Não muda o nome exibido no app.</div>
+          </div>
         </div>}
         <div style={{display:"flex",gap:8}}>
           <button onClick={()=>salvar(item)} disabled={load}
-            style={{flex:1,background:C.accent,color:"#fff",borderRadius:8,padding:"8px",fontSize:13,fontWeight:700,border:"none",cursor:"pointer"}}>
-            {load?"…":"Salvar"}
+            style={{flex:1,height:48,background:C.accent,color:"#fff",borderRadius:12,fontSize:15,fontWeight:800,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+            {load?"…":"Salvar alterações"}
           </button>
           <button onClick={()=>setEdit(null)}
-            style={{background:C.borderLight,color:C.textSub,borderRadius:8,padding:"8px 14px",fontSize:13,border:"none",cursor:"pointer"}}>
+            style={{height:48,padding:"0 18px",background:C.surface,color:C.textSub,borderRadius:12,fontSize:14,fontWeight:700,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
             Cancelar
           </button>
         </div>
         <button onClick={()=>apagar(item)} disabled={load}
-          style={{width:"100%",marginTop:8,padding:"6px",borderRadius:8,background:"transparent",color:C.red,fontSize:11,border:"1px dashed #F3C6C1",cursor:"pointer",fontFamily:"inherit"}}>
+          style={{width:"100%",marginTop:18,minHeight:44,borderRadius:12,background:"transparent",color:C.red,fontSize:13,fontWeight:700,border:"1px solid "+C.red,cursor:"pointer",fontFamily:"inherit"}}>
           🗑 Apagar esta recorrência
         </button>
         {/* [NOVO 03/10, pedido do Marcus] Só aparece pra quem já está
@@ -13346,7 +13334,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261020.0010 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261020.0400 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13460,7 +13448,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261020.0010
+      // HTML v3.20261020.0400
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
