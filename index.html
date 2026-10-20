@@ -2733,7 +2733,8 @@ function FormCriarEmprestimo({onSalvo,onClose,data}){
   const [valorParcela,setValorParcela]=useState("");
   const [parcelas,setParcelas]=useState("");
   const [dataCredito,setDataCredito]=useState(hoje());
-  const [diaVenc,setDiaVenc]=useState("10");
+  const [primeiraParcela,setPrimeiraParcela]=useState("");
+  const [recibo,setRecibo]=useState(null);
   const contasAtivasForm=(data&&data.contas||[]).filter(c=>c.ativa!==false);
   const [contaUI,setContaUI]=useState("");
   useEffect(()=>{ if(!contaUI&&contasAtivasForm.length) setContaUI(contasAtivasForm[0].id); },[contasAtivasForm]);
@@ -2742,8 +2743,8 @@ function FormCriarEmprestimo({onSalvo,onClose,data}){
   const envelopes=useMemo(()=>parseEnvelopesCustom(data||{}),[data]);
 
   async function salvar(){
-    if(!desc.trim()||!valorTotal||!valorParcela||!parcelas||!aliasCsv.trim()){
-      alert("Preencha descrição, valor recebido, valor da parcela, número de parcelas e o nome no extrato/banco.");
+    if(!desc.trim()||!valorTotal||!valorParcela||!parcelas||!aliasCsv.trim()||!primeiraParcela){
+      alert("Preencha descrição, valor recebido, valor da parcela, número de parcelas, vencimento da 1ª parcela e o nome no extrato/banco.");
       return;
     }
     setLoad(true);
@@ -2759,10 +2760,12 @@ function FormCriarEmprestimo({onSalvo,onClose,data}){
       // campo pra qualquer recorrencia (inclusive parcelada), so faltava
       // esse formulario oferecer o campo.
       const r=await api({action:"lancarRecorrencia",descricao:desc,
-        valor:-Math.abs(numBR(valorParcela)),forma,dia_venc:parseInt(diaVenc),
+        valor:-Math.abs(numBR(valorParcela)),forma,dia_venc:parseInt(primeiraParcela.slice(8,10)),primeira_data:primeiraParcela,
         semanal:false,destino:"FLUXO",parc_total:parseInt(parcelas),
         tipo:"EMPRESTIMO",intervalo_meses:1,obs:"",envelope_padrao:envelopeId,alias_csv:aliasCsv.trim().toUpperCase()});
       onSalvo(r);
+      const nomeConta=(contasAtivasForm.find(c=>c.id===contaUI)||{}).nome||contaUI;
+      setRecibo("Crédito de "+fmt(Math.abs(numBR(valorTotal)))+" lançado em "+fmtD(dataCredito)+" na conta "+nomeConta+" · "+parcelas+" parcela(s), a 1ª em "+fmtD(primeiraParcela)+". No Histórico, busque por \""+desc+"\" ou procure o dia "+fmtD(dataCredito)+" (toque em Carregar mais).");
     }catch(e){alert(e.message);}
     setLoad(false);
   }
@@ -2778,6 +2781,10 @@ function FormCriarEmprestimo({onSalvo,onClose,data}){
       <span style={{fontSize:15,fontWeight:800,color:C.text}}>Criar empréstimo</span>
       <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,color:C.textMuted,cursor:"pointer"}}>×</button>
     </div>
+    {recibo?<div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:C.accentLight,borderRadius:12,padding:14,fontSize:13,fontWeight:600,color:C.text,lineHeight:1.5}}>✓ Empréstimo criado. {recibo}</div>
+      <button onClick={onClose} style={{background:C.accent,color:"#fff",borderRadius:8,padding:"10px",fontSize:14,fontWeight:700,border:"none",cursor:"pointer",width:"100%"}}>Fechar</button>
+    </div>:
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       <div><label style={lbl}>Descrição</label>
         <input value={desc} onChange={e=>setDesc(e.target.value.toUpperCase())} placeholder="Ex: EMPRÉSTIMO 5" style={inp}/></div>
@@ -2798,8 +2805,9 @@ function FormCriarEmprestimo({onSalvo,onClose,data}){
           <input type="number" min="1" value={parcelas} onChange={e=>setParcelas(e.target.value)} style={{...inp,textAlign:"center"}}/></div>
       </div>
       <div style={{display:"flex",gap:8}}>
-        <div style={{flex:1}}><label style={lbl}>Dia de vencimento</label>
-          <input type="number" min="1" max="31" value={diaVenc} onChange={e=>setDiaVenc(e.target.value)} style={{...inp,textAlign:"center"}}/></div>
+        <div style={{flex:1}}><label style={lbl}>Vencimento da 1ª parcela</label>
+          <input type="date" value={primeiraParcela} onChange={e=>setPrimeiraParcela(e.target.value)} style={inp}/>
+          <div style={{fontSize:9,color:C.textMuted,marginTop:3}}>As outras parcelas caem no mesmo dia dos meses seguintes. Pode ser uma data que já passou.</div></div>
       </div>
       {contasAtivasForm.length>1&&<div><label style={lbl}>Conta</label>
         <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
@@ -2817,14 +2825,14 @@ function FormCriarEmprestimo({onSalvo,onClose,data}){
         <div style={{fontSize:9,color:C.textMuted,marginTop:3}}>Todas as parcelas já nascem marcadas nesse envelope, sem precisar marcar uma por uma.</div>
       </div>}
       <div style={{fontSize:11,color:C.textMuted,fontStyle:"italic"}}>
-        Lança o crédito recebido hoje (categoria Receita) e já monta o cronograma completo de parcelas — a primeira já aparece agendada, sem esperar virada de ciclo.
+        Lança o crédito na data informada (categoria Receita) e já monta o cronograma completo de parcelas — a primeira já aparece agendada, sem esperar virada de ciclo.
       </div>
       <button onClick={salvar} disabled={load}
         style={{background:C.accent,color:"#fff",borderRadius:8,padding:"10px",
           fontSize:14,fontWeight:700,border:"none",cursor:"pointer",width:"100%"}}>
         {load?"Salvando...":"Criar empréstimo"}
       </button>
-    </div>
+    </div>}
   </div>;
 }
 
@@ -2852,7 +2860,11 @@ function EmprestimosPassivos({data,onUpdate}){
   const emprestimos=items.filter(it=>Number(it.parcTotal)>0&&String(it.destino||"FLUXO").toUpperCase()==="FLUXO").map(it=>{
     const baseUpper=String(it.desc||"").toUpperCase();
     const parcelas=(data.fluxo||[]).filter(r=>String(r.descricao||"").toUpperCase().indexOf(baseUpper)===0);
-    let parcAtualReal=0,parcTotalReal=Number(it.parcTotal)||0,dataUltimaISO=null;
+    let parcAtualReal=0,parcTotalReal=Number(it.parcTotal)||0,dataUltimaISO=null,primeiraISO=null;
+    // Data de contratação = data do lançamento de crédito deste empréstimo.
+    const _sa=t=>String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase();
+    const credito=(data.fluxo||[]).find(r=>{const o=_obsDe(r);return (o.origemEmprestimo&&_sa(o.origemEmprestimo)===_sa(baseUpper))||_sa(r.descricao)===_sa(baseUpper)+" - CREDITO RECEBIDO";});
+    const dataCreditoISO=credito?credito.data:null;
     const futuras=[]; // {data,valor} das parcelas ainda PROGRAMADO, pra projecao de ciclos
     if(parcelas.length){
       parcelas.forEach(r=>{
@@ -2861,6 +2873,7 @@ function EmprestimosPassivos({data,onUpdate}){
         const num=Number(m[1]);
         parcTotalReal=Number(m[2]);
         if(num===parcTotalReal) dataUltimaISO=r.data; // a propria linha da parcela final
+        if(num===1) primeiraISO=r.data;
         const jaPassou=r.status==="EXECUTADO"||r.data<=hj;
         if(jaPassou&&num>parcAtualReal) parcAtualReal=num;
         if(!jaPassou) futuras.push({data:r.data,valor:r.valor});
@@ -2876,7 +2889,7 @@ function EmprestimosPassivos({data,onUpdate}){
       const dUlt=new Date(ano,mes-1+restantes,Math.min(Number(it.diaVenc)||1,28));
       dataUltimaISO=dUlt.getFullYear()+"-"+String(dUlt.getMonth()+1).padStart(2,"0")+"-"+String(dUlt.getDate()).padStart(2,"0");
     }
-    return {...it,parcAtualReal,parcTotalReal,restantes,dataUltimaISO,futuras};
+    return {...it,parcAtualReal,parcTotalReal,restantes,dataUltimaISO,futuras,dataCreditoISO,primeiraISO};
   }).sort((a,b)=>a.restantes-b.restantes); // menos parcelas faltando primeiro
 
   // Previsao pros proximos 2 ciclos: soma as parcelas (ja lancadas no Fluxo,
@@ -2931,7 +2944,7 @@ function EmprestimosPassivos({data,onUpdate}){
         {showForm?"Cancelar":"+ Criar empréstimo"}
       </button>
     </div>
-    {showForm&&<FormCriarEmprestimo data={data} onSalvo={r=>{onUpdate&&onUpdate(r);setShowForm(false);}} onClose={()=>setShowForm(false)}/>}
+    {showForm&&<FormCriarEmprestimo data={data} onSalvo={r=>{onUpdate&&onUpdate(r);}} onClose={()=>setShowForm(false)}/>}
     {!emprestimos.length&&!dividasAtivas.length&&<div style={{padding:"30px 16px",textAlign:"center",fontSize:12,color:C.textMuted,fontStyle:"italic"}}>Nenhum item com número de parcelas definido.</div>}
     {(()=>{
       const vistos={}; const lista=[];
@@ -2968,6 +2981,9 @@ function EmprestimosPassivos({data,onUpdate}){
         <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>
           Faltam {it.restantes} · última em <b>{fmtD(it.dataUltimaISO)}</b>
         </div>
+        {(it.dataCreditoISO||it.primeiraISO)&&<div style={{fontSize:11,color:C.textMuted,marginTop:2}}>
+          {it.dataCreditoISO&&<>Contratado em <b>{fmtD(it.dataCreditoISO)}</b></>}{it.dataCreditoISO&&it.primeiraISO&&" · "}{it.primeiraISO&&<>1ª parcela em <b>{fmtD(it.primeiraISO)}</b></>}
+        </div>}
         {envelopesDisponiveis.length>0&&<div style={{marginTop:6}}>
           <select value={it.envelopePadrao||""} disabled={loadEnvEmp===it.desc}
             onChange={e=>mudarEnvelopeEmprestimo(it.desc,e.target.value)}
@@ -13348,7 +13364,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261020.0610 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261020.0700 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13462,7 +13478,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261020.0610
+      // HTML v3.20261020.0700
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();

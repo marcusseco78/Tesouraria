@@ -1,4 +1,4 @@
-// VERSAO: v3.20261020.0610
+// VERSAO: v3.20261020.0700
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -406,7 +406,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261020.0610",
+    scriptVersion: "v3.20261020.0700",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -11226,7 +11226,32 @@ function lancarRecorrencia(ss, p) {
     if (Array.isArray(oCriacao.mesesAlvo) && oCriacao.mesesAlvo.length) mesesAlvoCriacao = oCriacao.mesesAlvo;
   } catch (e) {}
 
-  for (var ci = 0; ci < 12; ci++) {
+  // [NOVO 20/10, pedido do Marcus -- emprestimo do Nubank] Parcelado com
+  // DATA EXATA da 1a parcela (p.primeira_data, AAAA-MM-DD), como no contrato
+  // real. As demais caem no mesmo dia dos meses seguintes (dia 31 vira o
+  // ultimo dia do mes que nao tem 31). A 1a pode estar no passado ou ser hoje:
+  // nasce PROGRAMADO (nunca EXECUTADO -- quem executa e o Marcus ou o extrato).
+  // Sem isso a regra "so gera de hoje pra frente" empurrava a parcela do dia
+  // 18/10 (ja passada em 20/10) para 18/11.
+  var primeiraDataIso = String(p.primeira_data || "").slice(0, 10);
+  var usouPrimeira = !ehSemanal && parcTotal > 0 && /^\d{4}-\d{2}-\d{2}$/.test(primeiraDataIso);
+  if (usouPrimeira) {
+    var pdA = parseInt(primeiraDataIso.slice(0, 4)), pdM = parseInt(primeiraDataIso.slice(5, 7)) - 1, pdD = parseInt(primeiraDataIso.slice(8, 10));
+    for (var kp = 0; kp < parcTotal; kp++) {
+      var ultDiaMes = new Date(pdA, pdM + kp + 1, 0).getDate();
+      var dataParc = new Date(pdA, pdM + kp, Math.min(pdD, ultDiaMes), 12, 0, 0);
+      parcGerada++;
+      var descParc = descBase + " (" + parcGerada + "/" + parcTotal + ")" + (parcGerada >= parcTotal ? " - ULTIMA" : "");
+      var tcP = _tipoCategoriaReal(tipo);
+      var payloadP = { origem: "Adicionado via app" };
+      if (aliasCsvNovo) payloadP.alias = aliasCsvNovo;
+      if (envelopePadraoNovo) payloadP.envelope = envelopePadraoNovo;
+      shFluxo.appendRow([dataParc, descParc, val, tcP.tipo, tcP.categoria, forma,
+        "PROGRAMADO", calcCiclo(dataParc), JSON.stringify(payloadP), "", ""]);
+    }
+  }
+
+  for (var ci = 0; ci < (usouPrimeira ? 0 : 12); ci++) {
     if (parcTotal > 0 && parcGerada >= parcTotal) break; // ja gerou todas as parcelas, para
 
     var inicio = new Date(inicioBase.getFullYear(), inicioBase.getMonth() + ci, _CICLO_DIA, 12, 0, 0);
