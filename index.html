@@ -8265,6 +8265,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
           </div>
         </div>;
       })()}
+      <BotaoExecutarLote itens={itensExibir} hj={hj} onUpdate={onUpdate} data={data}/>
       {itensExibir.map(item=>{const isOpen=conf===item.row;
         const {cor:corItem,selo,bg:bgItem,descCor,confirmadoExtrato}=corDoItem(item,hj);
         const destacado=destaque?.tab==="fluxo"&&destaque.row===item.row;
@@ -8309,6 +8310,43 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
   </div>;
 }
 
+
+// [NOVO 21/10, pedido do Marcus] Executar varios lancamentos do dia de uma vez,
+// podendo ajustar o VALOR de cada um antes (sem salvar antes). Uma recarga so no fim.
+function BotaoExecutarLote({itens,hj,onUpdate,data}){
+  const elegiveis=(itens||[]).filter(i=>i.status==="PROGRAMADO"&&i.categoria!=="DCP_PROVISAO"&&i.data<=hj&&!ehTipoFaturaCartao(i.tipo));
+  const [aberto,setAberto]=useState(false);
+  const [vals,setVals]=useState({});
+  const [load,setLoad]=useState(false);
+  if(elegiveis.length<2) return null;
+  const valDe=i=>vals[i.row]!==undefined?vals[i.row]:formatarValorInicial(Math.abs(i.valor));
+  async function executar(){
+    setLoad(true);
+    try{
+      const itensLote=elegiveis.map(i=>({row:i.row,valorReal:numBR(valDe(i))*(i.valor<0?-1:1),dataReal:i.data}));
+      const r=await api({action:"baixaLote",itens:itensLote});
+      onUpdate&&onUpdate(r);
+      if(r&&r.lote&&r.lote.erros&&r.lote.erros.length) alert("Executados: "+r.lote.feitos+"\nCom problema:\n"+r.lote.erros.join("\n"));
+      setAberto(false);setVals({});
+    }catch(e){alert(e.message);}
+    setLoad(false);
+  }
+  if(!aberto) return <div style={{padding:"8px 16px 8px 78px",borderBottom:"1px solid "+C.borderLight}}>
+    <button onClick={()=>setAberto(true)} style={{minHeight:40,padding:"8px 14px",borderRadius:12,border:"1px solid "+C.accent,background:C.surface,color:C.accent,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Executar todos ({elegiveis.length})</button>
+  </div>;
+  return <div style={{background:C.bg,padding:"12px 16px 14px 16px",borderBottom:"1px solid "+C.borderLight}}>
+    <div style={{fontSize:12,fontWeight:800,color:C.textSub,marginBottom:8}}>Executar {elegiveis.length} lançamentos — ajuste o valor se precisar</div>
+    {elegiveis.map(i=><div key={i.row} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+      <div style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(i,data||{})}</div>
+      <input type="text" inputMode="numeric" value={valDe(i)} onChange={e=>setVals(v=>({...v,[i.row]:formatarMoedaInput(e.target.value)}))}
+        style={{width:112,minHeight:44,padding:"8px 10px",borderRadius:12,border:"1px solid "+C.border,fontSize:16,fontWeight:700,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box",background:C.surface,color:i.valor<0?C.red:C.blue}}/>
+    </div>)}
+    <div style={{display:"flex",gap:8,marginTop:4}}>
+      <button onClick={executar} disabled={load} style={{flex:1,minHeight:48,borderRadius:12,border:"none",background:C.accent,color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>{load?"Executando...":"Executar tudo"}</button>
+      <button onClick={()=>{setAberto(false);setVals({});}} disabled={load} style={{minHeight:48,padding:"0 16px",borderRadius:12,border:"1px solid "+C.border,background:C.surface,color:C.textSub,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Cancelar</button>
+    </div>
+  </div>;
+}
 
 // [NOVO 29/09, pedido do Marcus] Compras de cartao de um dia, agrupadas POR CARTAO:
 // uma linha com o nome do cartao e o total gasto; tocar abre as compras. Vale pro
@@ -13366,9 +13404,14 @@ function Tesouraria(){
 
   async function carregar(){setLoad(true);setErr(null);
     try{
-      const d=await api({action:"sincronizarFaturas"});
+      // [21/10, velocidade] Abre com a leitura simples (rapida) e ressincroniza
+      // as faturas em segundo plano; quando termina, atualiza a tela sozinho.
+      const d=await api({action:"getData"});
       if(d.sheets) console.log("Abas da planilha:",d.sheets);
       setData(d);
+      setLoad(false);
+      api({action:"sincronizarFaturas"}).then(d2=>{ if(d2&&d2.fluxo) setData(cur=>cur===d?d2:cur); }).catch(()=>{}); // so troca se ainda nao houve edicao nenhuma
+      return;
     }catch(e){setErr(e.message);}setLoad(false);}
 
   function goChat(txt){setChatInit(txt);navegar("conversar");}
@@ -13399,7 +13442,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261021.0200 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261021.0300 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13513,7 +13556,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261021.0200
+      // HTML v3.20261021.0300
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();

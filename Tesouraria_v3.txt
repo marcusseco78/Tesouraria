@@ -1,4 +1,4 @@
-// VERSAO: v3.20261021.0200
+// VERSAO: v3.20261021.0300
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -155,6 +155,7 @@ function dispatch(p) {
     case "agendarDevolucaoEmprestimo": return agendarDevolucaoEmprestimo(ss, p);
     case "editarDevolucaoEmprestimo": return editarDevolucaoEmprestimo(ss, p);
     case "baixa":        return baixa(ss, p);
+    case "baixaLote":    return baixaLote(ss, p);
     case "editar":       return editar(ss, p);
     case "mesclarFaturaComSeguinte": return mesclarFaturaComSeguinte(ss, p);
     case "pagarFaturaAvulso": return pagarFaturaAvulso(ss, p);
@@ -406,7 +407,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261021.0200",
+    scriptVersion: "v3.20261021.0300",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -4583,8 +4584,43 @@ function baixa(ss, p) {
 
   SpreadsheetApp.flush();
   _efetivarParcelaPlano(ss, row, serieParcelaPlano); // [NOVO 28/09] parcela programada executada vira amortizacao
+  if (p._lote) return null; // [NOVO 21/10] baixaLote faz o ajuste de DCP e a recarga UMA vez no fim
   _ajustarProvisoesDCP(ss); // baixa pode mudar valor/data de gasto DCP
   return getData(ss);
+}
+
+/**
+ * [NOVO 21/10, pedido do Marcus] Executa VARIOS lancamentos de uma vez, cada um
+ * com seu valor real (ele pode ajustar o valor antes). Mesma regra de baixa()
+ * pra cada item (par de transferencia, data nunca futura, etc), mas o ajuste de
+ * DCP e a recarga (getData) rodam UMA vez so no fim. Nao aceita linha de
+ * provisao DCP (fechamento de semana tem caminho proprio). Um item com erro nao
+ * derruba os outros: volta em data.erros.
+ * p.itens = [{row, valorReal, dataReal}]
+ */
+function baixaLote(ss, p) {
+  var itens = Array.isArray(p.itens) ? p.itens : [];
+  if (!itens.length) return getData(ss);
+  var sh = ss.getSheetByName("FLUXO");
+  var erros = [];
+  var feitos = 0;
+  itens.forEach(function (it) {
+    try {
+      var row = Number(it.row);
+      var cat = String(sh.getRange(row, COL.CAT).getValue()).toUpperCase();
+      if (cat === "DCP_PROVISAO") throw new Error("Envelope DCP nao entra no lote.");
+      if (String(sh.getRange(row, COL.STATUS).getValue()).toUpperCase() === "EXECUTADO") throw new Error("Ja estava executado.");
+      baixa(ss, { row: row, valorReal: it.valorReal, dataReal: it.dataReal, _lote: true });
+      feitos++;
+    } catch (e) {
+      erros.push("Linha " + it.row + ": " + e.message);
+    }
+  });
+  SpreadsheetApp.flush();
+  _ajustarProvisoesDCP(ss);
+  var d = getData(ss);
+  d.lote = { feitos: feitos, erros: erros };
+  return d;
 }
 
 /**
