@@ -8360,6 +8360,16 @@ function Historico({data,onUpdate,destaque,onIrPara}){
   const [conf,setConf]=useState(null);
   const [busca,setBusca]=useState("");
   const [limite,setLimite]=useState(30);
+  const [diaAlvo,setDiaAlvo]=useState("");
+  useEffect(()=>{
+    if(!diaAlvo) return;
+    const t=setTimeout(()=>{
+      const ids=[...document.querySelectorAll("[id^='hist-dia-']")].map(e=>e.id.slice(9)).filter(d=>d<=diaAlvo).sort().reverse();
+      const el=ids.length?document.getElementById("hist-dia-"+ids[0]):null;
+      if(el) el.scrollIntoView({behavior:"smooth",block:"start"});
+    },150);
+    return ()=>clearTimeout(t);
+  },[diaAlvo,limite]);
   const [sinalDias,setSinalDias]=useState({n:0,v:false});
   // [NOVO 01/08] Fase 5 -- seletor de conta, mesmo padrao da Timeline/Previsao.
   const contasAtivas=useMemo(()=>(data.contas||[]).filter(c=>c.ativa!==false),[data.contas]);
@@ -8457,6 +8467,11 @@ function Historico({data,onUpdate,destaque,onIrPara}){
   return <div style={{paddingBottom:8}}>
     <FiltroTopo busca={busca} onBusca={v=>{setBusca(v);setLimite(30);}} placeholder="Buscar por descrição ou categoria" contasAtivas={contasAtivas}
       contaSelecionada={contaSelecionada} onConta={id=>{setContaSelecionada(id);setLimite(30);}} onSinal={v=>setSinalDias(x=>({n:x.n+1,v}))}/>
+    <div style={{display:"flex",alignItems:"center",gap:10,margin:"-4px 0 12px"}}>
+      <span style={{fontSize:12,fontWeight:700,color:C.textSub}}>Ir para a data</span>
+      <input type="date" value={diaAlvo} max={hj} onChange={e=>{const v=e.target.value;setDiaAlvo(v);if(v){setBusca("");const n=todos.filter(x=>(contasAtivas.length<=1||!contaSelecionada||(x.forma||"CONTA")===contaSelecionada)&&x.data>=v).length;setLimite(Math.max(30,n+1));}}}
+        style={{flex:1,minHeight:44,padding:"8px 12px",borderRadius:12,border:"1px solid "+C.border,fontSize:14,fontFamily:"inherit",background:C.surface,color:C.text,boxSizing:"border-box"}}/>
+    </div>
     {!ex.length&&<div style={{padding:"40px 20px",textAlign:"center",color:C.textMuted,fontSize:14}}>{busca?"Nenhum resultado pra essa busca.":"Nenhum lançamento executado."}</div>}
     {grupos.map(([gdt,itens],gi)=>{
       const filtrarPorConta=contasAtivas.length>1&&contaSelecionada;
@@ -8470,8 +8485,8 @@ function Historico({data,onUpdate,destaque,onIrPara}){
       const spIni=(spFim!=null&&isFinite(spFim))?(spFim-totalDia):null;
       const cartaoDia=cartaoPorDataFiltrado[gdt]||[];
       const itemNoDia=itens.some(i=>i.row===conf||(destaque?.tab==="historico"&&destaque.row===i.row));
-      return <DiaCartao key={gdt} gdt={gdt} ehHoje={gdt===hj} saldo={spIni} linhas={_linhasResumoDia(itens,cartaoDia)}
-        vazio={!itens.length&&!cartaoDia.length} abertoInicial={gi===0} forcarAberto={!!busca.trim()||itemNoDia} sinal={sinalDias}>
+      return <div key={gdt} id={"hist-dia-"+gdt}><DiaCartao gdt={gdt} ehHoje={gdt===hj} saldo={spIni} linhas={_linhasResumoDia(itens,cartaoDia)}
+        vazio={!itens.length&&!cartaoDia.length} abertoInicial={gi===0} forcarAberto={!!busca.trim()||itemNoDia||(!!diaAlvo&&gdt===diaAlvo)} sinal={sinalDias}>
         {itens.map(item=>{const {cor:corItem,selo,bg:bgItem,descCor,confirmadoExtrato}=corDoItem(item,hj);const isOpen=conf===item.row;const destacado=destaque?.tab==="historico"&&destaque.row===item.row;return <div key={item.row} id={"hist-item-"+item.row}>
           <div onClick={()=>isOpen?setConf(null):setConf(item.row)}
             style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px 11px 78px",minHeight:44,cursor:"pointer",borderBottom:isOpen?"none":"1px solid "+C.borderLight,background:destacado?"#FEF3E2":(isOpen?C.bg:(bgItem||C.surface)),transition:"background 1s",
@@ -8502,7 +8517,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
           {isOpen&&<PainelEdicaoItem key={item.row} item={item} data={data} onUpdate={onUpdate} onClose={()=>setConf(null)} onIrPara={onIrPara}/>}
         </div>;})}
         {porCartao(cartaoPorDataFiltrado[gdt]).map(g=><GrupoCartaoDia key={"gc-"+gdt+"-"+g.cartao} cartaoId={g.cartao} itens={g.itens} data={data} futuro={false} onIrPara={onIrPara}/>)}
-      </DiaCartao>;
+      </DiaCartao></div>;
     })}
     {filtrados.length>limite&&<div style={{padding:"14px",textAlign:"center"}}>
       <button onClick={()=>setLimite(l=>l+30)}
@@ -13371,7 +13386,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261021.0110 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261021.0130 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13485,7 +13500,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261021.0110
+      // HTML v3.20261021.0130
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
