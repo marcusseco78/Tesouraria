@@ -8469,9 +8469,13 @@ function Historico({data,onUpdate,destaque,onIrPara}){
     // (so exibicao; o saldo continua pela data real). Fica no topo do dia.
     const ordem=[...ex.filter(i=>i.categoria==="DCP_PROVISAO"),...ex.filter(i=>i.categoria!=="DCP_PROVISAO")];
     ordem.forEach(item=>{ const d=item.categoria==="DCP_PROVISAO"?dcpDataExibicao(item.data):item.data; (m[d]=m[d]||[]).push(item); });
-    Object.keys(cartaoPorDataFiltrado).forEach(d=>{if(!m[d])m[d]=[];});
+    // Dias so com compra de cartao NAO podem passar do ponto ate onde a lista ja
+    // foi carregada: antes apareciam TODOS (dias antigos vazios de lancamentos) e
+    // o "carregar mais" ficava la no fim, escondendo os lancamentos.
+    const dataCorte=(ex.length&&filtrados.length>ex.length)?ex[ex.length-1].data:"";
+    Object.keys(cartaoPorDataFiltrado).forEach(d=>{if(!m[d]&&(!dataCorte||d>=dataCorte))m[d]=[];});
     return Object.entries(m).sort((a,b)=>a[0]<b[0]?1:-1);
-  },[ex,cartaoPorDataFiltrado]);
+  },[ex,cartaoPorDataFiltrado,filtrados]);
 
   return <div style={{paddingBottom:8}}>
     <FiltroTopo busca={busca} onBusca={v=>{setBusca(v);setLimite(30);}} placeholder="Buscar por descrição ou categoria" contasAtivas={contasAtivas}
@@ -13395,7 +13399,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261021.0140 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261021.0200 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13509,7 +13513,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261021.0140
+      // HTML v3.20261021.0200
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
