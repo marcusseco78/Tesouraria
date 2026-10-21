@@ -8460,7 +8460,9 @@ function Historico({data,onUpdate,destaque,onIrPara}){
     {!ex.length&&<div style={{padding:"40px 20px",textAlign:"center",color:C.textMuted,fontSize:14}}>{busca?"Nenhum resultado pra essa busca.":"Nenhum lançamento executado."}</div>}
     {grupos.map(([gdt,itens],gi)=>{
       const filtrarPorConta=contasAtivas.length>1&&contaSelecionada;
-      const totalDia=itens.reduce((s,r)=>s+(r.valor||0),0);
+      // Com busca ativa a lista mostra so parte do dia, mas o saldo de abertura
+      // precisa descontar o dia INTEIRO (da conta), senao fica errado.
+      const totalDia=(busca.trim()?todos.filter(x=>(!filtrarPorConta||(x.forma||"CONTA")===contaSelecionada)&&(x.categoria==="DCP_PROVISAO"?dcpDataExibicao(x.data):x.data)===gdt):itens).reduce((s,r)=>s+(r.valor||0),0);
       // saldo de fim do dia: pelo 1o lancamento "de verdade" do dia; se o dia so tem
       // o envelope DCP (exibido ali), usa o ultimo lancamento executado ate a data.
       const ref=itens.find(i=>i.categoria!=="DCP_PROVISAO")||todos.find(x=>x.data<=gdt&&x.categoria!=="DCP_PROVISAO"&&(!filtrarPorConta||(x.forma||"CONTA")===contaSelecionada));
@@ -13369,7 +13371,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261020.0720 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261021.0110 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13483,7 +13485,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261020.0720
+      // HTML v3.20261021.0110
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
