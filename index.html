@@ -8361,6 +8361,15 @@ function Historico({data,onUpdate,destaque,onIrPara}){
   const [busca,setBusca]=useState("");
   const [limite,setLimite]=useState(30);
   const [diaAlvo,setDiaAlvo]=useState("");
+  // Rolagem infinita: quando o fim da lista aparece na tela, carrega mais 30.
+  const fimRef=useRef(null);
+  useEffect(()=>{
+    const el=fimRef.current;
+    if(!el||typeof IntersectionObserver==="undefined") return;
+    const ob=new IntersectionObserver(es=>{ if(es[0]&&es[0].isIntersecting) setLimite(l=>l+30); },{rootMargin:"600px"});
+    ob.observe(el);
+    return ()=>ob.disconnect();
+  });
   useEffect(()=>{
     if(!diaAlvo) return;
     const t=setTimeout(()=>{
@@ -8519,7 +8528,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
         {porCartao(cartaoPorDataFiltrado[gdt]).map(g=><GrupoCartaoDia key={"gc-"+gdt+"-"+g.cartao} cartaoId={g.cartao} itens={g.itens} data={data} futuro={false} onIrPara={onIrPara}/>)}
       </DiaCartao></div>;
     })}
-    {filtrados.length>limite&&<div style={{padding:"14px",textAlign:"center"}}>
+    {filtrados.length>limite&&<div ref={fimRef} style={{padding:"14px",textAlign:"center"}}>
       <button onClick={()=>setLimite(l=>l+30)}
         style={{background:C.borderLight,color:C.text,border:"none",borderRadius:8,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:"pointer"}}>
         Carregar mais 30 (mostrando {ex.length} de {filtrados.length})
@@ -13386,7 +13395,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261021.0130 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261021.0140 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13500,7 +13509,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261021.0130
+      // HTML v3.20261021.0140
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
