@@ -8371,25 +8371,23 @@ function GrupoCartaoDia({cartaoId,itens,data,futuro,onIrPara,feito}){
   const n=itens.length;
   return <div>
     <div onClick={()=>setAberto(a=>!a)}
-      style={{display:"flex",alignItems:"center",gap:8,padding:"8px 14px",borderBottom:"1px solid "+C.borderLight,
+      style={{display:"flex",alignItems:"center",gap:8,padding:"8px 16px 8px 78px",borderBottom:"1px solid "+C.borderLight,
         background:C.borderLight,opacity:0.85,cursor:"pointer"}}>
       <div style={{flex:1,minWidth:0}}>
-        <div style={{fontSize:13,fontWeight:600,color:C.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>💳 {nomeCartao(cartaoId,data)}</div>
+        <div style={{fontSize:13,fontWeight:600,color:C.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}><span style={{fontSize:11,marginRight:4}}>{aberto?"▾":"▸"}</span>💳 {nomeCartao(cartaoId,data)}</div>
         <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{feito&&<span style={{fontWeight:800,color:C.green,fontStyle:"normal"}}>✓ já lançado · </span>}{n} compra{n>1?"s":""} · não conta aqui, já está na fatura</div>
       </div>
-      <span style={{fontSize:13,fontWeight:700,color:C.textMuted,flexShrink:0}}>{fmt(total)}</span>
-      <span style={{fontSize:12,color:C.textMuted,flexShrink:0}}>{aberto?"▾":"▸"}</span>
+      <span style={{fontSize:14,fontWeight:800,color:C.textMuted,flexShrink:0,fontVariantNumeric:"tabular-nums"}}>{fmt(total)}</span>
     </div>
     {aberto&&itens.map(c=><div key={"cart-"+c.cartao+"-"+c.row}
       onClick={()=>onIrPara&&onIrPara({tab:"cartoes",row:c.row,cartao:c.cartao})}
-      style={{display:"flex",alignItems:"center",gap:8,padding:"7px 14px 7px 28px",borderBottom:"1px solid "+C.borderLight,
+      style={{display:"flex",alignItems:"center",gap:8,padding:"7px 16px 7px 78px",borderBottom:"1px solid "+C.borderLight,
         background:C.borderLight,opacity:0.8,cursor:onIrPara?"pointer":"default"}}>
       <div style={{flex:1,minWidth:0}}>
         <div style={{fontSize:12,fontWeight:600,color:C.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontStyle:"italic"}}>{c.descricao}</div>
         {c.dcpEnvelope&&<div style={{marginTop:3}}><TagEnvelopeDCP envelope={c.dcpEnvelope} futuro={!!futuro} pos={!!c.dcpPosFech}/></div>}
       </div>
-      <span style={{fontSize:12,fontWeight:700,color:C.textMuted,flexShrink:0}}>{fmt(c.valor)}</span>
-      <span style={{fontSize:12,color:C.textMuted,flexShrink:0}}>→</span>
+      <span style={{fontSize:14,fontWeight:800,color:C.textMuted,flexShrink:0,fontVariantNumeric:"tabular-nums"}}>{fmt(c.valor)}</span>
     </div>)}
   </div>;
 }
@@ -13450,7 +13448,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261022.0400 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261022.0500 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13564,7 +13562,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261022.0400
+      // HTML v3.20261022.0500
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
