@@ -8065,7 +8065,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
     const m={};
     const add=(r,cartao)=>{
       const dataCompra=r[0];
-      if(!dataCompra||dataCompra<=hj) return; // so estritamente futuro -- hoje ja e "aconteceu", mora no Historico
+      if(!dataCompra||dataCompra<hj) return; // [22/10] hoje tambem aparece (fica no Plano ate 23:59), como os executados de hoje
       (m[dataCompra]=m[dataCompra]||[]).push({row:_linhaCartao(r),descricao:_obsApelidoCartao(_obsCartaoRaw(r))||r[1],valor:r[2],cartao,status:r[7],dcpEnvelope:r[9]||null,dcpEnvelopeData:r[10]||null,dcpPosFech:!!r[12]});
     };
     Object.keys(data.cartaoItens||{}).forEach(cid=>(data.cartaoItens[cid]||[]).forEach(r=>add(r,cid)));
@@ -13449,7 +13449,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261022.0100 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261022.0200 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13563,7 +13563,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261022.0100
+      // HTML v3.20261022.0200
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
