@@ -7407,7 +7407,10 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
   const hj=hoje();
   const ehFatura=ehTipoFaturaCartao(item.tipo);
   const podeExecutar=item.status==="PROGRAMADO";
-  const execMode=podeExecutar&&dt<=hj;
+  // [21/10, pedido do Marcus] Salvar nunca executa: executar e' pelo botao
+  // "Executar vencidos" no topo do Plano. So fatura de cartao (pagamento parcial)
+  // e fechamento de envelope DCP continuam executando pelo painel.
+  const execMode=podeExecutar&&dt<=hj&&(ehFatura||item.categoria==="DCP_PROVISAO");
 
   async function salvarApelido(){
     setLoadApelido(true);
@@ -7444,10 +7447,16 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
     catch(e){ alert(e.message); }
     setLoadConta(false);
   }
+  const apelidoOrig=(()=>{let o={};try{o=JSON.parse(item.obs||"{}");}catch(e){}return o.apelido||"";})();
   async function confirmar(){
     setLoad(true);
     try{
       const sinal=neg?-1:1;
+      // Um so "Salvar": grava nome de exibicao e nome no extrato se mudaram.
+      if(item.categoria!=="DCP_PROVISAO"){
+        if(apelidoInput!==apelidoOrig) await api({action:"editarApelidoItem",aba:"FLUXO",row:item.row,apelido:apelidoInput});
+        if(descInput.trim()&&descInput!==item.descricao) await api({action:"editar",aba:"FLUXO",row:item.row,campo:"DESCRICAO",valor:descInput});
+      }
       if(execMode){
         const payload={action:"baixa",row:item.row,valorReal:numBR(val)*sinal,dataReal:dt};
         // [17/08, NOVO -- pedido do Marcus] Escape-hatch pra fechamento de
@@ -7513,7 +7522,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
     catch(e){ alert(e.message); }
     setLoad(false);
   }
-  const podeExecutarHoje=item.status==="PROGRAMADO"&&!execMode&&item.categoria!=="DCP_PROVISAO"&&item.data>hj;
+  const podeExecutarHoje=ehFatura&&item.status==="PROGRAMADO"&&!execMode&&item.categoria!=="DCP_PROVISAO"&&item.data>hj;
   async function executarHoje(){
     if(!confirm('Este lançamento está programado para '+fmtD(item.data)+'.\n\nExecutar agora grava a data de execução como HOJE ('+fmtD(hj)+').\n\nProsseguir?')) return;
     setLoad(true);
@@ -7620,10 +7629,6 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
         <input value={apelidoInput} onChange={e=>setApelidoInput(e.target.value.toUpperCase())}
           placeholder={item.descricao}
           style={{..._INP,flex:1,width:"auto"}}/>
-        <button onClick={salvarApelido} disabled={loadApelido}
-          style={{height:48,padding:"0 16px",borderRadius:12,background:C.accent,color:"#fff",fontSize:13,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-          {loadApelido?"…":"Salvar"}
-        </button>
       </div>
       {(()=>{const cands=apelidosCandidatos(item.descricao,data);
         return cands.length>1&&<div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:5}}>
@@ -7640,10 +7645,6 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
       <div style={{display:"flex",gap:8,marginTop:4}}>
         <input value={descInput} onChange={e=>setDescInput(e.target.value.toUpperCase())}
           style={{..._INP,flex:1,width:"auto"}}/>
-        <button onClick={salvarDesc} disabled={loadDesc||!descInput.trim()}
-          style={{height:48,padding:"0 16px",borderRadius:12,background:C.surface,color:C.textSub,fontSize:13,fontWeight:700,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
-          {loadDesc?"…":"Salvar"}
-        </button>
       </div>
     </div>}
     {item.status==="EXECUTADO"&&item.categoria!=="DCP_PROVISAO"&&<div style={{fontSize:11,fontWeight:700,color:C.green,marginBottom:8}}>
@@ -7715,7 +7716,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
     </button>}
     <button onClick={confirmar} disabled={!!load}
       style={{width:"100%",height:48,background:execMode?C.green:C.accent,color:"#fff",borderRadius:12,fontSize:15,fontWeight:800,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-      {load?"…":(execMode?"Executar":"Salvar alterações")}
+      {load?"…":(execMode?"Executar":"Salvar")}
     </button>
     <div style={{display:"flex",gap:8,marginTop:8}}>
       {podeExecutarHoje&&<button onClick={executarHoje} disabled={!!load}
@@ -8235,6 +8236,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
       const alvo=neg||menor;
       return <CaixaResumoPlano destaqueDia={alvo?{dia:fmtD(alvo.gdt).slice(0,5),saldo:alvo.sp,negativo:!!neg}:null} envelope={envelopeAberto}/>;
     })()}
+    {!busca.trim()&&<ExecutarVencidos itens={contasAtivas.length>1&&contaSelecionada?prog.filter(i=>(i.forma||"CONTA")===contaSelecionada):prog} hj={hj} onUpdate={onUpdate} data={data}/>}
     {busca.trim()&&!gruposExibidos.length&&<div style={{padding:"20px 14px",textAlign:"center",color:C.textMuted,fontSize:13}}>Nada encontrado para "{busca}".</div>}
     {gruposExibidos.map(({gdt,itensExibir,cartaoExibir,spIni,spPorConta},gi)=>{
       const filtrarPorConta=contasAtivas.length>1&&contaSelecionada;
@@ -8265,7 +8267,6 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
           </div>
         </div>;
       })()}
-      <BotaoExecutarLote itens={itensExibir} hj={hj} onUpdate={onUpdate} data={data}/>
       {itensExibir.map(item=>{const isOpen=conf===item.row;
         const {cor:corItem,selo,bg:bgItem,descCor,confirmadoExtrato}=corDoItem(item,hj);
         const destacado=destaque?.tab==="fluxo"&&destaque.row===item.row;
@@ -8311,39 +8312,45 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
 }
 
 
-// [NOVO 21/10, pedido do Marcus] Executar varios lancamentos do dia de uma vez,
-// podendo ajustar o VALOR de cada um antes (sem salvar antes). Uma recarga so no fim.
-function BotaoExecutarLote({itens,hj,onUpdate,data}){
+// [NOVO 22/10, pedido do Marcus] "Executar vencidos": UM botao no topo do Plano,
+// abaixo dos cartoes escuros. Lista tudo que esta PROGRAMADO com data de hoje ou
+// anterior, com caixinha (pra deixar algum de fora) e valor editavel. Uma recarga so.
+function ExecutarVencidos({itens,hj,onUpdate,data}){
   const elegiveis=(itens||[]).filter(i=>i.status==="PROGRAMADO"&&i.categoria!=="DCP_PROVISAO"&&i.data<=hj&&!ehTipoFaturaCartao(i.tipo));
   const [aberto,setAberto]=useState(false);
   const [vals,setVals]=useState({});
+  const [fora,setFora]=useState({});
   const [load,setLoad]=useState(false);
-  if(elegiveis.length<2) return null;
+  if(!elegiveis.length) return null;
   const valDe=i=>vals[i.row]!==undefined?vals[i.row]:formatarValorInicial(Math.abs(i.valor));
+  const marcados=elegiveis.filter(i=>!fora[i.row]);
   async function executar(){
+    if(!marcados.length) return;
     setLoad(true);
     try{
-      const itensLote=elegiveis.map(i=>({row:i.row,valorReal:numBR(valDe(i))*(i.valor<0?-1:1),dataReal:i.data}));
+      const itensLote=marcados.map(i=>({row:i.row,valorReal:numBR(valDe(i))*(i.valor<0?-1:1),dataReal:i.data}));
       const r=await api({action:"baixaLote",itens:itensLote});
       onUpdate&&onUpdate(r);
       if(r&&r.lote&&r.lote.erros&&r.lote.erros.length) alert("Executados: "+r.lote.feitos+"\nCom problema:\n"+r.lote.erros.join("\n"));
-      setAberto(false);setVals({});
+      setAberto(false);setVals({});setFora({});
     }catch(e){alert(e.message);}
     setLoad(false);
   }
-  if(!aberto) return <div style={{padding:"8px 16px 8px 78px",borderBottom:"1px solid "+C.borderLight}}>
-    <button onClick={()=>setAberto(true)} style={{minHeight:40,padding:"8px 14px",borderRadius:12,border:"1px solid "+C.accent,background:C.surface,color:C.accent,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Executar todos ({elegiveis.length})</button>
-  </div>;
-  return <div style={{background:C.bg,padding:"12px 16px 14px 16px",borderBottom:"1px solid "+C.borderLight}}>
-    <div style={{fontSize:12,fontWeight:800,color:C.textSub,marginBottom:8}}>Executar {elegiveis.length} lançamentos — ajuste o valor se precisar</div>
-    {elegiveis.map(i=><div key={i.row} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-      <div style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(i,data||{})}</div>
-      <input type="text" inputMode="numeric" value={valDe(i)} onChange={e=>setVals(v=>({...v,[i.row]:formatarMoedaInput(e.target.value)}))}
-        style={{width:112,minHeight:44,padding:"8px 10px",borderRadius:12,border:"1px solid "+C.border,fontSize:16,fontWeight:700,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box",background:C.surface,color:i.valor<0?C.red:C.blue}}/>
-    </div>)}
-    <div style={{display:"flex",gap:8,marginTop:4}}>
-      <button onClick={executar} disabled={load} style={{flex:1,minHeight:48,borderRadius:12,border:"none",background:C.accent,color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>{load?"Executando...":"Executar tudo"}</button>
-      <button onClick={()=>{setAberto(false);setVals({});}} disabled={load} style={{minHeight:48,padding:"0 16px",borderRadius:12,border:"1px solid "+C.border,background:C.surface,color:C.textSub,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Cancelar</button>
+  if(!aberto) return <button onClick={()=>setAberto(true)} style={{width:"100%",minHeight:48,marginBottom:12,borderRadius:16,border:"1px solid "+C.accent,background:C.surface,color:C.accent,fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Executar vencidos ({elegiveis.length})</button>;
+  return <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:20,padding:"14px 16px",marginBottom:12}}>
+    <div style={{fontSize:13,fontWeight:800,color:C.text,marginBottom:10}}>Executar vencidos — desmarque o que ficar de fora, ajuste o valor se precisar</div>
+    {elegiveis.map(i=>{const on=!fora[i.row];return <div key={i.row} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8,opacity:on?1:0.45}}>
+      <input type="checkbox" checked={on} onChange={()=>setFora(f=>({...f,[i.row]:on}))} style={{width:22,height:22,flexShrink:0}}/>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:13,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{(()=>{let o={};try{o=JSON.parse(i.obs||"{}");}catch(e){}return o.apelido||i.descricao;})()}</div>
+        <div style={{fontSize:10,color:C.textMuted}}>{fmtD(i.data).slice(0,5)} · {i.forma}</div>
+      </div>
+      <input type="text" inputMode="numeric" value={valDe(i)} disabled={!on} onChange={e=>setVals(v=>({...v,[i.row]:formatarMoedaInput(e.target.value)}))}
+        style={{width:104,minHeight:44,padding:"8px 10px",borderRadius:12,border:"1px solid "+C.border,fontSize:16,fontWeight:700,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box",background:C.surface,color:i.valor<0?C.red:C.blue}}/>
+    </div>;})}
+    <div style={{display:"flex",gap:8,marginTop:6}}>
+      <button onClick={executar} disabled={load||!marcados.length} style={{flex:1,minHeight:48,borderRadius:12,border:"none",background:C.accent,color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"inherit",opacity:marcados.length?1:0.5}}>{load?"Executando...":"Executar "+marcados.length}</button>
+      <button onClick={()=>{setAberto(false);setVals({});setFora({});}} disabled={load} style={{minHeight:48,padding:"0 16px",borderRadius:12,border:"1px solid "+C.border,background:C.surface,color:C.textSub,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Cancelar</button>
     </div>
   </div>;
 }
@@ -13442,7 +13449,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261021.0300 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261022.0100 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13556,7 +13563,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261021.0300
+      // HTML v3.20261022.0100
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
