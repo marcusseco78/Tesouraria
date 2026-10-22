@@ -1822,21 +1822,21 @@ function Dashboard({data,onUpdate,estouro}){
   // só quando o Dashboard é aberto.
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <AvisoEstouroDCP estouro={estouro} onUpdate={onUpdate}/>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-      <div style={{background:C.dark,borderRadius:20,padding:"16px 16px"}}>
+    <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:10}}>
+      <div style={{background:C.dark,borderRadius:20,padding:"16px 14px",minWidth:0}}>
         <Label c="#A9B6DA">Saldo em conta</Label>
         <div style={{marginTop:6}}>
-          <span style={saldo<0?{fontSize:26,fontWeight:800,color:"#FFB4AC",fontVariantNumeric:"tabular-nums",letterSpacing:"-.02em",whiteSpace:"nowrap"}:{fontSize:26,fontWeight:800,color:"#FFFFFF",fontVariantNumeric:"tabular-nums",letterSpacing:"-.01em"}}>{fmt(saldo)}</span>
+          <span style={saldo<0?{fontSize:21,fontWeight:800,color:"#FFB4AC",fontVariantNumeric:"tabular-nums",letterSpacing:"-.02em",whiteSpace:"nowrap"}:{fontSize:21,fontWeight:800,color:"#FFFFFF",fontVariantNumeric:"tabular-nums",letterSpacing:"-.01em"}}>{fmt(saldo)}</span>
         </div>
         <div style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:10,background:"rgba(255,255,255,.10)",padding:"3px 10px",borderRadius:12}}>
           <div style={{width:7,height:7,borderRadius:"50%",background:saldo<1000?"#FFB4AC":saldo<5000?"#F59E0B":"#7FE0B5"}}/>
           <span style={{fontSize:11,color:saldo<1000?"#FFB4AC":saldo<5000?"#FFD9A0":"#7FE0B5",fontWeight:800}}>zona {saldo<0?"negativa":saldo<1000?"crítico":saldo<5000?"atenção":"saudável"}</span>
         </div>
       </div>
-      {ml&&<div style={{background:C.dark,borderRadius:20,padding:"16px 16px"}}>
+      {ml&&<div style={{background:C.dark,borderRadius:20,padding:"16px 14px",minWidth:0}}>
         <Label c="#A9B6DA">Próxima menor liquidez</Label>
         <div style={{marginTop:6}}>
-          <span style={ml.saldoProjetado<0?{fontSize:22,fontWeight:800,color:"#FFB4AC",fontVariantNumeric:"tabular-nums",letterSpacing:"-.02em",whiteSpace:"nowrap"}:{fontSize:22,fontWeight:800,color:"#FFFFFF",fontVariantNumeric:"tabular-nums",letterSpacing:"-.01em"}}>{fmt(ml.saldoProjetado)}</span>
+          <span style={ml.saldoProjetado<0?{fontSize:21,fontWeight:800,color:"#FFB4AC",fontVariantNumeric:"tabular-nums",letterSpacing:"-.02em",whiteSpace:"nowrap"}:{fontSize:21,fontWeight:800,color:"#FFFFFF",fontVariantNumeric:"tabular-nums",letterSpacing:"-.01em"}}>{fmt(ml.saldoProjetado)}</span>
         </div>
         <div style={{display:"inline-flex",marginTop:10,fontSize:11,fontWeight:800,color:ml.saldoProjetado<1000?"#FFB4AC":"#A9B6DA",background:"rgba(255,255,255,.10)",padding:"3px 10px",borderRadius:12}}>{fmtD(ml.data)}</div>
       </div>}
@@ -13448,7 +13448,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261022.0500 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261022.0600 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13562,7 +13562,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261022.0500
+      // HTML v3.20261022.0600
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
