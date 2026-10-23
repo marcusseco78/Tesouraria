@@ -11806,6 +11806,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara,fila}){
   const [selecionadoPar,setSelecionadoPar]=useState(null); // {id,lado}
   const [proximoNumeroPar,setProximoNumeroPar]=useState(1);
   const [mesclando,setMesclando]=useState(false);
+  const [progressoMescla,setProgressoMescla]=useState(null); // [22/10] {i,n,fim}
   // [NOVO 28/08, bug real achado pelo Marcus -- "Nanda Filme" duplicado]
   // setMesclando(true) e' assincrono -- so desabilita o botao de verdade
   // depois do PROXIMO render. Num toque duplo rapido (comum no celular),
@@ -11908,8 +11909,12 @@ function Cartoes({data,onUpdate,destaque,onIrPara,fila}){
     setMesclando(true);
     const apiL=o=>api({...o,_lote:true}); // [22/10] sem recarga a cada passo; recarrega 1x no fim
     const itensUsados=[];
+    const perguntasAlias=[]; // [22/10] perguntas de 'lembrar nome do banco' ficam pro FIM (confirm no meio travava o lote)
+    const chavesPares=Object.keys(paresPorNumero);
+    let feitosMescla=0;
     try{
-      for(const num of Object.keys(paresPorNumero)){
+      for(const num of chavesPares){
+        setProgressoMescla({i:feitosMescla,n:chavesPares.length});
         const {ofxId,appId}=paresPorNumero[num];
         const item=novosDoCSV.find(it=>_idOfxSolto(it)===ofxId);
         if(!item) continue;
@@ -11998,22 +12003,13 @@ function Cartoes({data,onUpdate,destaque,onIrPara,fila}){
           const fxPar=linhaAppPar?despesasFixasCartao.find(f=>f.desc.toUpperCase().trim()===String(linhaAppPar[1]||"").toUpperCase().trim()):null;
           await apiL({action:"vincularCompraCartao",cartao,row:rowApp,
             descricaoCsv:item.title,valorCsv:item.amount,dataCsv:item.date,parcelaCsv:item.parcela,fitid:item.fitid||""});
-                    if(fxPar){
-            const tituloBanco=String(item.title||"").toUpperCase().trim();
-            const jaTem=fxPar.alias.split(";").map(a=>a.toUpperCase().trim()).filter(Boolean).includes(tituloBanco);
-            if(tituloBanco&&tituloBanco!==fxPar.desc.toUpperCase().trim()&&!jaTem
-              &&window.confirm('Lembrar que "'+item.title+'" no banco é a despesa fixa "'+fxPar.desc+'"? Nos próximos meses o app reconhece sozinho.')){
-              try{
-                const aliasCombinado=fxPar.alias?(fxPar.alias+";"+item.title):item.title;
-                await (apiL({action:"editarRecorrencia",descricao:fxPar.desc,campo:"ALIAS_CSV",valor:aliasCombinado,resumo:"",forcarAlias:true}));
-              }catch(eAlias){ alert("Pareou, mas não consegui guardar o nome do banco: "+eAlias.message); }
-            }
-          }
+                    if(fxPar) perguntasAlias.push({item,fxPar});
           setConciliacao(c=>c?{...c,
             aguardandoFatura:(c.aguardandoFatura||[]).filter(a=>a.row!==rowApp),
             confirmadosFatura:[...(c.confirmadosFatura||[]),{row:rowApp}]}:c);
         }
         itensUsados.push(item);
+        feitosMescla++;
       }
       // [CORRIGIDO 27/08 -- bug real achado nesta rodada] novosDoCSV e' uma
       // VIEW filtrada/ordenada de conciliacao.foraDaPlanilha, nao o mesmo
@@ -12023,7 +12019,20 @@ function Cartoes({data,onUpdate,destaque,onIrPara,fila}){
         !itensUsados.some(u=>u.date===f.date&&u.title===f.title&&u.amount===f.amount))}:c);
       setParesPorNumero({}); setParIdParaNumero({}); setPreviasApp({});
     }catch(e){ alert(e.message); }
+    setProgressoMescla({i:feitosMescla,n:chavesPares.length,fim:true});
     try{ onUpdate(await api({action:"finalizarLoteCartao",cartao})); }catch(e){ alert("Mesclou, mas não consegui recarregar: "+e.message); }
+    for(const {item,fxPar} of perguntasAlias){
+      const tituloBanco=String(item.title||"").toUpperCase().trim();
+      const jaTem=fxPar.alias.split(";").map(a=>a.toUpperCase().trim()).filter(Boolean).includes(tituloBanco);
+      if(tituloBanco&&tituloBanco!==fxPar.desc.toUpperCase().trim()&&!jaTem
+        &&window.confirm('Lembrar que "'+item.title+'" no banco é a despesa fixa "'+fxPar.desc+'"? Nos próximos meses o app reconhece sozinho.')){
+        try{
+          const aliasCombinado=fxPar.alias?(fxPar.alias+";"+item.title):item.title;
+          onUpdate(await api({action:"editarRecorrencia",descricao:fxPar.desc,campo:"ALIAS_CSV",valor:aliasCombinado,resumo:"",forcarAlias:true}));
+        }catch(eAlias){ alert("Pareou, mas não consegui guardar o nome do banco: "+eAlias.message); }
+      }
+    }
+    setProgressoMescla(null);
     mesclandoRef.current=false;
     setMesclando(false);
   }
@@ -13144,7 +13153,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara,fila}){
       })()}
       {Object.keys(paresPorNumero).length>0&&<button onClick={mesclarParesCartao} disabled={mesclando}
         style={{width:"100%",padding:"10px",borderRadius:8,background:C.accent,color:"#fff",fontSize:12,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit",marginTop:10,position:"sticky",bottom:8}}>
-        {mesclando?"…":`Mesclar ${Object.keys(paresPorNumero).length} par(es) marcado(s)`}
+        {mesclando?(progressoMescla?(progressoMescla.fim?"Recarregando…":"Mesclando "+(progressoMescla.i+1)+" de "+progressoMescla.n+"…"):"…"):`Mesclar ${Object.keys(paresPorNumero).length} par(es) marcado(s)`}
       </button>}
     </div>}
 
@@ -13547,7 +13556,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261022.0900 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261023.1000 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13672,7 +13681,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261022.0900
+      // HTML v3.20261023.1000
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
