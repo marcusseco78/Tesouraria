@@ -11906,6 +11906,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara,fila}){
     }
     mesclandoRef.current=true;
     setMesclando(true);
+    const apiL=o=>api({...o,_lote:true}); // [22/10] sem recarga a cada passo; recarrega 1x no fim
     const itensUsados=[];
     try{
       for(const num of Object.keys(paresPorNumero)){
@@ -11926,21 +11927,19 @@ function Cartoes({data,onUpdate,destaque,onIrPara,fila}){
           // COM DESPESA FIXA".
           if(previa.despesaFixaVinculo){
             if(previa.ocorrenciaEscolhida&&previa.ocorrenciaEscolhida!=="novo"){
-              const r=await api({action:"vincularCompraCartao",cartao,row:previa.ocorrenciaEscolhida,
+              await apiL({action:"vincularCompraCartao",cartao,row:previa.ocorrenciaEscolhida,
                 descricaoCsv:item.title,valorCsv:item.amount,dataCsv:item.date,parcelaCsv:item.parcela,fitid:item.fitid||""});
-              onUpdate(r);
-            }else{
+                          }else{
               const nomeAlvo=previa.despesaFixaVinculo.toUpperCase();
               const fx=despesasFixasCartao.find(f=>f.desc.toUpperCase()===nomeAlvo);
               const aliasCombinado=fx&&fx.alias?(fx.alias+";"+item.title):item.title;
-              onUpdate(await api({action:"editarRecorrencia",descricao:previa.despesaFixaVinculo,campo:"ALIAS_CSV",valor:aliasCombinado,resumo:"",forcarAlias:true}));
-              const r=await api({action:"lancarCartao",cartao,data_compra:item.date,
+              await (apiL({action:"editarRecorrencia",descricao:previa.despesaFixaVinculo,campo:"ALIAS_CSV",valor:aliasCombinado,resumo:"",forcarAlias:true}));
+              await apiL({action:"lancarCartao",cartao,data_compra:item.date,
                 parcelas:parcelaTotalNum,parcelaAtual:parcelaAtualNum,
                 descricao:previa.despesaFixaVinculo,valor:(-1)*Math.abs(item.amount),categoria:"DESPESA FIXA",
                 dcp:"N",apelido:previa.despesaFixaVinculo,origemCSV:true,
                 fitid:item.fitid||"",valorBanco:item.amount,tituloBanco:item.title,parcelaBanco:item.parcela});
-              onUpdate(r);
-            }
+                          }
           }else if(previa.criarNova){
             // [NOVO 06/09] Cria a recorrência nova (destino direto neste
             // cartão) E lança a ocorrência de AGORA numa tacada só, mesmo
@@ -11952,17 +11951,19 @@ function Cartoes({data,onUpdate,destaque,onIrPara,fila}){
               semestral:{intervalo_meses:6}, anual:{intervalo_meses:12},
             };
             const fp=freqParams[previa.periodicidadeNova||"mensal"];
-            await api({action:"lancarRecorrencia",descricao:previa.apelido,valor:(-1)*Math.abs(item.amount),
-              forma:cartao,dia_venc:dObj.getDate(),semanal:false,destino:"CARTAO_"+cartao,
-              parc_total:0,tipo:"DESPESA FIXA",intervalo_meses:fp.intervalo_meses,mes_ancora:dObj.getMonth()+1,
-              obs:"",alias_csv:item.title,dia_tipo:"FIXO",dia_n:1});
-            const r=await api({action:"lancarCartao",cartao,data_compra:item.date,
+            // [22/10] ORDEM TROCADA: lanca a compra real ANTES de criar a recorrencia -- o gerador
+            // nao duplica o que ja existe na fatura. Antes a recorrencia gerava a ocorrencia
+            // deste mes (PENDENTE) e a compra real virava uma segunda linha: sobrava uma solta.
+            await apiL({action:"lancarCartao",cartao,data_compra:item.date,
               parcelas:parcelaTotalNum,parcelaAtual:parcelaAtualNum,
               descricao:previa.apelido,valor:(-1)*Math.abs(item.amount),categoria:"DESPESA FIXA",
               dcp:"N",apelido:previa.apelido.trim().toUpperCase(),origemCSV:true,
               fitid:item.fitid||"",valorBanco:item.amount,tituloBanco:item.title,parcelaBanco:item.parcela});
-            onUpdate(r);
-          }else{
+            await apiL({action:"lancarRecorrencia",descricao:previa.apelido,valor:(-1)*Math.abs(item.amount),
+              forma:cartao,dia_venc:dObj.getDate(),semanal:false,destino:"CARTAO_"+cartao,
+              parc_total:0,tipo:"DESPESA FIXA",intervalo_meses:fp.intervalo_meses,mes_ancora:dObj.getMonth()+1,
+              obs:"",alias_csv:item.title,dia_tipo:"FIXO",dia_n:1});
+                      }else{
             // [NOVO 09/09, pedido do Marcus] Sinal real, não forçado -- um
             // estorno/crédito (item.amount negativo, categoria Receita/
             // Depósito Avulso escolhida) precisa entrar positivo na
@@ -11980,14 +11981,13 @@ function Cartoes({data,onUpdate,destaque,onIrPara,fila}){
             // real do Pix/compra. Volta a gravar o texto cru em DESCRICAO (só o
             // apelido, já salvo à parte, é quem muda) -- o título nas outras telas
             // é resolvido por elas lendo o apelido, não reescrevendo o dado de base.
-            const r=await api({action:"lancarCartao",cartao,data_compra:item.date,
+            await apiL({action:"lancarCartao",cartao,data_compra:item.date,
               parcelas:parcelaTotalNum,parcelaAtual:parcelaAtualNum,
               descricao:item.title,valor:-item.amount,categoria:previa.categoria,
               dcp:previa.categoria==="DCP"?"S":"N",apelido:previa.apelido.trim().toUpperCase(),
               envelopeId:previa.envelope||undefined,origemCSV:true,
               fitid:item.fitid||"",valorBanco:item.amount,tituloBanco:item.title,parcelaBanco:item.parcela});
-            onUpdate(r);
-          }
+                      }
         }else{
           const rowApp=Number(appId.replace("app_",""));
           // [NOVO 14/10] Lê a linha ANTES de vincular: se ela é uma ocorrência de
@@ -11996,17 +11996,16 @@ function Cartoes({data,onUpdate,destaque,onIrPara,fila}){
           // reconhece sozinho, igual ao caminho "+ -> Despesa Fixa".
           const linhaAppPar=rows.find(x=>_linhaCartao(x)===rowApp);
           const fxPar=linhaAppPar?despesasFixasCartao.find(f=>f.desc.toUpperCase().trim()===String(linhaAppPar[1]||"").toUpperCase().trim()):null;
-          const r=await api({action:"vincularCompraCartao",cartao,row:rowApp,
+          await apiL({action:"vincularCompraCartao",cartao,row:rowApp,
             descricaoCsv:item.title,valorCsv:item.amount,dataCsv:item.date,parcelaCsv:item.parcela,fitid:item.fitid||""});
-          onUpdate(r);
-          if(fxPar){
+                    if(fxPar){
             const tituloBanco=String(item.title||"").toUpperCase().trim();
             const jaTem=fxPar.alias.split(";").map(a=>a.toUpperCase().trim()).filter(Boolean).includes(tituloBanco);
             if(tituloBanco&&tituloBanco!==fxPar.desc.toUpperCase().trim()&&!jaTem
               &&window.confirm('Lembrar que "'+item.title+'" no banco é a despesa fixa "'+fxPar.desc+'"? Nos próximos meses o app reconhece sozinho.')){
               try{
                 const aliasCombinado=fxPar.alias?(fxPar.alias+";"+item.title):item.title;
-                onUpdate(await api({action:"editarRecorrencia",descricao:fxPar.desc,campo:"ALIAS_CSV",valor:aliasCombinado,resumo:"",forcarAlias:true}));
+                await (apiL({action:"editarRecorrencia",descricao:fxPar.desc,campo:"ALIAS_CSV",valor:aliasCombinado,resumo:"",forcarAlias:true}));
               }catch(eAlias){ alert("Pareou, mas não consegui guardar o nome do banco: "+eAlias.message); }
             }
           }
@@ -12024,6 +12023,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara,fila}){
         !itensUsados.some(u=>u.date===f.date&&u.title===f.title&&u.amount===f.amount))}:c);
       setParesPorNumero({}); setParIdParaNumero({}); setPreviasApp({});
     }catch(e){ alert(e.message); }
+    try{ onUpdate(await api({action:"finalizarLoteCartao",cartao})); }catch(e){ alert("Mesclou, mas não consegui recarregar: "+e.message); }
     mesclandoRef.current=false;
     setMesclando(false);
   }
@@ -12267,16 +12267,15 @@ function Cartoes({data,onUpdate,destaque,onIrPara,fila}){
   async function usarDadosDoCSV(divergencia){
     setELoad(true);
     try{
-      await api({action:"editarCartaoItem",aba:abaCartao,row:divergencia.planilha.row,campo:"DESCRICAO",valor:descComNotaPreservada(divergencia)});
-      await api({action:"editarCartaoItem",aba:abaCartao,row:divergencia.planilha.row,campo:"VALOR_PARCELA",valor:String(-Math.abs(divergencia.csv.amount))});
-      // [CORRIGIDO 13/07] faltava a DATA -- o botao dizia "usar dados do CSV"
-      // mas so aplicava descricao e valor, nunca a data real da compra. Por
-      // isso o item voltava sempre pra data antiga, mesmo depois de clicar.
-      const r=await api({action:"editarCartaoItem",aba:abaCartao,row:divergencia.planilha.row,campo:"DATA_COMPRA",valor:String(divergencia.csv.date).slice(0,10)});
+      // [22/10] UMA chamada que aplica nome/valor/data do banco E confirma a linha
+      // (antes eram 3 gravacoes lentas e a linha nao ficava confirmada -- sobrava
+      // sozinha do lado do app).
+      const c=divergencia.csv;
+      const r=await api({action:"vincularCompraCartao",cartao,row:divergencia.planilha.row,
+        descricaoCsv:c.title,valorCsv:c.amount,dataCsv:String(c.date).slice(0,10),parcelaCsv:c.parcela||"1/1",fitid:c.fitid||""});
       onUpdate(r);
       setEditRow(null);
-      // remove essa divergência da conciliação em tela, já que foi resolvida
-      setConciliacao(c=>c?{...c,possiveisDivergencias:(c.possiveisDivergencias||[]).filter(d=>d.planilha.row!==divergencia.planilha.row)}:c);
+      setConciliacao(cc=>cc?{...cc,possiveisDivergencias:(cc.possiveisDivergencias||[]).filter(d=>d.planilha.row!==divergencia.planilha.row)}:cc);
     }catch(e){alert(e.message);}
     setELoad(false);
   }
@@ -13548,7 +13547,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261022.0800 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261022.0900 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13593,9 +13592,9 @@ function Tesouraria(){
           <button onClick={()=>avancarFila()} style={{minHeight:44,padding:"0 14px",borderRadius:12,border:"none",background:C.accent,color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>{fila.idx+1>=fila.itens.length?"Concluir":"Próximo ›"}</button>
           <button onClick={()=>setFila(null)} style={{minHeight:44,padding:"0 12px",borderRadius:12,border:"1px solid #3B4A78",background:"transparent",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Sair</button>
         </div>
-        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:6}}>
           {fila.itens.map((it,k)=>{const ativo=k===fila.idx;const nome=it.tipo==="cartao"?"💳 "+nomeCartao(it.destino,data):"🧾 "+((((data&&data.contas)||[]).find(c=>c.id===it.destino)||{}).nome||it.destino);
-            return <button key={k} onClick={()=>avancarFila(k)} style={{minHeight:44,padding:"0 12px",borderRadius:16,border:ativo?"none":"1px solid #3B4A78",background:ativo?"#fff":"transparent",color:ativo?C.dark:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",maxWidth:"48%",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{(k+1)+" · "+nome}</button>;})}
+            return <button key={k} onClick={()=>avancarFila(k)} style={{minHeight:44,padding:"0 12px",borderRadius:16,border:ativo?"none":"1px solid #3B4A78",background:ativo?"#fff":"transparent",color:ativo?C.dark:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",flex:"1 1 0",minWidth:0,padding:"0 8px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nome}</button>;})}
         </div>
       </div>}
       {!load&&!err&&data&&(
@@ -13673,7 +13672,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261022.0800
+      // HTML v3.20261022.0900
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();

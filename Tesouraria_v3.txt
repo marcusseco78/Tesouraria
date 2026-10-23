@@ -1,4 +1,4 @@
-// VERSAO: v3.20261022.0800
+// VERSAO: v3.20261022.0900
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -146,7 +146,9 @@ function dispatch(p) {
   _T_DISPATCH = Date.now();
   const ss = getTargetSpreadsheet();
   _CICLO_DIA = Math.min(28, Math.max(1, parseInt(readConfig(ss).CICLO_DIA) || 16));
+  _PULAR_RECARGA = !!p._lote && _ACOES_LOTE.indexOf(p.action) >= 0;
   switch (p.action) {
+    case "finalizarLoteCartao": return finalizarLoteCartao(ss, p);
     case "getData":      return getData(ss);
     case "sincronizarFaturas": return sincronizarFaturas(ss);
     case "lancar":       return lancar(ss, p);
@@ -310,6 +312,11 @@ var _MEMO = null;
 // [NOVO 17/10] Medidor por etapa (so cronometra; nao muda nenhum calculo).
 var _PERF = {};
 var _T_DISPATCH = 0;
+// [22/10] Modo lote: durante uma sequencia de acoes marcadas com p._lote (mescla em
+// lote da conciliacao), cada acao NAO recarrega a planilha nem reajusta o DCP --
+// isso roda UMA vez no fim, em finalizarLoteCartao. Vale so dentro de uma chamada.
+var _PULAR_RECARGA = false;
+var _ACOES_LOTE = ["vincularCompraCartao", "editarRecorrencia", "lancarCartao", "lancarRecorrencia", "editarCartaoItem"];
 function _pt(nome, fn) {
   var t = Date.now();
   try { return fn(); }
@@ -318,6 +325,7 @@ function _pt(nome, fn) {
 function _memoClone(v) { return JSON.parse(JSON.stringify(v)); }
 
 function getData(ss) {
+  if (_PULAR_RECARGA) return { lote: true };
   var t0 = Date.now();
   var preMs = _T_DISPATCH ? (t0 - _T_DISPATCH) : 0; // trabalho da acao ANTES da recarga
   _PERF = {};
@@ -407,7 +415,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261022.0800",
+    scriptVersion: "v3.20261022.0900",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -1163,6 +1171,16 @@ function apagarCartao(ss, p) {
  * p.row = linha da planilha (a que ja estava PENDENTE aguardando)
  * p.descricaoCsv, p.valorCsv, p.dataCsv, p.parcelaCsv = dados crus do CSV
  */
+/**
+ * [22/10] Fecha uma sequencia de acoes em lote: refaz o total da fatura e o DCP
+ * UMA vez e devolve o estado completo (saldo sempre verdadeiro no fim).
+ */
+function finalizarLoteCartao(ss, p) {
+  _PULAR_RECARGA = false;
+  if (p.cartao) _restaurarSumifFatura(ss, String(p.cartao));
+  return getData(ss);
+}
+
 function vincularCompraCartao(ss, p) {
   // [CORRIGIDO 12/09, resto da Fase 2 multi-cartao] Antes so aceitava
   // "PF"/"PJ" literal (qualquer outro cartao caia em PJ por padrao,
@@ -8213,6 +8231,7 @@ function _resumoDCPCicloAtual(ss) {
  * a proxima chamada corrige tudo sozinha.
  */
 function _ajustarProvisoesDCP(ss) {
+  if (_PULAR_RECARGA) return;
   var est = _lerEstadoDCP(ss);
 
   // [NOVO 08/08, pedido do Marcus] Reclassifica de verdade (nao so ignora
@@ -10486,6 +10505,7 @@ function _propagarContaFatura(ss, cartaoId, novaConta) {
 }
 
 function _restaurarSumifFatura(ss, tipo, vencimentoForcado) {
+  if (_PULAR_RECARGA) return;
   var shFluxo  = findSheet(ss, "FLUXO");
   var shCartao = findSheet(ss, "CARTAO_" + tipo);
   if (!shFluxo || !shCartao) return;
