@@ -5100,7 +5100,7 @@ function ConciliacaoHub({data,onUpdate,onIrPara,fila,setFila}){
   const arqRef=useRef(null);
   const filaItem=fila?fila.itens[fila.idx]:null;
   if(filaItem&&filaItem.tipo==="extrato"){
-    return <ConciliarExtratoTab key={fila.id+"-"+fila.idx} data={data} onUpdate={onUpdate} contaInicial={filaItem.destino} arquivoInicial={filaItem.file}/>;
+    return <ConciliarExtratoTab key={fila.id+"-"+fila.idx} data={data} onUpdate={onUpdate} contaInicial={filaItem.destino} arquivoInicial={_FILA_FEITOS.has(fila.id+"-"+fila.idx)?null:filaItem.file} chaveFila={fila.id+"-"+fila.idx}/>;
   }
   async function aoEscolher(files){
     let lista=Array.from(files||[]);
@@ -6007,7 +6007,7 @@ function LinhaAppIsoladaCartao({aguardando,numero,selecionado,onClickParear,onEx
   </React.Fragment>;
 }
 
-function ConciliarExtratoTab({data,onUpdate,contaInicial,arquivoInicial}){
+function ConciliarExtratoTab({data,onUpdate,contaInicial,arquivoInicial,chaveFila}){
   // [REMOVIDO 03/08] CATEGORIAS local (lista unica, misturando debito e
   // credito) -- substituida por categoriasPorSinal(valor), que escolhe entre
   // CATEGORIAS_DEBITO/CATEGORIAS_CREDITO (globais, no topo do arquivo)
@@ -6052,7 +6052,7 @@ function ConciliarExtratoTab({data,onUpdate,contaInicial,arquivoInicial}){
   });
   // [22/10] Vindo da fila "Carregar arquivos do banco": processa o arquivo 1x ao abrir.
   const arqInicialRodou=useRef(false);
-  useEffect(()=>{ if(arquivoInicial&&!arqInicialRodou.current){ arqInicialRodou.current=true; processar(arquivoInicial); } },[]);
+  useEffect(()=>{ if(arquivoInicial&&!arqInicialRodou.current){ arqInicialRodou.current=true; if(chaveFila) _FILA_FEITOS.add(chaveFila); processar(arquivoInicial); } },[]);
   useEffect(()=>{ if(!contaExtrato&&contasAtivasExt.length) setContaExtrato(contasAtivasExt[0].id); },[contasAtivasExt,contaExtrato]);
 
   // [13/08, CORRIGIDO -- bug real do Marcus] Duas chaves separadas agora,
@@ -11445,6 +11445,7 @@ function NovoDoCSV({item, cartao, onUpdate, onResolvido, onVinculado, onNovaLinh
   </div>;
 }
 
+const _FILA_FEITOS=new Set(); // [22/10] itens da fila ja processados (voltar a um deles nao reprocessa)
 // [22/10] Conciliar UMA fatura a partir de um arquivo -- fora do componente pra
 // poder ser chamada tambem pela fila de "Carregar arquivos do banco".
 async function conciliarFaturaArquivo({file,cartao,data,onResultado,onUpdate}){
@@ -11720,8 +11721,9 @@ function Cartoes({data,onUpdate,destaque,onIrPara,fila}){
     if(!it||it.tipo!=="cartao") return;
     if(cartao!==it.destino){ setCartao(it.destino); return; }
     const chave=fila.id+"-"+fila.idx;
-    if(filaRodou.current===chave) return;
+    if(filaRodou.current===chave||_FILA_FEITOS.has(chave)) return;
     filaRodou.current=chave;
+    _FILA_FEITOS.add(chave);
     conciliarFaturaArquivo({file:it.file,cartao,data,onResultado:r=>{setConciliacao(r);setSyncNovosCartao({});},onUpdate});
   },[fila,cartao]);
   useEffect(()=>{
@@ -13431,9 +13433,9 @@ function Tesouraria(){
     return ()=>window.removeEventListener("popstate",aoVoltar);
   },[]);
 
-  function avancarFila(){
+  function avancarFila(irPraIdx){
     if(!fila) return;
-    const idx=fila.idx+1;
+    const idx=(typeof irPraIdx==="number")?irPraIdx:fila.idx+1;
     if(idx>=fila.itens.length){ setFila(null); return; }
     const it=fila.itens[idx];
     setFila({...fila,idx});
@@ -13546,7 +13548,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261022.0700 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261022.0800 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13585,13 +13587,16 @@ function Tesouraria(){
       {err&&<div style={{background:C.redLight,borderRadius:10,padding:"12px 16px",color:C.red,fontSize:13,marginBottom:12}}>
         {err}<button onClick={carregar} style={{display:"block",marginTop:8,color:C.accent,fontSize:12,background:"none",border:"none",cursor:"pointer",padding:0}}>Tentar novamente</button>
       </div>}
-      {fila&&fila.itens[fila.idx]&&<div style={{position:"sticky",top:0,zIndex:60,margin:"0 0 10px",background:C.dark,color:"#fff",borderRadius:16,padding:"10px 12px",display:"flex",alignItems:"center",gap:8}}>
-        <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:11,fontWeight:800,color:"#A9B6DA"}}>CONCILIAÇÃO · ARQUIVO {fila.idx+1} DE {fila.itens.length}</div>
-          <div style={{fontSize:12,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fila.itens[fila.idx].tipo==="cartao"?"💳 "+nomeCartao(fila.itens[fila.idx].destino,data):"🧾 "+((((data&&data.contas)||[]).find(c=>c.id===fila.itens[fila.idx].destino)||{}).nome||fila.itens[fila.idx].destino)}</div>
+      {fila&&fila.itens[fila.idx]&&<div style={{position:"sticky",top:0,zIndex:60,margin:"0 0 10px",background:C.dark,color:"#fff",borderRadius:16,padding:"10px 12px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+          <div style={{flex:1,fontSize:11,fontWeight:800,color:"#A9B6DA"}}>CONCILIAÇÃO · ARQUIVO {fila.idx+1} DE {fila.itens.length}</div>
+          <button onClick={()=>avancarFila()} style={{minHeight:44,padding:"0 14px",borderRadius:12,border:"none",background:C.accent,color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>{fila.idx+1>=fila.itens.length?"Concluir":"Próximo ›"}</button>
+          <button onClick={()=>setFila(null)} style={{minHeight:44,padding:"0 12px",borderRadius:12,border:"1px solid #3B4A78",background:"transparent",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Sair</button>
         </div>
-        <button onClick={avancarFila} style={{minHeight:44,padding:"0 14px",borderRadius:12,border:"none",background:C.accent,color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>{fila.idx+1>=fila.itens.length?"Concluir":"Próximo ›"}</button>
-        <button onClick={()=>setFila(null)} style={{minHeight:44,padding:"0 12px",borderRadius:12,border:"1px solid #3B4A78",background:"transparent",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Sair</button>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {fila.itens.map((it,k)=>{const ativo=k===fila.idx;const nome=it.tipo==="cartao"?"💳 "+nomeCartao(it.destino,data):"🧾 "+((((data&&data.contas)||[]).find(c=>c.id===it.destino)||{}).nome||it.destino);
+            return <button key={k} onClick={()=>avancarFila(k)} style={{minHeight:44,padding:"0 12px",borderRadius:16,border:ativo?"none":"1px solid #3B4A78",background:ativo?"#fff":"transparent",color:ativo?C.dark:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",maxWidth:"48%",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{(k+1)+" · "+nome}</button>;})}
+        </div>
       </div>}
       {!load&&!err&&data&&(
         tab==="dashboard"   ? <Dashboard data={data} onUpdate={setData} estouro={estouro}/> :
@@ -13668,7 +13673,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261022.0700
+      // HTML v3.20261022.0800
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
