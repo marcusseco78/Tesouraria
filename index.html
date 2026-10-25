@@ -8252,11 +8252,14 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
       if(u&&u[0].ciclo===e.ciclo&&gapOk) u.push(e); else grupos.push([e]);
     });
     const lista=grupos.find(g=>g.indexOf(atual)>=0)||[atual];
-    let meta=0,gasto=0;
-    lista.forEach(e=>{const i=info(e);meta+=i.meta||0;gasto+=i.gasto||0;});
+    let meta=0,gasto=0,restAberto=0;
+    // [25/10] O que RESTA no ciclo = soma so das semanas ainda abertas (meta - gasto).
+    // Semana fechada ja repassou sobra/estouro para as proximas (carry); contar a meta
+    // reduzida E o gasto dela de novo descontava o estouro duas vezes.
+    lista.forEach(e=>{const i=info(e);meta+=i.meta||0;gasto+=i.gasto||0;if(!i.fechado)restAberto+=(i.meta||0)-(i.gasto||0);});
     const ia=info(atual);
     return {envelope:atual,ehAtual,restante:Math.round(((ia.meta||0)-(ia.gasto||0))*100)/100,
-      fechado:ia.fechado,ciclo:atual.ciclo,cicloMeta:meta,cicloGasto:gasto,cicloRestante:Math.round((meta-gasto)*100)/100};
+      fechado:ia.fechado,ciclo:atual.ciclo,cicloMeta:meta,cicloGasto:gasto,cicloRestante:Math.round(restAberto*100)/100};
   },[data.fluxo,data.config,hj]);
 
   // [13/07] Busca em Previsão, pedida junto com o conserto da busca do
@@ -8347,7 +8350,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
         const destacado=destaque?.tab==="fluxo"&&destaque.row===item.row;
         return <div key={item.row} id={"fluxo-item-"+item.row}>
         <div onClick={()=>isOpen?setConf(null):setConf(item.row)}
-          style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px 11px 78px",minHeight:44,cursor:"pointer",borderBottom:"1px solid "+C.borderLight,background:destacado?"#FEF3E2":(isOpen?C.bg:(bgItem||C.surface)),transition:"background 1s",
+          style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px",minHeight:44,cursor:"pointer",borderBottom:"1px solid "+C.borderLight,background:destacado?"#FEF3E2":(isOpen?C.bg:(bgItem||C.surface)),transition:"background 1s",
           borderLeft:corItem?"3px solid "+corItem:"none"}}>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:13,fontWeight:700,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}</div>
@@ -8446,7 +8449,7 @@ function GrupoCartaoDia({cartaoId,itens,data,futuro,onIrPara,feito}){
   const n=itens.length;
   return <div>
     <div onClick={()=>setAberto(a=>!a)}
-      style={{display:"flex",alignItems:"center",gap:8,padding:"8px 16px 8px 78px",borderBottom:"1px solid "+C.borderLight,
+      style={{display:"flex",alignItems:"center",gap:8,padding:"8px 16px",borderBottom:"1px solid "+C.borderLight,
         background:C.borderLight,opacity:0.85,cursor:"pointer"}}>
       <div style={{flex:1,minWidth:0}}>
         <div style={{fontSize:13,fontWeight:600,color:C.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}><span style={{fontSize:11,marginRight:4}}>{aberto?"▾":"▸"}</span>💳 {nomeCartao(cartaoId,data)}</div>
@@ -8456,7 +8459,7 @@ function GrupoCartaoDia({cartaoId,itens,data,futuro,onIrPara,feito}){
     </div>
     {aberto&&itens.map(c=><div key={"cart-"+c.cartao+"-"+c.row}
       onClick={()=>onIrPara&&onIrPara({tab:"cartoes",row:c.row,cartao:c.cartao})}
-      style={{display:"flex",alignItems:"center",gap:8,padding:"7px 16px 7px 78px",borderBottom:"1px solid "+C.borderLight,
+      style={{display:"flex",alignItems:"center",gap:8,padding:"7px 16px 7px 30px",borderBottom:"1px solid "+C.borderLight,
         background:C.borderLight,opacity:0.8,cursor:onIrPara?"pointer":"default"}}>
       <div style={{flex:1,minWidth:0}}>
         <div style={{fontSize:12,fontWeight:600,color:C.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontStyle:"italic"}}>{c.descricao}</div>
@@ -8621,7 +8624,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
         vazio={!itens.length&&!cartaoDia.length} abertoInicial={gi===0} forcarAberto={!!busca.trim()||itemNoDia||(!!diaAlvo&&gdt===diaAlvo)} sinal={sinalDias}>
         {itens.map(item=>{const {cor:corItem,selo,bg:bgItem,descCor,confirmadoExtrato}=corDoItem(item,hj);const isOpen=conf===item.row;const destacado=destaque?.tab==="historico"&&destaque.row===item.row;return <div key={item.row} id={"hist-item-"+item.row}>
           <div onClick={()=>isOpen?setConf(null):setConf(item.row)}
-            style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px 11px 78px",minHeight:44,cursor:"pointer",borderBottom:isOpen?"none":"1px solid "+C.borderLight,background:destacado?"#FEF3E2":(isOpen?C.bg:(bgItem||C.surface)),transition:"background 1s",
+            style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px",minHeight:44,cursor:"pointer",borderBottom:isOpen?"none":"1px solid "+C.borderLight,background:destacado?"#FEF3E2":(isOpen?C.bg:(bgItem||C.surface)),transition:"background 1s",
             borderLeft:corItem?"3px solid "+corItem:"none"}}>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,fontWeight:700,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}</div>
@@ -13569,7 +13572,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261025.1500 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261025.1600 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13694,7 +13697,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261025.1500
+      // HTML v3.20261025.1600
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
