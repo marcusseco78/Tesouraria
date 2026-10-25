@@ -1,4 +1,4 @@
-// VERSAO: v3.20261023.1000
+// VERSAO: v3.20261025.1500
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -415,7 +415,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261023.1000",
+    scriptVersion: "v3.20261025.1500",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -501,6 +501,8 @@ function readFluxo(ss) {
     saldoReal:      null,
     saldoProjetado: null
   }));
+  // [25/10] Data usada na soma do saldo (so muda pro envelope DCP).
+  fluxo.forEach(r => { r.dataSaldo = (r.categoria === "DCP_PROVISAO") ? _dataSaldoDCP(r.data) : r.data; });
 
   // Agrupar totais por data
   // [09/08-2] "Colchao de ar" do DCP_PROVISAO: a linha da provisao pode
@@ -516,10 +518,10 @@ function readFluxo(ss) {
   const byDate = {};
   fluxo.forEach(r => {
     if (!r.data) return;
-    if (!byDate[r.data]) byDate[r.data] = { all: 0, exec: 0 };
+    if (!byDate[r.dataSaldo]) byDate[r.dataSaldo] = { all: 0, exec: 0 };
     const valorSaldo = (r.categoria === "DCP_PROVISAO") ? Math.min(0, r.valor) : r.valor;
-    byDate[r.data].all += valorSaldo;
-    if (r.status === "EXECUTADO") byDate[r.data].exec += r.valor;
+    byDate[r.dataSaldo].all += valorSaldo;
+    if (r.status === "EXECUTADO") byDate[r.dataSaldo].exec += r.valor;
   });
 
   // Somas acumuladas por data (equivalente ao SUMIFS "<="&data)
@@ -534,7 +536,7 @@ function readFluxo(ss) {
 
   // Atribuir a cada linha o saldo acumulado ate sua data
   fluxo.forEach(r => {
-    const c = cumMap[r.data];
+    const c = cumMap[r.dataSaldo];
     if (c) { r.saldoProjetado = c.all; r.saldoReal = c.exec; }
   });
 
@@ -548,10 +550,10 @@ function readFluxo(ss) {
     if (!r.data) return;
     const conta = r.forma || "CONTA";
     if (!byDateConta[conta]) byDateConta[conta] = {};
-    if (!byDateConta[conta][r.data]) byDateConta[conta][r.data] = { all: 0, exec: 0 };
+    if (!byDateConta[conta][r.dataSaldo]) byDateConta[conta][r.dataSaldo] = { all: 0, exec: 0 };
     const valorSaldoConta = (r.categoria === "DCP_PROVISAO") ? Math.min(0, r.valor) : r.valor;
-    byDateConta[conta][r.data].all += valorSaldoConta;
-    if (r.status === "EXECUTADO") byDateConta[conta][r.data].exec += r.valor;
+    byDateConta[conta][r.dataSaldo].all += valorSaldoConta;
+    if (r.status === "EXECUTADO") byDateConta[conta][r.dataSaldo].exec += r.valor;
   });
   // Saldo inicial por conta (aba CONTAS) -- 0 pras 2 contas ja existentes
   // (retrocompativel: total continua igual), so relevante quando uma conta
@@ -571,7 +573,7 @@ function readFluxo(ss) {
   });
   fluxo.forEach(r => {
     const conta = r.forma || "CONTA";
-    const c = cumMapConta[conta] && cumMapConta[conta][r.data];
+    const c = cumMapConta[conta] && cumMapConta[conta][r.dataSaldo];
     if (c) { r.saldoProjetadoConta = c.all; r.saldoRealConta = c.exec; }
   });
 
@@ -6888,7 +6890,7 @@ function _simularMenorLiquidezCiclo(ss, dataIniCiclo, dataFimCiclo, valorSemanal
   // Segundas-feiras hipoteticas do ciclo, cada uma debitando valorSemanal
   var cursor = _segundaDCP(dataIniCiclo);
   while (cursor <= dataFimCiclo) {
-    eventos.push({ data: cursor, valor: -valorSemanal });
+    eventos.push({ data: _dataSaldoDCP(cursor), valor: -valorSemanal }); // [25/10] reserva conta no ultimo dia da semana
     var d = parseDateBRT(cursor);
     d.setDate(d.getDate() + 7);
     cursor = fmtDateSimple(d);
@@ -7035,8 +7037,8 @@ function verificarEstouroProjetado(ss) {
   var fimStr = fmtDateSimple(fimData);
 
   var fluxo = readFluxo(ss).filter(function (r) {
-    return r.data >= hojeStr && r.data <= fimStr && r.saldoProjetado != null;
-  }).sort(function (a, b) { return a.data < b.data ? -1 : (a.data > b.data ? 1 : 0); });
+    return r.dataSaldo >= hojeStr && r.dataSaldo <= fimStr && r.saldoProjetado != null;
+  }).sort(function (a, b) { return a.dataSaldo < b.dataSaldo ? -1 : (a.dataSaldo > b.dataSaldo ? 1 : 0); });
 
   if (!fluxo.length) return { temProblema: false };
 
@@ -7100,7 +7102,7 @@ function verificarEstouroProjetado(ss) {
       // data no passado mas continua totalmente ajustável até fechar de
       // verdade. O que importa é só o STATUS (PROGRAMADO = ainda dá pra
       // mexer), igual toda outra lição já registrada nesse sentido.
-      if (dStr > pior.data) return;
+      if (_dataSaldoDCP(dStr) > pior.dataSaldo) return;
       semanasAbertas.push({ row: FLUXO_START + idx, data: dStr, desc: String(r[1] || ""), valorAtual: Math.abs(Number(r[2]) || 0) });
     });
   }
@@ -7109,7 +7111,7 @@ function verificarEstouroProjetado(ss) {
   if (!semanasAbertas.length) {
     return {
       temProblema: true, deficit: deficit,
-      dataProblema: primeiroNegativo.data, piorData: pior.data, piorSaldo: pior.saldoProjetado,
+      dataProblema: primeiroNegativo.dataSaldo, piorData: pior.dataSaldo, piorSaldo: pior.saldoProjetado,
       diasNegativos: diasNegativos.length,
       semanas: [], sobra: deficit, reagendamento: sugerirReagendamento(ss)
     };
@@ -7131,8 +7133,8 @@ function verificarEstouroProjetado(ss) {
   return {
     temProblema: true,
     deficit: deficit,
-    dataProblema: primeiroNegativo.data,
-    piorData: pior.data,
+    dataProblema: primeiroNegativo.dataSaldo,
+    piorData: pior.dataSaldo,
     piorSaldo: pior.saldoProjetado,
     diasNegativos: diasNegativos.length,
     semanas: semanas,
@@ -7188,8 +7190,8 @@ function sugerirReagendamento(ss) {
   var horizonteFimStr = fmtDateSimple(horizonteFimData);
 
   var fluxo = readFluxo(ss).filter(function(r) {
-    return r.data >= hojeStr && r.data <= horizonteFimStr && r.saldoProjetado != null;
-  }).sort(function(a, b) { return a.data < b.data ? -1 : (a.data > b.data ? 1 : 0); });
+    return r.dataSaldo >= hojeStr && r.dataSaldo <= horizonteFimStr && r.saldoProjetado != null;
+  }).sort(function(a, b) { return a.dataSaldo < b.dataSaldo ? -1 : (a.dataSaldo > b.dataSaldo ? 1 : 0); });
 
   if (!fluxo.length) return { deficit: 0, sugestoes: [] };
 
@@ -7198,7 +7200,7 @@ function sugerirReagendamento(ss) {
   var deficit = _round2(-pior.saldoProjetado);
 
   var porData = {};
-  fluxo.forEach(function(r) { porData[r.data] = r.saldoProjetado; });
+  fluxo.forEach(function(r) { porData[r.dataSaldo] = r.saldoProjetado; });
   var datasOrdenadas = Object.keys(porData).sort();
   var sufMin = {};
   var acumMin = Infinity;
@@ -7275,7 +7277,7 @@ function sugerirReagendamento(ss) {
   // aplicar de verdade, mora em verificarEstouroProjetado/
   // aplicarAjusteDCPEstouro -- e' quem chama sugerirReagendamento agora
   // (nao o contrario), como plano B quando nem o Minimo Vital resolve.
-  return { deficit: deficit, piorData: pior.data, sugestoes: validas };
+  return { deficit: deficit, piorData: pior.dataSaldo, sugestoes: validas };
 }
 
 /**
@@ -7900,6 +7902,21 @@ function _segundaDCP(d) {
     var offTras = (dt.getDay() + 6) % 7; // dias desde a ultima segunda
     dt.setDate(dt.getDate() - offTras);
   }
+  return fmtDateSimple(dt);
+}
+
+/**
+ * [25/10, pedido do Marcus] A reserva do DCP conta no SALDO no ULTIMO dia da
+ * semana (data + 6), nao no primeiro. Durante a semana o saldo fica igual ao
+ * do banco; no ultimo dia entra o que ainda resta do envelope. A data
+ * gravada na planilha NAO muda (continua sendo a identidade da semana);
+ * so a data usada na soma do saldo. Envelope antes do corte de janela
+ * (data = fim da semana) ja conta na propria data.
+ */
+function _dataSaldoDCP(dataIso) {
+  if (!dataIso || dataIso < _DCP_CORTE_JANELA) return dataIso;
+  var dt = parseDateBRT(String(dataIso));
+  dt.setDate(dt.getDate() + 6);
   return fmtDateSimple(dt);
 }
 
