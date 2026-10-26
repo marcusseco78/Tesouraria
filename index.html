@@ -1553,7 +1553,7 @@ function Chart({pts,zoomX}){
 }
 
 // ── BARRA DCP ─────────────────────────────────────────────────────────────────
-function BarraDCP({semanas,base}){
+function BarraDCP({semanas,base,grande}){
   const n=Math.max(semanas.length,1),teto=base*n;
   // Preenchimento continuo: soma o gasto de todas as semanas (fechadas +
   // aberta ao vivo) -- a barra avanca sem parar por semana, so a regua
@@ -1563,29 +1563,59 @@ function BarraDCP({semanas,base}){
   const semAtualIdx=semanas.findIndex(w=>w.status==="PROGRAMADO");
   const pct=Math.min(real/teto,1)*100,cor=pct>100?C.red:pct>80?C.orange:C.green;
   return <div>
-    <div style={{position:"relative",height:10,borderRadius:99,background:C.borderLight,overflow:"hidden",marginBottom:6}}>
+    <div style={{position:"relative",height:grande?14:10,borderRadius:99,background:C.borderLight,overflow:"hidden",marginBottom:6}}>
       <div style={{position:"absolute",left:0,top:0,bottom:0,width:Math.min(pct,100)+"%",background:cor,borderRadius:99,transition:"width .5s"}}/>
       {Array.from({length:n-1}).map((_,i)=><div key={i} style={{position:"absolute",top:0,bottom:0,left:((i+1)*100/n)+"%",width:2,background:"#fff",opacity:.7}}/>)}
     </div>
     <div style={{display:"flex",marginBottom:6}}>
       {semanas.map((w,s)=>{const ativa=s===semAtualIdx,estourou=w.gasto>=w.meta;return <div key={w.data} style={{flex:1,textAlign:"center"}}>
-        <div style={{fontSize:9,fontWeight:ativa?800:500,color:estourou?C.red:ativa?C.accent:C.textMuted}}>{"S"+(s+1)+(ativa?" ◀":"")}</div>
-        <div style={{fontSize:8,color:C.textMuted,marginTop:1}}>{fmt(w.gasto)}</div>
+        <div style={{fontSize:grande?12:9,fontWeight:ativa?800:500,color:estourou?C.red:ativa?C.accent:C.textMuted}}>{"S"+(s+1)+(ativa?" ◀":"")}</div>
+        <div style={{fontSize:grande?11:8,color:C.textMuted,marginTop:1}}>{fmt(w.gasto)}</div>
       </div>;})}
     </div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
-      <div><span style={{fontSize:13,fontWeight:800,color:real>teto?C.red:C.text}}>{fmt(real)}</span>
-        <span style={{fontSize:12,color:C.textMuted,fontWeight:600}}> / {fmt(teto)}</span>
+      <div><span style={{fontSize:grande?17:13,fontWeight:800,color:real>teto?C.red:C.text}}>{fmt(real)}</span>
+        <span style={{fontSize:grande?14:12,color:C.textMuted,fontWeight:600}}> / {fmt(teto)}</span>
         {real>teto&&<span style={{fontSize:10,color:C.red,marginLeft:6}}>estouro {fmt(real-teto)}</span>}
       </div>
       <div style={{textAlign:"right"}}>
-        <div style={{fontSize:8,color:C.textMuted,textTransform:"uppercase",letterSpacing:".05em"}}>Disponível do ciclo</div>
-        <div style={{fontSize:12,fontWeight:700,color:(teto-real)<0?C.red:C.text}}>{fmt(teto-real)}</div>
+        <div style={{fontSize:grande?10:8,color:C.textMuted,textTransform:"uppercase",letterSpacing:".05em"}}>Disponível do ciclo</div>
+        <div style={{fontSize:grande?15:12,fontWeight:700,color:(teto-real)<0?C.red:C.text}}>{fmt(teto-real)}</div>
       </div>
     </div>
   </div>;
 }
 
+// [26/10] Card do DCP (semana + ciclo + barra de consumo): usado no Dashboard e no topo da Plano.
+function CardDCP({dcpResumo,grande}){
+  if(!dcpResumo||!dcpResumo.semanas||!dcpResumo.semanas.length) return null;
+  return <Card style={grande?{padding:"22px 20px"}:undefined}>
+      <div style={{marginBottom:8}}><Label>{grande?"DCP · Despesas cotidianas":"Saldo p/ Despesas Cotidianas (DCP)"}</Label></div>
+      {(()=>{
+        // [NOVO 20/07] Destaque pedido pelo Marcus -- "quanto tenho pra
+        // gastar" na semana e no mês/ciclo, junto das outras informações
+        // mais práticas do app (menor liquidez, projeções). Antes só
+        // existia dentro da barra, em texto pequeno ("Disponível do
+        // ciclo"). [AUMENTADO 20/07] Bloco próprio, bem maior que o KPI
+        // padrão -- pedido explícito pra ficar mais evidente que qualquer
+        // outro número da tela.
+        const semAtual=dcpResumo.semanas.find(w=>w.status==="PROGRAMADO")||dcpResumo.semanas[dcpResumo.semanas.length-1];
+        const dispSemana=semAtual?semAtual.meta-semAtual.gasto:null;
+        const tetoMes=dcpResumo.base*Math.max(dcpResumo.semanas.length,1);
+        const gastoMes=dcpResumo.semanas.reduce((s,w)=>s+w.gasto,0);
+        const dispMes=tetoMes-gastoMes;
+        const Bloco=({label,valor})=><div style={{flex:1,minWidth:0,background:C.bg,borderRadius:16,padding:grande?"18px 8px":"14px 8px",textAlign:"center",boxSizing:"border-box"}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.textSub,textTransform:"uppercase",letterSpacing:".03em",marginBottom:4,lineHeight:1.2}}>{label}</div>
+          <div style={{fontSize:grande?28:22,fontWeight:800,color:valor<0?C.red:C.green,lineHeight:1.05,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fmt(valor)}</div>
+        </div>;
+        return <div style={{display:"flex",gap:8,marginBottom:12}}>
+          {dispSemana!=null&&<Bloco label="Esta semana" valor={dispSemana}/>}
+          <Bloco label="No ciclo (mês)" valor={dispMes}/>
+        </div>;
+      })()}
+      <BarraDCP semanas={dcpResumo.semanas} base={dcpResumo.base} grande={grande}/>
+    </Card>;
+}
 function Card({children,style}){return <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:20,padding:"18px 20px",boxShadow:"none",...style}}>{children}</div>;}
 function Label({c,children}){return <span style={{fontSize:10,color:c||C.textMuted,textTransform:"uppercase",letterSpacing:".08em"}}>{children}</span>;}
 function KPI({label,value,sub,color,bg,raw}){const neg=typeof raw==="number"&&raw<0;const numCor=neg?C.red:(color||C.text);return <div style={{background:C.bg,borderRadius:16,padding:"14px 14px",overflow:"hidden"}}>
@@ -1863,32 +1893,7 @@ function Dashboard({data,onUpdate,estouro}){
         <div style={{display:"inline-flex",marginTop:10,fontSize:11,fontWeight:800,color:ml.saldoProjetado<1000?"#FFB4AC":"#A9B6DA",background:"rgba(255,255,255,.10)",padding:"3px 10px",borderRadius:12}}>{fmtD(ml.dataSaldo||ml.data)}</div>
       </div>}
     </div>
-    {dcpResumo.semanas.length>0&&<Card>
-      <div style={{marginBottom:8}}><Label>Saldo p/ Despesas Cotidianas (DCP)</Label></div>
-      {(()=>{
-        // [NOVO 20/07] Destaque pedido pelo Marcus -- "quanto tenho pra
-        // gastar" na semana e no mês/ciclo, junto das outras informações
-        // mais práticas do app (menor liquidez, projeções). Antes só
-        // existia dentro da barra, em texto pequeno ("Disponível do
-        // ciclo"). [AUMENTADO 20/07] Bloco próprio, bem maior que o KPI
-        // padrão -- pedido explícito pra ficar mais evidente que qualquer
-        // outro número da tela.
-        const semAtual=dcpResumo.semanas.find(w=>w.status==="PROGRAMADO")||dcpResumo.semanas[dcpResumo.semanas.length-1];
-        const dispSemana=semAtual?semAtual.meta-semAtual.gasto:null;
-        const tetoMes=dcpResumo.base*Math.max(dcpResumo.semanas.length,1);
-        const gastoMes=dcpResumo.semanas.reduce((s,w)=>s+w.gasto,0);
-        const dispMes=tetoMes-gastoMes;
-        const Bloco=({label,valor})=><div style={{flex:1,minWidth:0,background:C.bg,borderRadius:16,padding:"14px 8px",textAlign:"center",boxSizing:"border-box"}}>
-          <div style={{fontSize:10,fontWeight:700,color:C.textSub,textTransform:"uppercase",letterSpacing:".03em",marginBottom:4,lineHeight:1.2}}>{label}</div>
-          <div style={{fontSize:22,fontWeight:800,color:valor<0?C.red:C.green,lineHeight:1.05,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fmt(valor)}</div>
-        </div>;
-        return <div style={{display:"flex",gap:8,marginBottom:12}}>
-          {dispSemana!=null&&<Bloco label="Esta semana" valor={dispSemana}/>}
-          <Bloco label="No ciclo (mês)" valor={dispMes}/>
-        </div>;
-      })()}
-      <BarraDCP semanas={dcpResumo.semanas} base={dcpResumo.base}/>
-    </Card>}
+    <CardDCP dcpResumo={dcpResumo}/>
     <Card style={{padding:"14px 12px 10px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10,paddingLeft:2}}>
         <div>
@@ -8054,6 +8059,48 @@ function FiltroTopo({busca,onBusca,placeholder,contasAtivas,contaSelecionada,onC
     </div>}
   </div>;
 }
+// [26/10, pedido do Marcus] Um cartao so, largura toda: primeiro dia negativo, maior negativo
+// e os periodos negativos. pts = [{gdt,sp}] saldo de ABERTURA de cada dia da lista.
+function _periodosNegativos(pts){
+  const ord=[...pts].sort((a,b)=>a.gdt>b.gdt?1:-1),runs=[];let cur=null;
+  ord.forEach(x=>{ if(x.sp<0){ if(!cur){cur={ini:x.gdt,fim:x.gdt};runs.push(cur);} else cur.fim=x.gdt; } else cur=null; });
+  const dm=d=>d.slice(8,10)+"/"+d.slice(5,7);
+  return runs.map(r=>r.ini===r.fim?dm(r.ini):(r.ini.slice(5,7)===r.fim.slice(5,7)?r.ini.slice(8,10)+"–"+dm(r.fim):dm(r.ini)+"–"+dm(r.fim)));
+}
+function CaixaNegativosPlano({pts}){
+  if(!pts||!pts.length) return null;
+  const dm=d=>d.slice(8,10)+"/"+d.slice(5,7);
+  const neg=pts.filter(x=>x.sp<0).sort((a,b)=>a.gdt>b.gdt?1:-1);
+  const card={background:C.dark,borderRadius:20,padding:"16px 16px",color:"#FFFFFF",marginBottom:12};
+  const rot={fontSize:10,fontWeight:700,letterSpacing:".04em",color:"#A9B6DA"};
+  if(!neg.length){
+    const menor=pts.reduce((m,x)=>x.sp<m.sp?x:m,pts[0]);
+    return <div style={card}>
+      <div style={rot}>MENOR SALDO PREVISTO</div>
+      <div style={{display:"flex",alignItems:"baseline",gap:12,marginTop:4,flexWrap:"wrap"}}>
+        <span style={{fontSize:30,fontWeight:800,letterSpacing:"-.03em",color:"#7FE0B5",fontVariantNumeric:"tabular-nums"}}>{dm(menor.gdt)}</span>
+        <span style={{fontSize:22,fontWeight:800,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{fmt(menor.sp)}</span>
+      </div>
+      <div style={{fontSize:12,color:"#A9B6DA",fontWeight:600,marginTop:6}}>Nenhum dia negativo previsto</div>
+    </div>;
+  }
+  const primeiro=neg[0],pior=neg.reduce((m,x)=>x.sp<m.sp?x:m,neg[0]);
+  const per=_periodosNegativos(pts);
+  const col=(titulo,x)=><div style={{flex:1,minWidth:0}}>
+    <div style={rot}>{titulo}</div>
+    <div style={{fontSize:28,fontWeight:800,letterSpacing:"-.03em",marginTop:4,color:"#FFB4AC",fontVariantNumeric:"tabular-nums"}}>{dm(x.gdt)}</div>
+    <div style={{fontSize:18,fontWeight:800,marginTop:2,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{fmt(x.sp)}</div>
+  </div>;
+  return <div style={card}>
+    <div style={{display:"flex",gap:14}}>
+      {col("PRIMEIRO DIA NEGATIVO",primeiro)}
+      {col("MAIOR NEGATIVO",pior)}
+    </div>
+    <div style={{marginTop:12,paddingTop:10,borderTop:"1px solid rgba(255,255,255,.14)",fontSize:12,fontWeight:700,color:"#A9B6DA",lineHeight:1.5}}>
+      Negativo em: <span style={{color:"#FFFFFF"}}>{per.slice(0,4).join("  |  ")}{per.length>4?"  | …":""}</span>
+    </div>
+  </div>;
+}
 // Caixa escura do topo da Plano: primeiro dia negativo (ou menor saldo) + envelope da semana.
 function CaixaResumoPlano({destaqueDia,envelope}){
   if(!destaqueDia&&!envelope) return null;
@@ -8311,9 +8358,9 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
       const pts=gruposExibidos.filter(g=>!g.soEnvelope).map(g=>({gdt:g.gdt,sp:filtrar?(g.spPorConta&&g.spPorConta[contaSelecionada]):g.spIni})).filter(x=>x.sp!=null&&isFinite(x.sp));
       const neg=pts.find(x=>x.sp<0);
       const menor=pts.length?pts.reduce((m,x)=>x.sp<m.sp?x:m,pts[0]):null;
-      const alvo=neg||menor;
-      return <CaixaResumoPlano destaqueDia={alvo?{dia:fmtD(alvo.gdt).slice(0,5),saldo:alvo.sp,negativo:!!neg}:null} envelope={envelopeAberto}/>;
+      return <CaixaNegativosPlano pts={pts}/>;
     })()}
+    {!busca.trim()&&<CardDCP dcpResumo={data.dcpResumo} grande/>}
     {!busca.trim()&&<ExecutarVencidos itens={contasAtivas.length>1&&contaSelecionada?prog.filter(i=>(i.forma||"CONTA")===contaSelecionada):prog} hj={hj} onUpdate={onUpdate} data={data}/>}
     {busca.trim()&&!gruposExibidos.length&&<div style={{padding:"20px 14px",textAlign:"center",color:C.textMuted,fontSize:13}}>Nada encontrado para "{busca}".</div>}
     {gruposExibidos.map(({gdt,itensExibir,cartaoExibir,spIni,spPorConta},gi)=>{
@@ -13572,7 +13619,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261025.1600 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261026.0200 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13697,7 +13744,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261025.1600
+      // HTML v3.20261026.0200
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
