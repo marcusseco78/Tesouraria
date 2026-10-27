@@ -1,4 +1,4 @@
-// VERSAO: v3.20261027.1730
+// VERSAO: v3.20261027.1800
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -415,7 +415,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261027.1730",
+    scriptVersion: "v3.20261027.1800",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -7089,6 +7089,13 @@ function verificarEstouroProjetado(ss) {
   var shFluxo = ss.getSheetByName("FLUXO");
   var last = shFluxo.getLastRow();
   var semanasAbertas = [];
+  // [27/10, achado real do Marcus] A semana em curso ja consumiu parte do envelope: o VALOR
+  // gravado e' so o que RESTA da reserva (meta - consumo), nao a meta. Comparar esse "resta"
+  // com o Minimo Vital fazia a tela propor SUBIR o envelope (126 -> 530). Agora a base e' a
+  // META (base + carry), e o piso de cada semana e' o maior entre o Minimo Vital e o que ja foi gasto.
+  var estDcpAj = _lerEstadoDCP(ss);
+  var pvPorDataAj = {};
+  estDcpAj.provisoes.forEach(function (pv) { pvPorDataAj[pv.data] = pv; });
   if (last >= FLUXO_START) {
     var rows = shFluxo.getRange(FLUXO_START, 1, last - FLUXO_START + 1, 9).getValues();
     rows.forEach(function (r, idx) {
@@ -7103,7 +7110,10 @@ function verificarEstouroProjetado(ss) {
       // verdade. O que importa é só o STATUS (PROGRAMADO = ainda dá pra
       // mexer), igual toda outra lição já registrada nesse sentido.
       if (_dataSaldoDCP(dStr) > pior.dataSaldo) return;
-      semanasAbertas.push({ row: FLUXO_START + idx, data: dStr, desc: String(r[1] || ""), valorAtual: Math.abs(Number(r[2]) || 0) });
+      var pvAj = pvPorDataAj[dStr];
+      var metaAj = pvAj ? _round2(estDcpAj.base + pvAj.carry) : Math.abs(Number(r[2]) || 0);
+      var consumoAj = pvAj ? (estDcpAj.consumo[dStr] || 0) : 0;
+      semanasAbertas.push({ row: FLUXO_START + idx, data: dStr, desc: String(r[1] || ""), valorAtual: metaAj, consumo: consumoAj });
     });
   }
   semanasAbertas.sort(function (a, b) { return a.data < b.data ? -1 : 1; });
@@ -7117,7 +7127,10 @@ function verificarEstouroProjetado(ss) {
     };
   }
 
-  var resultado = _distribuirComPiso(deficit, semanasAbertas.map(function (s) { return { carryAtual: s.valorAtual }; }), 0, piso);
+  var resultado = _distribuirComPiso(deficit, semanasAbertas.map(function (s) {
+    var folga = Math.max(0, s.valorAtual - Math.max(piso, s.consumo || 0));
+    return { carryAtual: piso + folga };
+  }), 0, piso);
   var sobra = _round2(resultado.sobra);
 
   var semanas = semanasAbertas.map(function (s, i) {

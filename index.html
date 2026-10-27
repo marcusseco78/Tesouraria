@@ -1780,6 +1780,11 @@ function CicloCard({fluxo,nome,atual,dcpResumo,basais,data}){
 const CORES_NIVEL_DCP={vermelho:{cor:"#C0352B",bg:"#FDEEEC"},laranja:{cor:"#EA580C",bg:"#FEF3E2"},amarelo:{cor:"#B45309",bg:"#FEF3E2"},verde:{cor:"#16A34A",bg:"#E6F5EE"}};
 function AvisoEstouroDCP({estouro,onUpdate}){
   const [aplicandoEstouro,setAplicandoEstouro]=useState(false);
+  // [27/10, pedido do Marcus] "x" para fechar o aviso. Fica fechado enquanto o problema for o mesmo
+  // (mesma data e mesmo valor); se mudar, o aviso volta sozinho.
+  const assinaturaAviso=estouro&&estouro.temProblema?(estouro.piorData+"|"+Math.round((estouro.deficit||0)*100)):"";
+  const [fechadoAviso,setFechadoAviso]=useState(()=>{try{return localStorage.getItem("tesouraria_aviso_estouro_fechado")||"";}catch(e){return "";}});
+  function fecharAviso(){ try{localStorage.setItem("tesouraria_aviso_estouro_fechado",assinaturaAviso);}catch(e){} setFechadoAviso(assinaturaAviso); }
   async function aplicarEstouro(){
     if(!estouro||!estouro.semanas||!estouro.semanas.length)return;
     setAplicandoEstouro(true);
@@ -1790,7 +1795,10 @@ function AvisoEstouroDCP({estouro,onUpdate}){
     setAplicandoEstouro(false);
   }
   if(!estouro||!estouro.temProblema) return null;
-  return <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:20,padding:"18px 18px"}}>
+  if(fechadoAviso&&fechadoAviso===assinaturaAviso) return null;
+  return <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:20,padding:"18px 18px",position:"relative"}}>
+    <button onClick={fecharAviso} aria-label="Fechar aviso" title="Fechar"
+      style={{position:"absolute",top:6,right:6,width:44,height:44,borderRadius:12,border:"none",background:"transparent",color:C.textMuted,fontSize:20,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
     <span style={{display:"inline-block",fontSize:11,fontWeight:800,color:C.red,background:C.redLight,padding:"4px 11px",borderRadius:12}}>
       Saldo negativo em {fmtD(estouro.dataProblema)}
     </span>
@@ -13766,7 +13774,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261027.1730 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261027.1800 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13892,7 +13900,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261027.1730
+      // HTML v3.20261027.1800
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
