@@ -1589,7 +1589,7 @@ function BarraDCP({semanas,base,grande}){
 // [26/10] Card do DCP (semana + ciclo + barra de consumo): usado no Dashboard e no topo da Plano.
 function CardDCP({dcpResumo,grande}){
   if(!dcpResumo||!dcpResumo.semanas||!dcpResumo.semanas.length) return null;
-  return <Card style={grande?{padding:"22px 20px"}:undefined}>
+  return <Card style={grande?{padding:"20px 12px"}:undefined}>
       <div style={{marginBottom:8}}><Label>{grande?"DCP · Despesas cotidianas":"Saldo p/ Despesas Cotidianas (DCP)"}</Label></div>
       {(()=>{
         // [NOVO 20/07] Destaque pedido pelo Marcus -- "quanto tenho pra
@@ -1604,9 +1604,9 @@ function CardDCP({dcpResumo,grande}){
         const tetoMes=dcpResumo.base*Math.max(dcpResumo.semanas.length,1);
         const gastoMes=dcpResumo.semanas.reduce((s,w)=>s+w.gasto,0);
         const dispMes=tetoMes-gastoMes;
-        const Bloco=({label,valor})=><div style={{flex:1,minWidth:0,background:C.bg,borderRadius:16,padding:grande?"18px 8px":"14px 8px",textAlign:"center",boxSizing:"border-box"}}>
+        const Bloco=({label,valor})=><div style={{flex:1,minWidth:0,background:C.bg,borderRadius:16,padding:grande?"18px 4px":"14px 8px",textAlign:"center",boxSizing:"border-box"}}>
           <div style={{fontSize:10,fontWeight:700,color:C.textSub,textTransform:"uppercase",letterSpacing:".03em",marginBottom:4,lineHeight:1.2}}>{label}</div>
-          <div style={{fontSize:grande?28:22,fontWeight:800,color:valor<0?C.red:C.green,lineHeight:1.05,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fmt(valor)}</div>
+          <div style={{fontSize:21,fontWeight:800,color:valor<0?C.red:C.green,lineHeight:1.05,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fmt(valor)}</div>
         </div>;
         return <div style={{display:"flex",gap:8,marginBottom:12}}>
           {dispSemana!=null&&<Bloco label="Esta semana" valor={dispSemana}/>}
@@ -13619,7 +13619,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261026.0200 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261026.2310 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13744,7 +13744,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261026.0200
+      // HTML v3.20261026.2310
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
