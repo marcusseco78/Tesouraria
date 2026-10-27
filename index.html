@@ -1822,7 +1822,7 @@ function AvisoEstouroDCP({estouro,onUpdate}){
   </div>;
 }
 
-function Dashboard({data,onUpdate,estouro}){
+function Dashboard({data,onUpdate,estouro,onIrPara}){
   const fluxo=data.fluxo||[],cfg=data.config||{},hj=hoje();
   const dcpResumo=data.dcpResumo||{base:1250,numSemanas:0,totalGasto:0,semanas:[]};
   // Custo de vida dinamico: soma dos recorrentes DESPESA FIXA ativos (FLUXO
@@ -1894,6 +1894,7 @@ function Dashboard({data,onUpdate,estouro}){
       </div>}
     </div>
     <CardDCP dcpResumo={dcpResumo}/>
+    <CardOrcamento data={data} onAbrir={()=>onIrPara&&onIrPara({tab:"orcamento"})}/>
     <Card style={{padding:"14px 12px 10px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10,paddingLeft:2}}>
         <div>
@@ -7231,6 +7232,147 @@ function TransferenciaEspelhada({data,onUpdate}){
   </div>;
 }
 
+// ── ORCAMENTO (mes tipico) ───────────────────────────────────────────────────
+// [27/10, pedido do Marcus] Receitas fixas x despesas fixas em "mes tipico": valores
+// que NAO variam com o calendario do mes. Plantao = escala semanal x 52/12 (regras
+// "toda segunda", "1o sabado"...); periodicas (trimestral/anual) divididas pelos meses;
+// semanal x 52/12; DCP = base x 52/12. So leitura: nada aqui grava.
+function _orcEhCartao(r){ const d=String(r.destino||"").toUpperCase().replace(/[^A-Z0-9]/g,""); return d.indexOf("CARTAO")===0; }
+function _orcEhSemanal(r){ let o={};try{o=JSON.parse(r.obs||"{}");}catch(e){} if(o.freq==="SEMANAL") return true; if(o.freq==="MENSAL") return false; return parseInt(r.diaVenc)===2||parseInt(r.diaVenc)===6; }
+function _orcPlantoesPorMes(regras){
+  let t=0;
+  (regras||[]).forEach(r=>{
+    const q=Number(r.qtd)||1;
+    if(r.modo==="toda") t+=q*52/12;
+    else if(r.modo==="ordinal") t+=(r.ordinais||[]).length*q;
+  });
+  return t;
+}
+function calcOrcamento(data){
+  const receitas=[],despesas=[];
+  (data.fontesReceita||[]).forEach(f=>{
+    (f.modos||[]).forEach((m,mi)=>{
+      if(m.ativo===false||_ehEsp(m)) return;
+      const nome=(f.nome||"Fonte")+((f.modos||[]).length>1?(m.rotulo?" · "+m.rotulo:" "+(mi+1)):"");
+      const id="fonte:"+_normFonte(f.nome)+":"+(m.id||mi);
+      const desc=Number(m.percDesconto)||0;
+      const tipo=_tipoPagto(m);
+      if(tipo==="PLANTAO"){
+        const pl=_orcPlantoesPorMes(m.regras),horas=Number(m.horasPlantao)||12,vh=numBR(m.valorHora)||0;
+        const unit=_r2(horas*vh*(1-desc/100));
+        receitas.push({id,nome,sub:pl.toFixed(1).replace(".",",")+" plantões/mês × "+fmt(unit)+" líquido",valor:_r2(pl*unit),unit,fonte:f.nome});
+      } else if(tipo==="FIXO"){
+        receitas.push({id,nome,sub:"valor fixo",valor:_r2(numBR(m.valorFixo)||0)});
+      } else {
+        receitas.push({id,nome,sub:"valor de referência líquido",valor:_r2((numBR(m.valorReferencia)||0)*(1-desc/100))});
+      }
+    });
+  });
+  (data.recorr||[]).forEach((r,i)=>{
+    const ativo=String(r[6]).toUpperCase()!=="N"&&r[6]!==false&&r[6]!==0;
+    if(!ativo) return;
+    const valor=Number(r[1]); if(!isFinite(valor)||!valor) return;
+    const tipoTxt=String(r[7]||"").toUpperCase();
+    if(tipoTxt.indexOf("TRANSF")>=0) return;
+    let obsP={}; try{obsP=JSON.parse(r[8]||"{}");}catch(e){}
+    const it={valor,destino:r[9],obs:r[8],diaVenc:r[3]};
+    const semanal=_orcEhSemanal(it)&&!_orcEhCartao(it);
+    const interv=Math.max(1,parseInt(obsP.intervaloSemanas)||1);
+    const per=periodicidadeInfo(r[8]);
+    let f=1,sub="mensal";
+    if(semanal){ f=(52/12)/interv; sub="semanal × 52/12"+(interv>1?" ÷ "+interv:""); }
+    else if(per){ f=per.meses.split(", ").length/12; sub=per.label.toLowerCase()+" ÷ "+Math.round(12/per.meses.split(", ").length); }
+    if((Number(r[5])||0)>0) sub+=" · parcelado";
+    const eq=_r2(Math.abs(valor)*f);
+    (valor<0?despesas:receitas).push({id:"rec:"+i+":"+r[0],nome:r[0],sub,valor:eq,recIdx:i});
+  });
+  const base=Number((data.config||{}).DCP_VALOR_BASE)||1250;
+  despesas.push({id:"dcp",nome:"DCP (despesas cotidianas)",sub:fmt(base)+" × 4,33 semanas",valor:_r2(base*52/12)});
+  const soma=l=>_r2(l.reduce((s,x)=>s+x.valor,0));
+  return {receitas,despesas,totalR:soma(receitas),totalD:soma(despesas)};
+}
+function CardOrcamento({data,onAbrir}){
+  const o=useMemo(()=>calcOrcamento(data),[data.fontesReceita,data.recorr,data.config]);
+  if(!o.receitas.length&&!o.despesas.length) return null;
+  const sobra=_r2(o.totalR-o.totalD),pct=o.totalR>0?Math.max(0,Math.min(100,Math.round(o.totalD/o.totalR*100))):0;
+  const Bl=({l,v,cor})=><div style={{flex:1,minWidth:0,background:C.bg,borderRadius:16,padding:"12px 4px",textAlign:"center"}}>
+    <div style={{fontSize:10,fontWeight:700,color:C.textSub,textTransform:"uppercase",letterSpacing:".03em",marginBottom:4}}>{l}</div>
+    <div style={{fontSize:17,fontWeight:800,color:cor,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fmt(v)}</div></div>;
+  return <Card style={{padding:"16px 12px",cursor:"pointer"}}>
+    <div onClick={onAbrir}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,padding:"0 4px"}}>
+        <Label>Orçamento mensal (média)</Label><span style={{fontSize:12,fontWeight:800,color:C.accent}}>Simular ›</span></div>
+      <div style={{display:"flex",gap:8}}>
+        <Bl l="Receitas" v={o.totalR} cor={C.green}/><Bl l="Despesas" v={-o.totalD} cor={C.red}/><Bl l="Sobra" v={sobra} cor={sobra<0?C.red:C.green}/>
+      </div>
+      <div style={{height:10,borderRadius:99,background:C.borderLight,overflow:"hidden",margin:"12px 4px 6px"}}>
+        <div style={{width:pct+"%",height:"100%",background:pct>100?C.red:pct>90?C.orange:C.accent,borderRadius:99}}/></div>
+      <div style={{fontSize:11,color:C.textMuted,fontWeight:600,padding:"0 4px"}}>{pct}% da receita vai para despesas fixas{o.totalR>0&&sobra>0?" · sobra "+Math.round(sobra/o.totalR*100)+"%":""}</div>
+    </div>
+  </Card>;
+}
+function Orcamento({data}){
+  const base=useMemo(()=>calcOrcamento(data),[data.fontesReceita,data.recorr,data.config]);
+  const [sim,setSim]=useState({}); // id -> {v?,off?}
+  const [extras,setExtras]=useState([]); // [{k,tipo:"rec"|"des",nome,valor}]
+  const val=(it)=>{const s=sim[it.id]||{};return s.off?0:(s.v!=null?s.v:it.valor);};
+  const somaLista=(l,tipo)=>_r2(l.reduce((t,x)=>t+val(x),0)+extras.filter(e=>e.tipo===tipo).reduce((t,e)=>t+(Number(e.valor)||0),0));
+  const R=somaLista(base.receitas,"rec"),D=somaLista(base.despesas,"des"),S=_r2(R-D),S0=_r2(base.totalR-base.totalD);
+  const mudou=extras.length>0||Object.keys(sim).some(k=>sim[k].off||sim[k].v!=null);
+  const setV=(id,txt)=>setSim(s=>({...s,[id]:{...(s[id]||{}),v:numBR(txt)||0}}));
+  const alterna=id=>setSim(s=>({...s,[id]:{...(s[id]||{}),off:!(s[id]&&s[id].off)}}));
+  const addExtra=(tipo,nome,valor)=>setExtras(e=>[...e,{k:Date.now()+"_"+e.length,tipo,nome,valor}]);
+  const linha=(it,tipo)=>{
+    const s=sim[it.id]||{},off=!!s.off,mod=s.v!=null;
+    return <div key={it.id} style={{display:"flex",alignItems:"center",gap:8,padding:mod?"10px 16px":"10px 0",margin:mod?"0 -16px":0,borderTop:"1px solid "+C.border,minHeight:44,opacity:off?.4:1,background:mod?"#FFF9E6":"transparent"}}>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:13,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.nome}</div>
+        <div style={{fontSize:11,color:C.textMuted}}>{it.sub}</div></div>
+      {it.unit>0&&!off&&<button onClick={()=>addExtra("rec","+1 plantão "+it.fonte,it.unit)} title="Simular +1 plantão" style={{minWidth:44,minHeight:40,borderRadius:10,border:"1px solid "+C.border,background:"#fff",color:C.accent,fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>+1</button>}
+      <input type="text" inputMode="numeric" disabled={off} value={mod?formatarValorInicial(s.v):formatarValorInicial(it.valor)} onChange={e=>setV(it.id,formatarMoedaInput(e.target.value))}
+        style={{width:112,minHeight:44,border:"1px solid "+C.border,borderRadius:10,padding:"0 8px",fontSize:16,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box",textDecoration:off?"line-through":"none"}}/>
+      <button onClick={()=>alterna(it.id)} title={off?"Voltar":"Tirar da simulação"} style={{minWidth:44,minHeight:44,borderRadius:10,border:"1px solid "+C.border,background:"#fff",color:off?C.accent:C.red,fontWeight:800,fontSize:16,cursor:"pointer",fontFamily:"inherit"}}>{off?"↺":"✕"}</button>
+    </div>;
+  };
+  const linhaExtra=(e)=><div key={e.k} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 16px",margin:"0 -16px",borderTop:"1px solid "+C.border,minHeight:44,background:"#FFF9E6"}}>
+    <div style={{flex:1,minWidth:0}}>
+      <div style={{fontSize:13,fontWeight:700}}>{e.nome} <span style={{fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:10,background:C.accentLight,color:C.accent}}>simulado</span></div></div>
+    <input type="text" inputMode="numeric" value={formatarValorInicial(e.valor)} onChange={ev=>setExtras(x=>x.map(y=>y.k===e.k?{...y,valor:numBR(formatarMoedaInput(ev.target.value))||0}:y))}
+      style={{width:112,minHeight:44,border:"1px solid "+C.border,borderRadius:10,padding:"0 8px",fontSize:16,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
+    <button onClick={()=>setExtras(x=>x.filter(y=>y.k!==e.k))} style={{minWidth:44,minHeight:44,borderRadius:10,border:"1px solid "+C.border,background:"#fff",color:C.red,fontWeight:800,fontSize:16,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+  </div>;
+  const pct=R>0?Math.round(S/R*100):0;
+  return <div style={{paddingBottom:150}}>
+    <div style={{background:C.dark,borderRadius:20,padding:16,color:"#fff",marginBottom:12}}>
+      <div style={{fontSize:10,fontWeight:700,letterSpacing:".05em",color:"#A9B6DA"}}>SOBRA POR MÊS (MÉDIA)</div>
+      <div style={{fontSize:30,fontWeight:800,letterSpacing:"-.02em",marginTop:4,color:S<0?"#FFB4AC":"#7FE0B5",fontVariantNumeric:"tabular-nums"}}>{fmt(S)}</div>
+      <div style={{fontSize:12,color:"#A9B6DA",fontWeight:600,marginTop:2}}>{R>0?pct+"% da receita vira poupança ou investimento":"Sem receitas cadastradas"}</div>
+    </div>
+    <Card>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:12,fontWeight:800,marginBottom:2}}><span>RECEITAS FIXAS · mês típico</span><span style={{color:C.green}}>{fmt(R)}</span></div>
+      {base.receitas.map(it=>linha(it,"rec"))}
+      {extras.filter(e=>e.tipo==="rec").map(linhaExtra)}
+      <button onClick={()=>addExtra("rec","Receita extra",0)} style={{width:"100%",marginTop:8,minHeight:44,borderRadius:12,border:"1px solid "+C.border,background:"#fff",color:C.accent,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>＋ Simular receita extra</button>
+    </Card>
+    <Card>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:12,fontWeight:800,marginBottom:2}}><span>DESPESAS FIXAS · mês típico</span><span style={{color:C.red}}>{fmt(D)}</span></div>
+      {base.despesas.map(it=>linha(it,"des"))}
+      {extras.filter(e=>e.tipo==="des").map(linhaExtra)}
+      <button onClick={()=>addExtra("des","Despesa nova",0)} style={{width:"100%",marginTop:8,minHeight:44,borderRadius:12,border:"1px solid "+C.border,background:"#fff",color:C.accent,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>＋ Simular despesa nova</button>
+    </Card>
+    <div style={{fontSize:11,color:C.textMuted,lineHeight:1.5,padding:"0 4px"}}>Plantões: escala semanal × 52/12, já com o desconto de cada fonte. Impostos e contas periódicas divididos pelos meses. DCP: base × 4,33 semanas. É só simulação: nada é gravado nas suas despesas e receitas.</div>
+    <div style={{position:"fixed",left:0,right:0,bottom:0,zIndex:80,display:"flex",justifyContent:"center",pointerEvents:"none"}}>
+      <div style={{pointerEvents:"auto",width:"100%",maxWidth:480,background:C.dark,color:"#fff",borderRadius:"20px 20px 0 0",padding:"12px 16px 16px",boxShadow:"0 -4px 16px rgba(15,23,42,.25)",boxSizing:"border-box"}}>
+        <div style={{fontSize:12,color:"#A9B6DA",fontWeight:600}}>Receitas <b style={{color:"#fff"}}>{fmt(R)}</b> · Despesas <b style={{color:"#fff"}}>{fmt(D)}</b></div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8,marginTop:2}}>
+          <span style={{fontSize:12,color:"#A9B6DA",fontWeight:600}}>{mudou?"Simulação · sobra ("+(S-S0>=0?"+":"")+fmt(S-S0)+")":"Sobra por mês"}</span>
+          <span style={{fontSize:24,fontWeight:800,fontVariantNumeric:"tabular-nums",color:S<0?"#FFB4AC":"#7FE0B5"}}>{fmt(S)}</span></div>
+        {mudou&&<button onClick={()=>{setSim({});setExtras([]);}} style={{width:"100%",marginTop:10,minHeight:46,borderRadius:12,border:"none",background:"rgba(255,255,255,.14)",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Descartar simulação</button>}
+      </div>
+    </div>
+  </div>;
+}
+
 function Ferramentas({onIrPara}){
   // [NOVO 11/10, pedido do Marcus] Visual "Mais usadas no topo": 3 atalhos numa caixa
   // escura (como a da Plano) + o resto em grade compacta, em 4 grupos.
@@ -7238,13 +7380,13 @@ function Ferramentas({onIrPara}){
     rec:"M12 3v12M7 10l5 5 5-5M4 20h16",chat:"M4 5h16v11H9l-5 4z",car:"M3 6h18v12H3zM3 10h18M7 15h4",par:"M12 3l9 5-9 5-9-5zM3 13l9 5 9-5",
     emp:"M3 10l9-6 9 6M5 10v8M10 10v8M14 10v8M19 10v8M3 20h18",con:"M4 8h13l-3-3M20 16H7l3 3",cof:"M5 11h14v9H5zM8 11V8a4 4 0 018 0v3",
     env:"M3 6h18v12H3zM3 7l9 6 9-6",tra:"M7 4l-4 4 4 4M3 8h14M17 12l4 4-4 4M21 16H7",per:"M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0",
-    cfg:"M4 7h10M18 7h2M4 17h2M10 17h10M16 5a2 2 0 100 4 2 2 0 000-4zM8 15a2 2 0 100 4 2 2 0 000-4z"};
+    cfg:"M4 7h10M18 7h2M4 17h2M10 17h10M16 5a2 2 0 100 4 2 2 0 000-4zM8 15a2 2 0 100 4 2 2 0 000-4z",orc:"M4 20V10M10 20V4M16 20v-8M22 20H2"};
   const T={
     cot:{id:"dcp",t:"Despesas Cotidianas",curto:"Cotidianas"},fix:{id:"recorr",t:"Despesas Fixas"},rec:{id:"receitas",t:"Receitas"},chat:{id:"conversar",t:"Conversar"},
     car:{id:"cartoes",t:"Cartões",curto:"Cartões"},par:{id:"parcelas",t:"Parceladas"},emp:{id:"emprestimos",t:"Empréstimos"},con:{id:"conciliacao",t:"Conciliação",curto:"Conciliação"},
-    cof:{id:"cofres",t:"Cofres"},env:{id:"envelopes",t:"Envelopes"},tra:{id:"transferencias",t:"Entre contas"},per:{id:"perfil",t:"Perfil e Apelidos"},cfg:{id:"config",t:"Configurações"}};
+    cof:{id:"cofres",t:"Cofres"},env:{id:"envelopes",t:"Envelopes"},tra:{id:"transferencias",t:"Entre contas"},per:{id:"perfil",t:"Perfil e Apelidos"},cfg:{id:"config",t:"Configurações"},orc:{id:"orcamento",t:"Orçamento"}};
   const TOPO=["car","con","cot"];
-  const GRUPOS=[["Dia a dia",["cot","fix","rec","chat"]],["Cartões e dívidas",["car","par","emp","con"]],["Reservas e contas",["cof","env","tra"]],["Sistema",["per","cfg"]]];
+  const GRUPOS=[["Dia a dia",["cot","fix","rec","orc","chat"]],["Cartões e dívidas",["car","par","emp","con"]],["Reservas e contas",["cof","env","tra"]],["Sistema",["per","cfg"]]];
   const Ico=({k,cor,sz})=><svg width={sz||22} height={sz||22} viewBox="0 0 24 24" fill="none" stroke={cor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={IC[k]}/></svg>;
   return <div style={{padding:"0 0 16px"}}>
     <div style={{background:C.dark,borderRadius:20,padding:16,color:"#FFFFFF"}}>
@@ -13619,7 +13761,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261026.2310 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261027.1700 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13670,7 +13812,7 @@ function Tesouraria(){
         </div>
       </div>}
       {!load&&!err&&data&&(
-        tab==="dashboard"   ? <Dashboard data={data} onUpdate={setData} estouro={estouro}/> :
+        tab==="dashboard"   ? <Dashboard data={data} onUpdate={setData} estouro={estouro} onIrPara={irPara}/> :
         tab==="fluxo"       ? <Fluxo data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara} estouro={estouro}/> :
         tab==="historico"   ? <Historico data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
         tab==="timeline"    ? <Timeline data={data} onUpdate={setData} onIrPara={irPara}/> :
@@ -13683,6 +13825,7 @@ function Tesouraria(){
         tab==="emprestimos" ? <EmprestimosPassivos data={data} onUpdate={setData}/> :
         tab==="parcelas"    ? <ComprasParceladas data={data}/> :
         tab==="receitas"    ? <FontesReceita data={data} onUpdate={setData}/> :
+        tab==="orcamento"   ? <Orcamento data={data}/> :
         tab==="envelopes"   ? <EnvelopesCustom data={data} onUpdate={setData}/> :
         tab==="conciliacao" ? <ConciliacaoHub data={data} onUpdate={setData} onIrPara={irPara} fila={fila} setFila={setFila}/> :
         tab==="perfil"      ? <PerfilApelidos data={data} onUpdate={setData}/> :
@@ -13744,7 +13887,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261026.2310
+      // HTML v3.20261027.1700
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
