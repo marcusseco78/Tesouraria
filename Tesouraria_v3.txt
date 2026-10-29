@@ -1,4 +1,4 @@
-// VERSAO: v3.20261027.1800
+// VERSAO: v3.20261029.1500
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -166,6 +166,10 @@ function dispatch(p) {
     case "deletarCartaoItem": return deletarCartaoItem(ss, p);
     case "deletarPorDescricao": return deletarPorDescricao(ss, p);
     case "lancarCartao":    return lancarCartao(ss, p);
+    case "registrarNotificacao": return registrarNotificacao(ss, p);
+    case "classificarNotificacao": return classificarNotificacao(ss, p);
+    case "ignorarNotificacao": return ignorarNotificacao(ss, p);
+    case "tokenNotificacao": return { token: _notifToken() };
     case "adicionarAjusteFatura": return adicionarAjusteFatura(ss, p);
     case "baixaFatura":     return baixaFatura(ss, p);
     case "viradaCiclo":     return viradaCiclo(ss);
@@ -412,10 +416,11 @@ function _getDataCore(ss) {
     dividasPlanos: _pt("dividasPlanos", function() { return _lerPlanosDivida(ss); }),
     dcpResumo: _pt("dcpResumo", function() { return _resumoDCPCicloAtual(ss); }),
     fontesReceita: _pt("fontes", function() { return _lerFontesReceita(ss); }),
+    notificacoes: _pt("notif", function() { return _lerNotificacoesPendentes(ss); }),
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261027.1800",
+    scriptVersion: "v3.20261029.1500",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -13145,4 +13150,122 @@ function _updateConfig(shCfg, chave, valor) {
   rows.forEach((row, i) => {
     if (row[0] === chave) shCfg.getRange(i + 4, 2).setValue(valor);
   });
+}
+// ============================================================================
+// [NOVO 29/10] FILA DE NOTIFICACOES DO NUBANK ("a classificar")
+// O celular (MacroDroid) manda cada notificacao pra ca (registrarNotificacao,
+// com token secreto). O app mostra as pendentes na tela inicial; o Marcus
+// confirma a categoria e vira compra de cartao (lancarCartao, desconta do DCP).
+// ============================================================================
+var NOTIF_ABA = "NOTIFICACOES";
+function _garantirAbaNotif(ss) {
+  var sh = ss.getSheetByName(NOTIF_ABA);
+  if (!sh) {
+    sh = ss.insertSheet(NOTIF_ABA);
+    sh.appendRow(["KEY","TS","TITULO","TEXTO","TIPO","VALOR","ESTAB","FINAL","ESCOPO","DATA","STATUS","REF"]);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+function _notifToken() {
+  var props = PropertiesService.getScriptProperties();
+  var t = props.getProperty("NOTIF_TOKEN");
+  if (!t) {
+    t = Utilities.getUuid().replace(/-/g, "").slice(0, 20);
+    props.setProperty("NOTIF_TOKEN", t);
+  }
+  return t;
+}
+function _parseNotificacao(titulo, texto) {
+  var t = String(texto || "").replace(/\s+/g, " ").trim();
+  var full = (String(titulo || "") + " " + t).trim();
+  var out = { tipo: "OUTRO", valor: 0, estab: "", final: "", escopo: "" };
+  var mv = full.match(/R\$\s*([\d.]+,\d{2})/);
+  if (mv) out.valor = Math.round(parseFloat(mv[1].replace(/\./g, "").replace(",", ".")) * 100) / 100;
+  var low = full.toLowerCase();
+  if (/boleto/.test(low)) {
+    out.tipo = "BOLETO";
+  } else if (/transfer[eê]ncia/.test(low) && /recebeu|recebida/.test(low)) {
+    out.tipo = "TRANSF_RECEBIDA";
+    var mt = t.match(/transfer[eê]ncia de R\$\s*[\d.]+,\d{2} de (.+?)\.?$/i);
+    if (mt) out.estab = mt[1].trim();
+    out.escopo = /empresas/i.test(low) ? "PJ" : "PF";
+  } else if (/compra/.test(low)) {
+    out.tipo = "CREDITO";
+    var me = t.match(/ em (.+?)(?: para o | para a | no seu | no cart|\.|$)/i);
+    if (me) out.estab = me[1].trim();
+    var mf = full.match(/final\s+(\d{4})/i);
+    if (mf) out.final = mf[1];
+    out.escopo = /empresas/i.test(low) ? "PJ" : "PF";
+  }
+  return out;
+}
+function _notifChaveCartao(item) { return item.escopo === "PJ" ? "PJ" : (item.final || "PF"); }
+
+function registrarNotificacao(ss, p) {
+  if (!p.token || String(p.token) !== _notifToken()) throw new Error("token invalido");
+  var titulo = String(p.titulo || ""), texto = String(p.texto || "");
+  if (!titulo && !texto) throw new Error("notificacao vazia");
+  if (!/nubank|nu pagamentos|compra|transfer|boleto|pix/i.test(titulo + " " + texto)) return { ignorada: true };
+  var sh = _garantirAbaNotif(ss);
+  var tsMs = Number(p.ts) || Date.now();
+  // chave: texto + minuto (a mesma notificacao chegando 2x nao duplica)
+  var key = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, titulo + "|" + texto + "|" + Math.floor(tsMs / 120000)));
+  var last = sh.getLastRow();
+  if (last >= 2) {
+    var keys = sh.getRange(2, 1, last - 1, 1).getValues();
+    for (var i = 0; i < keys.length; i++) if (keys[i][0] === key) return { duplicada: true };
+  }
+  var it = _parseNotificacao(titulo, texto);
+  var dataIso = Utilities.formatDate(new Date(tsMs), "America/Sao_Paulo", "yyyy-MM-dd");
+  sh.appendRow([key, new Date(tsMs).toISOString(), titulo, texto, it.tipo, it.valor, it.estab, it.final, it.escopo, dataIso, "PENDENTE", ""]);
+  return { registrada: true, tipo: it.tipo };
+}
+
+function _lerNotificacoesPendentes(ss) {
+  var sh = ss.getSheetByName(NOTIF_ABA);
+  if (!sh || sh.getLastRow() < 2) return { itens: [], mapa: {} };
+  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, 12).getValues();
+  var cfg = readConfig(ss);
+  var mapa = {};
+  Object.keys(cfg).forEach(function(k) { if (k.indexOf("NOTIF_CARTAO_") === 0) mapa[k.slice(13)] = String(cfg[k]); });
+  var itens = [];
+  rows.forEach(function(r, i) {
+    if (String(r[10]) !== "PENDENTE") return;
+    itens.push({ row: i + 2, key: String(r[0]), titulo: String(r[2]), texto: String(r[3]), tipo: String(r[4]), valor: Number(r[5]) || 0,
+      estab: String(r[6]), final: String(r[7]), escopo: String(r[8]), data: String(r[9]).slice(0, 10) });
+  });
+  return { itens: itens.reverse().slice(0, 30), mapa: mapa };
+}
+
+function _notifAchar(ss, key) {
+  var sh = _garantirAbaNotif(ss);
+  if (sh.getLastRow() < 2) throw new Error("notificacao nao encontrada");
+  var keys = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
+  for (var i = 0; i < keys.length; i++) if (keys[i][0] === key) return { sh: sh, row: i + 2 };
+  throw new Error("notificacao nao encontrada");
+}
+
+function classificarNotificacao(ss, p) {
+  var loc = _notifAchar(ss, String(p.key));
+  var r = loc.sh.getRange(loc.row, 1, 1, 12).getValues()[0];
+  if (String(r[10]) !== "PENDENTE") return { ...getData(ss), jaTratada: true };
+  var item = { tipo: String(r[4]), valor: Number(r[5]), estab: String(r[6]), final: String(r[7]), escopo: String(r[8]), data: String(r[9]).slice(0, 10) };
+  if (item.tipo !== "CREDITO") throw new Error("so compras no credito podem ser classificadas");
+  var cartao = String(p.cartao || "").toUpperCase();
+  if (!cartao) throw new Error("escolha o cartao");
+  // grava o vinculo final-do-cartao -> cartao (so uma vez)
+  _setConfig(ss.getSheetByName("CONFIG"), "NOTIF_CARTAO_" + _notifChaveCartao(item), cartao);
+  var cat = String(p.categoria || "DCP").toUpperCase();
+  var desc = String(p.descricao || item.estab || "COMPRA").toUpperCase();
+  var res = lancarCartao(ss, { cartao: cartao, descricao: desc, valor: item.valor, parcelas: 1, categoria: cat, dcp: cat === "DCP" ? "S" : "N", data_compra: item.data, envelopeId: p.envelopeId });
+  loc.sh.getRange(loc.row, 11).setValue("LANCADA");
+  loc.sh.getRange(loc.row, 12).setValue(res.novaLinha || "");
+  return res.novaLinha ? { ...res } : { ...getData(ss) };
+}
+
+function ignorarNotificacao(ss, p) {
+  var loc = _notifAchar(ss, String(p.key));
+  loc.sh.getRange(loc.row, 11).setValue("IGNORADA");
+  return { notificacoes: _lerNotificacoesPendentes(ss) };
 }

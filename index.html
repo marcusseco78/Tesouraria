@@ -1901,6 +1901,7 @@ function Dashboard({data,onUpdate,estouro,onIrPara}){
         <div style={{display:"inline-flex",marginTop:10,fontSize:11,fontWeight:800,color:ml.saldoProjetado<1000?"#FFB4AC":"#A9B6DA",background:"rgba(255,255,255,.10)",padding:"3px 10px",borderRadius:12}}>{fmtD(ml.dataSaldo||ml.data)}</div>
       </div>}
     </div>
+    <CardNotificacoes data={data} onUpdate={onUpdate}/>
     <CardDCP dcpResumo={dcpResumo}/>
     <CardOrcamento data={data} onAbrir={()=>onIrPara&&onIrPara({tab:"orcamento"})}/>
     <Card style={{padding:"14px 12px 10px"}}>
@@ -7299,6 +7300,60 @@ function calcOrcamento(data){
   const soma=l=>_r2(l.reduce((s,x)=>s+x.valor,0));
   return {receitas,despesas,totalR:soma(receitas),totalD:soma(despesas)};
 }
+function CardNotificacoes({data,onUpdate}){
+  const nt=data.notificacoes||{itens:[],mapa:{}};
+  const itens=nt.itens||[];
+  const cartoes=(data.cartoes||[]).filter(c=>c.ativo);
+  const [sel,setSel]=useState({});
+  const [busy,setBusy]=useState("");
+  const [cfg,setCfg]=useState(null);
+  const CATS_N=["DCP","DESPESA FIXA","EXTRAORDINARIA"];
+  const chaveDe=it=>it.escopo==="PJ"?"PJ":(it.final||"PF");
+  const cartaoDe=it=>sel[it.key]?.cartao||nt.mapa[chaveDe(it)]||"";
+  const catDe=it=>sel[it.key]?.cat||"DCP";
+  const setK=(k,v)=>setSel(s=>({...s,[k]:{...(s[k]||{}),...v}}));
+  const lancar=async it=>{
+    const cartao=cartaoDe(it); if(!cartao){alert("Escolha o cartão.");return;}
+    setBusy(it.key);
+    try{ onUpdate(await api({action:"classificarNotificacao",key:it.key,cartao,categoria:catDe(it)})); }catch(e){alert(e.message);}
+    setBusy("");
+  };
+  const ignorar=async it=>{
+    setBusy(it.key);
+    try{ await api({action:"ignorarNotificacao",key:it.key}); onUpdate(await api({action:"getData"})); }catch(e){alert(e.message);}
+    setBusy("");
+  };
+  const abrirCfg=async()=>{ try{ const r=await api({action:"tokenNotificacao"}); setCfg(r.token); }catch(e){alert(e.message);} };
+  const dd=d=>String(d||"").slice(8,10)+"/"+String(d||"").slice(5,7);
+  const Pil=({on,children,...p})=><button {...p} style={{minHeight:44,padding:"0 14px",borderRadius:22,border:"1px solid "+(on?C.accent:C.border),background:on?C.accent:"#fff",color:on?"#fff":C.text,fontWeight:700,fontSize:13,fontFamily:"inherit"}}>{children}</button>;
+  if(!itens.length&&!cfg) return <div style={{textAlign:"right",padding:"0 4px"}}><span onClick={abrirCfg} style={{fontSize:12,fontWeight:700,color:C.textSub,cursor:"pointer"}}>Notificações do celular ›</span></div>;
+  return <Card style={{padding:"16px 12px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,padding:"0 4px"}}>
+      <Label>A classificar ({itens.length})</Label>
+      <span onClick={abrirCfg} style={{fontSize:12,fontWeight:700,color:C.textSub,cursor:"pointer"}}>Configurar</span></div>
+    {cfg&&<div style={{background:C.bg,borderRadius:14,padding:12,marginBottom:10,fontSize:12,wordBreak:"break-all"}}>
+      <div style={{fontWeight:800,marginBottom:4}}>Senha da ponte (token)</div><div style={{fontFamily:"monospace"}}>{cfg}</div>
+      <div style={{fontWeight:800,margin:"8px 0 4px"}}>Endereço</div><div style={{fontFamily:"monospace"}}>{getApiUrl()}</div>
+      <div onClick={()=>setCfg(null)} style={{marginTop:8,fontWeight:800,color:C.accent,cursor:"pointer"}}>Fechar</div></div>}
+    {itens.map(it=><div key={it.key} style={{background:C.bg,borderRadius:16,padding:12,marginBottom:8}}>
+      <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+        <div style={{minWidth:0}}><div style={{fontSize:14,fontWeight:800,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.tipo==="CREDITO"?(it.estab||"Compra"):it.tipo==="TRANSF_RECEBIDA"?"Recebido de "+(it.estab||"?"):it.tipo==="BOLETO"?"Boleto":"Notificação"}</div>
+          <div style={{fontSize:11,color:C.textSub}}>{dd(it.data)}{it.tipo==="CREDITO"?" · crédito "+(it.escopo==="PJ"?"PJ":(it.final?"final "+it.final:"PF")):""}</div></div>
+        <div style={{fontSize:16,fontWeight:800,whiteSpace:"nowrap",color:it.tipo==="TRANSF_RECEBIDA"?C.green:C.text}}>{it.valor?fmt(it.valor):""}</div></div>
+      {it.tipo==="CREDITO"?<div>
+        {!nt.mapa[chaveDe(it)]&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+          {cartoes.map(c=><Pil key={c.id} on={cartaoDe(it)===c.id} onClick={()=>setK(it.key,{cartao:c.id})}>{c.nome}</Pil>)}</div>}
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+          {CATS_N.map(c=><Pil key={c} on={catDe(it)===c} onClick={()=>setK(it.key,{cat:c})}>{c==="DESPESA FIXA"?"Fixa":c==="EXTRAORDINARIA"?"Extra":"DCP"}</Pil>)}</div>
+        <div style={{display:"flex",gap:8,marginTop:8}}>
+          <button disabled={busy===it.key} onClick={()=>lancar(it)} style={{flex:1,minHeight:48,borderRadius:14,border:0,background:C.accent,color:"#fff",fontWeight:800,fontSize:15,fontFamily:"inherit"}}>{busy===it.key?"...":"Lançar"}</button>
+          <button disabled={busy===it.key} onClick={()=>ignorar(it)} style={{minHeight:48,padding:"0 16px",borderRadius:14,border:"1px solid "+C.border,background:"#fff",fontWeight:700,fontSize:14,fontFamily:"inherit"}}>Ignorar</button></div>
+      </div>:<div style={{marginTop:8}}>
+        <button disabled={busy===it.key} onClick={()=>ignorar(it)} style={{minHeight:44,padding:"0 16px",borderRadius:14,border:"1px solid "+C.border,background:"#fff",fontWeight:700,fontSize:14,fontFamily:"inherit"}}>Já vi</button></div>}
+    </div>)}
+  </Card>;
+}
+
 function CardOrcamento({data,onAbrir}){
   const o=useMemo(()=>calcOrcamento(data),[data.fontesReceita,data.recorr,data.config]);
   if(!o.receitas.length&&!o.despesas.length) return null;
@@ -13774,7 +13829,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261027.1800 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261029.1500 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13900,7 +13955,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261027.1800
+      // HTML v3.20261029.1500
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
