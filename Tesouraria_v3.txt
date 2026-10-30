@@ -1,4 +1,4 @@
-// VERSAO: v3.20261029.1500
+// VERSAO: v3.20261030.0700
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -420,7 +420,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261029.1500",
+    scriptVersion: "v3.20261030.0700",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -13189,6 +13189,10 @@ function _parseNotificacao(titulo, texto) {
     out.tipo = "TRANSF_RECEBIDA";
     var mt = t.match(/transfer[eê]ncia de R\$\s*[\d.]+,\d{2} de (.+?)\.?$/i);
     if (mt) out.estab = mt[1].trim();
+    else {
+      var mr = t.match(/recebeu R\$\s*[\d.]+,\d{2} de (.+?)(?: na | no | em |\.\.\.|\.$|$)/i);
+      if (mr) out.estab = mr[1].trim();
+    }
     out.escopo = /empresas/i.test(low) ? "PJ" : "PF";
   } else if (/compra/.test(low)) {
     out.tipo = "CREDITO";
@@ -13218,10 +13222,14 @@ function registrarNotificacao(ss, p) {
   }
   var it = _parseNotificacao(titulo, texto);
   var dataIso = Utilities.formatDate(new Date(tsMs), "America/Sao_Paulo", "yyyy-MM-dd");
-  sh.appendRow([key, new Date(tsMs).toISOString(), titulo, texto, it.tipo, it.valor, it.estab, it.final, it.escopo, dataIso, "PENDENTE", ""]);
+  sh.appendRow([key, new Date(tsMs).toISOString(), titulo, texto, it.tipo, it.valor, it.estab, it.final, it.escopo, "'" + dataIso, "PENDENTE", ""]);
   return { registrada: true, tipo: it.tipo };
 }
 
+function _notifDataIso(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, "America/Sao_Paulo", "yyyy-MM-dd");
+  return String(v).slice(0, 10);
+}
 function _lerNotificacoesPendentes(ss) {
   var sh = ss.getSheetByName(NOTIF_ABA);
   if (!sh || sh.getLastRow() < 2) return { itens: [], mapa: {} };
@@ -13233,7 +13241,7 @@ function _lerNotificacoesPendentes(ss) {
   rows.forEach(function(r, i) {
     if (String(r[10]) !== "PENDENTE") return;
     itens.push({ row: i + 2, key: String(r[0]), titulo: String(r[2]), texto: String(r[3]), tipo: String(r[4]), valor: Number(r[5]) || 0,
-      estab: String(r[6]), final: String(r[7]), escopo: String(r[8]), data: String(r[9]).slice(0, 10) });
+      estab: String(r[6]), final: String(r[7]), escopo: String(r[8]), data: _notifDataIso(r[9]) });
   });
   return { itens: itens.reverse().slice(0, 30), mapa: mapa };
 }
@@ -13250,7 +13258,7 @@ function classificarNotificacao(ss, p) {
   var loc = _notifAchar(ss, String(p.key));
   var r = loc.sh.getRange(loc.row, 1, 1, 12).getValues()[0];
   if (String(r[10]) !== "PENDENTE") return { ...getData(ss), jaTratada: true };
-  var item = { tipo: String(r[4]), valor: Number(r[5]), estab: String(r[6]), final: String(r[7]), escopo: String(r[8]), data: String(r[9]).slice(0, 10) };
+  var item = { tipo: String(r[4]), valor: Number(r[5]), estab: String(r[6]), final: String(r[7]), escopo: String(r[8]), data: _notifDataIso(r[9]) };
   if (item.tipo !== "CREDITO") throw new Error("so compras no credito podem ser classificadas");
   var cartao = String(p.cartao || "").toUpperCase();
   if (!cartao) throw new Error("escolha o cartao");
