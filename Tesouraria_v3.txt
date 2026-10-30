@@ -1,4 +1,4 @@
-// VERSAO: v3.20261030.1900
+// VERSAO: v3.20261030.1910
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -423,7 +423,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261030.1900",
+    scriptVersion: "v3.20261030.1910",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -13215,7 +13215,10 @@ function registrarNotificacao(ss, p) {
   if (!titulo && !texto) throw new Error("notificacao vazia");
   if (!/nubank|nu pagamentos|compra|transfer|boleto|pix/i.test(titulo + " " + texto)) return { ignorada: true };
   var sh = _garantirAbaNotif(ss);
-  var tsMs = Number(p.ts) || Date.now();
+  // hora ORIGINAL da notificacao (nao muda quando o Android republica apos reiniciar)
+  var tsMs = Number(p.ts);
+  if (!tsMs) { var tsP = Date.parse(String(p.ts || "")); tsMs = tsP || Date.now(); }
+  if (tsMs < 1e12) tsMs = tsMs * 1000; // veio em segundos
   // chave: texto + minuto (a mesma notificacao chegando 2x nao duplica)
   var key = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, titulo + "|" + texto + "|" + Math.floor(tsMs / 120000)));
   var last = sh.getLastRow();
