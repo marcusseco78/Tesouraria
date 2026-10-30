@@ -1,4 +1,4 @@
-// VERSAO: v3.20261030.0700
+// VERSAO: v3.20261030.1840
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -420,7 +420,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261030.0700",
+    scriptVersion: "v3.20261030.1840",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -13260,6 +13260,7 @@ function classificarNotificacao(ss, p) {
   if (String(r[10]) !== "PENDENTE") return { ...getData(ss), jaTratada: true };
   var item = { tipo: String(r[4]), valor: Number(r[5]), estab: String(r[6]), final: String(r[7]), escopo: String(r[8]), data: _notifDataIso(r[9]) };
   if (item.tipo !== "CREDITO") throw new Error("so compras no credito podem ser classificadas");
+  if (!(item.valor > 0)) throw new Error("Essa notificacao chegou sem valor. Toque em Ignorar e lance a compra a mao.");
   var cartao = String(p.cartao || "").toUpperCase();
   if (!cartao) throw new Error("escolha o cartao");
   // grava o vinculo final-do-cartao -> cartao (so uma vez)
