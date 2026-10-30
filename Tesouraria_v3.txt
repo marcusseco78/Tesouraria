@@ -1,4 +1,4 @@
-// VERSAO: v3.20261030.1840
+// VERSAO: v3.20261030.1900
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -110,7 +110,10 @@ function doPost(e) {
   const out = ContentService.createTextOutput()
     .setMimeType(ContentService.MimeType.JSON);
   try {
-    const p = JSON.parse(e.postData.contents);
+    var corpoBruto = String(e.postData.contents);
+    var p;
+    try { p = JSON.parse(corpoBruto); }
+    catch (e1) { p = JSON.parse(corpoBruto.replace(/[\r\n\t]+/g, " ")); } // [29/10] texto de notificacao pode trazer quebra de linha
     out.setContent(JSON.stringify({ ok: true, ...dispatch(p) }));
   } catch(err) {
     out.setContent(JSON.stringify({ ok: false, error: err.message }));
@@ -420,7 +423,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261030.1840",
+    scriptVersion: "v3.20261030.1900",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
