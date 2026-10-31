@@ -1,4 +1,4 @@
-// VERSAO: v3.20261030.1910
+// VERSAO: v3.20261031.0100
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -423,7 +423,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261030.1910",
+    scriptVersion: "v3.20261031.0100",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -13273,10 +13273,21 @@ function classificarNotificacao(ss, p) {
   _setConfig(ss.getSheetByName("CONFIG"), "NOTIF_CARTAO_" + _notifChaveCartao(item), cartao);
   var cat = String(p.categoria || "DCP").toUpperCase();
   var desc = String(p.descricao || item.estab || "COMPRA").toUpperCase();
-  var res = lancarCartao(ss, { cartao: cartao, descricao: desc, valor: item.valor, parcelas: 1, categoria: cat, dcp: cat === "DCP" ? "S" : "N", data_compra: item.data, envelopeId: p.envelopeId });
+  // marca ANTES: o getData que o lancarCartao devolve ja sai sem este item na fila
+  // (e uma 2a chamada simultanea nao lanca de novo). Se falhar, volta a PENDENTE.
+  loc.sh.getRange(loc.row, 11).setValue("LANCANDO");
+  SpreadsheetApp.flush();
+  if (_MEMO) _MEMO.notif = undefined;
+  var res;
+  try {
+    res = lancarCartao(ss, { cartao: cartao, descricao: desc, valor: item.valor, parcelas: 1, categoria: cat, dcp: cat === "DCP" ? "S" : "N", data_compra: item.data, envelopeId: p.envelopeId });
+  } catch (eL) {
+    loc.sh.getRange(loc.row, 11).setValue("PENDENTE");
+    throw eL;
+  }
   loc.sh.getRange(loc.row, 11).setValue("LANCADA");
   loc.sh.getRange(loc.row, 12).setValue(res.novaLinha || "");
-  return res.novaLinha ? { ...res } : { ...getData(ss) };
+  return res;
 }
 
 function ignorarNotificacao(ss, p) {
