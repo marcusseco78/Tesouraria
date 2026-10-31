@@ -7337,8 +7337,9 @@ function CardNotificacoes({data,onUpdate}){
       <div onClick={()=>setCfg(null)} style={{marginTop:8,fontWeight:800,color:C.accent,cursor:"pointer"}}>Fechar</div></div>}
     {itens.map(it=><div key={it.key} style={{background:C.bg,borderRadius:16,padding:12,marginBottom:8}}>
       <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
-        <div style={{minWidth:0}}><div style={{fontSize:14,fontWeight:800,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.tipo==="CREDITO"?(it.estab||"Compra"):it.tipo==="TRANSF_RECEBIDA"?"Recebido de "+(it.estab||"?"):it.tipo==="BOLETO"?"Boleto":"Notificação"}</div>
-          <div style={{fontSize:11,color:C.textSub}}>{dd(it.data)}{it.tipo==="CREDITO"?" · crédito "+(it.escopo==="PJ"?"PJ":(it.final?"final "+it.final:"PF")):""}</div></div>
+        <div style={{minWidth:0}}><div style={{fontSize:14,fontWeight:800,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.tipo==="CREDITO"?(it.estab||"Compra"):it.tipo==="TRANSF_RECEBIDA"?"Recebido de "+(it.estab||"?"):it.tipo==="BOLETO"?"Boleto":(it.titulo||"Notificação")}</div>
+          <div style={{fontSize:11,color:C.textSub}}>{dd(it.data)}{it.tipo==="CREDITO"?" · crédito "+(it.escopo==="PJ"?"PJ":(it.final?"final "+it.final:"PF")):""}</div>
+          {it.tipo!=="CREDITO"&&<div style={{fontSize:12,color:C.textSub,marginTop:4,lineHeight:1.35}}>{(it.texto||"(sem texto)").slice(0,200)}</div>}</div>
         <div style={{fontSize:16,fontWeight:800,whiteSpace:"nowrap",color:it.tipo==="TRANSF_RECEBIDA"?C.green:C.text}}>{it.valor?fmt(it.valor):""}</div></div>
       {it.tipo==="CREDITO"?<div>
         {!nt.mapa[chaveDe(it)]&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
@@ -13829,7 +13830,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261031.0100 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261031.1100 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13955,7 +13956,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261031.0100
+      // HTML v3.20261031.1100
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
