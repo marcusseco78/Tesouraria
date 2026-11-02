@@ -9487,7 +9487,8 @@ function buildPrompt(data){
 
   // Menor liquidez global (próximos 90 dias)
   const d90=new Date(hj);d90.setDate(d90.getDate()+90);const d90s=d90.toISOString().slice(0,10);
-  const futuro=prog.filter(r=>r.saldoProjetado!=null&&isFinite(r.saldoProjetado));
+  // [02/11] mesma conta do Dashboard ("Próxima menor liquidez"): todas as linhas de hoje em diante
+  const futuro=fluxo.filter(r=>(r.dataSaldo||r.data)>=hj&&r.saldoProjetado!=null&&isFinite(r.saldoProjetado));
   const ml=futuro.length?futuro.reduce((m,r)=>r.saldoProjetado<m.saldoProjetado?r:m,futuro[0]):null;
 
   // Resumo por ciclo
@@ -9530,7 +9531,11 @@ function buildPrompt(data){
   const abaDe=id=>"CARTAO_"+String(id).toUpperCase();
   const cartoesBlocosTxt=cartoesAtivosPrompt.map(c=>{
     const its=(data.cartaoItens&&data.cartaoItens[c.id])||[];
-    const vs=[...new Set(its.map(r=>r[4]).filter(Boolean))].sort();
+    // [02/11] So faturas com algo PENDENTE + as 3 mais recentes (o prompt inteiro
+    // era enorme e o Gemini levava ~50 s pra responder).
+    const todasVs=[...new Set(its.map(r=>r[4]).filter(Boolean))].sort();
+    const abertasVs=new Set(its.filter(r=>r[7]==="PENDENTE").map(r=>r[4]));
+    const vs=todasVs.filter((v,i)=>abertasVs.has(v)||i>=todasVs.length-3);
     const corpo=vs.map(v=>{const gr=its.filter(r=>r[4]===v);return "Fatura "+v+" ("+gr.filter(r=>r[7]==="PENDENTE").length+"p/"+gr.filter(r=>r[7]==="PAGO").length+"pg):\n"+gr.map(r=>"["+r[7]+"] linha:"+_linhaCartao(r)+" "+r[0]+" "+r[1]+" "+fmt(r[2])+" parc:"+r[3]).join("\n");}).join("\n\n");
     return "CARTÃO "+nomeCartao(c.id,data)+" — cartao=\""+c.id+"\" — aba "+abaDe(c.id)+" — por fatura (vencimento). Cada item mostra \"linha:N\" = numero real da linha na aba "+abaDe(c.id)+":\n"+(corpo||"(sem compras)");
   }).join("\n\n");
@@ -9549,6 +9554,8 @@ function buildPrompt(data){
 
 FORMATAÇÃO: Texto simples, sem markdown, sem asteriscos, sem hashtags. "•" para listas se necessário. Quando for emitir uma ação, escreva SÓ o objeto JSON puro (as chaves { } já bastam) em uma linha isolada -- nunca escreva a palavra "JSON" antes dele, nem qualquer outro rótulo. Quando a resposta for puramente conversacional, não emita objeto nenhum.
 
+REGRA DE OURO: nunca escreva marcadores entre colchetes ([Nome], [Profissão] etc.) nem invente dado pessoal. O que a pessoa é e faz está em CONTEXTO PESSOAL abaixo; se algo não estiver lá, diga simplesmente que não sabe. Os números desta mensagem (saldo, liquidez, DCP, faturas) são os mesmos que o app mostra — se a pessoa citar um valor diferente, confira aqui antes de concordar ou discordar.
+
 SEU PERFIL: Você é o parceiro financeiro pessoal da pessoa. Trate-a pelo nome às vezes, quando souber. Seja direto, humano, opinativo quando fizer sentido. Não é um relatório — é uma conversa. Celebre melhorias, aponte riscos com clareza, mas sem dramatizar. Se a situação estiver boa, diga. Se tiver arriscada, diga também. Pense em voz alta quando útil. Não use listas numeradas para tudo — prose natural quando couber.
 
 CONTEXTO PESSOAL: ${cfg.CONTEXTO_PESSOAL?cfg.CONTEXTO_PESSOAL:'(ainda não configurado.) Se esta é a primeira mensagem da conversa (histórico vazio), ANTES de qualquer outra coisa, se apresente brevemente e peça pra pessoa contar sobre a vida financeira dela — nome, profissão, se tem PF e/ou PJ, principais fontes de renda, e qualquer regra ou situação especial que ela ache importante você saber daqui pra frente (ex: alguém específico que ela paga com frequência, uma dívida com regra própria, etc). Depois que ela responder, emita a ação salvarContextoPessoal com um resumo do que ela contou (2-4 frases, objetivo) — isso fica salvo e você não pergunta de novo. Enquanto ela não responder essa apresentação, funcione normalmente com o que já sabe pelos dados abaixo, só não invente fatos pessoais que não estão nem no contexto nem na planilha.'}
@@ -9559,6 +9566,7 @@ SITUAÇÃO HOJE (${hj}):
 Saldo em conta: ${fmt(saldo)}
 DCP realizado: ${fmt(dcpR.totalGasto)} / ${fmt(dcpTeto)} (${dcpR.numSemanas} semanas de ${fmt(dcpR.base)}) — restam ${fmt(dcpRestante)}
 Ciclo atual: ${cfg.CICLO_INICIO||"?"} a ${cfg.CICLO_FIM||"?"}
+DCP semana a semana (disponibilizado | usado | resta): ${(dcpR.semanas||[]).map((w,i)=>"S"+(i+1)+" "+periodoDCP(w.data)+" "+w.status.toLowerCase()+": "+fmt(w.meta)+" | "+fmt(w.gasto)+" | "+fmt(w.meta-w.gasto)).join(" ;; ")}
 ${alertas.length?"ALERTAS:\n"+alertas.join("\n"):""}
 
 PROJEÇÃO POR CICLO:
@@ -13930,7 +13938,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261102.1715 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261102.1745 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14056,7 +14064,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261102.1715
+      // HTML v3.20261102.1745
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
