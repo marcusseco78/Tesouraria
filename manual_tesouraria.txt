@@ -1,0 +1,101 @@
+MANUAL DO TESOURARIA (como o app funciona, para o assistente explicar e orientar)
+
+Regra para o assistente: só afirme o que está aqui ou nos números da mensagem. Se não souber, diga que não sabe. Para mexer em dados, prefira explicar o passo no app; use as ações JSON só nas operações que elas cobrem.
+
+1. CONCEITOS BÁSICOS
+- Planilha Google Sheets é a fonte da verdade; o app lê e grava nela. O app é usado no celular.
+- Fluxo = lista de todos os lançamentos (passados e futuros). Plano = o Fluxo dia a dia (um cartão por dia, mostra saldo de abertura do dia). Histórico = só o que já aconteceu (30 em 30, botão "Carregar mais"; lançamento antigo pode estar mais abaixo). Timeline = visão de previsão. Dashboard = soma de todas as contas, por ciclo.
+- Status: PROGRAMADO = previsto, pode ser ajustado. EXECUTADO = fato consumado; nunca tem data futura e não muda de valor por acaso. Executar um item futuro usa a data de hoje.
+- Valor negativo = saída; positivo = entrada.
+- Ciclo = período mensal que começa no dia configurado (CICLO_DIA, hoje 16). Nome do ciclo é do tipo OUT/NOV. O Dashboard calcula o ciclo pela DATA do lançamento.
+- Contas e cartões têm ID único (ex.: PF.CC.NU) e um nome de exibição. Há conta pessoal (PF) e da empresa (PJ). Filtros por conta aparecem como pílulas no topo.
+- Datas na conversa: DD/MM. O app usa o horário de Brasília.
+
+2. ABRIR E EDITAR UM ITEM
+- Tocar na linha abre o item (fica azul-marinho). Aparecem: botão Executar / Executar agora (quando existe), ✎ Editar e Fechar.
+- Tocar no nome ou na data também abre o modo Editar. No Editar ficam: nome de exibição, nome no extrato (usado na conciliação), data, valor, categoria, conta, envelope, "Salvar alterações", Cancelar e, no fim, Apagar.
+- Salvar NÃO executa o item. Para executar vencidos em lote há o botão "Executar vencidos" no topo do Plano.
+- Item EXECUTADO: valor e status protegidos; a data pode ser corrigida (a etiqueta de ciclo acompanha), mas nunca para o futuro.
+- Item de fatura travada (conciliada) não aceita mudar valor, data ou status; categoria pode.
+
+3. EXECUTAR
+- Executar um PROGRAMADO: pede o valor real. Se for diferente do previsto, vale o valor real.
+- Executar fatura com valor menor que o total = pagamento parcial (ver 5).
+- Transferência entre contas próprias: executar um lado executa o outro, com o mesmo valor e sinal invertido.
+
+4. DESPESAS FIXAS E RECORRÊNCIAS
+- Despesa fixa/recorrência é uma regra (valor, dia, conta, frequência: mensal, semanal, a cada N semanas, trimestral etc.) que gera lançamentos PROGRAMADO para os próximos 12 ciclos. A virada de ciclo gera os novos.
+- Aba Despesas Recorrentes: visão por envelope (padrão) ou por frequência; equivalente mensal calculado (semanal × 52/12 ÷ intervalo).
+- Editar um item de recorrência e salvar pergunta: "Todos os futuros" (apaga os não executados e recria com a configuração nova) ou "A partir de um lançamento…" (escolhe uma data da lista; os anteriores ficam, dali em diante muda tudo). Itens editados à mão podem ser mantidos ou substituídos (pergunta aparece).
+- Apagar pergunta: "A partir de um lançamento…" (some dali em diante e a recorrência termina ali) ou "Apagar a recorrência toda" (para de gerar e, se a pessoa quiser, remove todos os futuros).
+- Em despesa fixa com recorrência ativa existe "É uma duplicata? Apagar só esta ocorrência" (apaga só aquela, sem mexer na recorrência).
+- EXECUTADO/PAGO nunca é apagado nem alterado por edição de recorrência. Renomear recorrência muda o nome só do que ainda não aconteceu.
+- Recorrência pode ter data de fim (dataFim): depois dela nada é gerado.
+- Fatura, empréstimo e fonte de receita não permitem apagar uma parcela solta (quebraria saldo ou cronograma); apagar o conjunto, não o pedaço.
+
+5. CARTÃO DE CRÉDITO E FATURA
+- Cada cartão tem aba de compras (itens) e a fatura aparece no Fluxo como um lançamento (tipo "CARTAO <id>") com o total do período. Fatura PROGRAMADO = ainda aberta.
+- Período: fecha no dia de fechamento configurado (hoje dia 31) e vence no dia 7. A data da compra informada pelo banco decide em qual fatura ela cai (compra feita dia 30/10 mas lançada pelo banco em 01/11 cai na fatura seguinte).
+- Compra parcelada: parcela 1 na data da compra; parcelas 2 em diante no primeiro dia do período de cada fatura. O app corrige data de parcelas 2+ (só PENDENTE e fatura não travada).
+- Compra do cartão pode ter a etiqueta DCP (conta no envelope semanal).
+- Pagar a fatura inteira: item da fatura > Executar (ou Executar agora, que usa a data de hoje).
+- Pagar PARTE: Executar a fatura informando o valor pago (menor que o total). A fatura original vira EXECUTADO com o valor pago e o que faltou vira um novo lançamento PROGRAMADO na mesma data, editável (pode mudar a data ou embutir na próxima fatura). Pagando parcial de novo, repete a regra. Nada se perde.
+- Pagar a mais: o excedente vira crédito na próxima fatura do mesmo cartão.
+- Pagamento avulso (botão "+" > pagamento de fatura): grava o pagamento em linha própria na data escolhida e abate da fatura-alvo sem mudar a data dela.
+- "Já foi cobrado": previsto que o banco debitou antes do esperado. Aparece em amarelo, sem selo de confirmação; só o banco confirma na conciliação.
+- Conciliação da fatura com o arquivo OFX: casa cada compra com o previsto (valor, data, nome). Se fechar sem pendências, a fatura é travada (selo 🔒). Destravar/Recalcular total ficam na tela do cartão. "Reconstruir do zero" varre a aba inteira: só usar com as faturas anteriores travadas.
+- Compra sem previsto vira lançamento novo; previsto não reconhecido pode ser pareado à mão (o app pergunta se guarda o nome do banco como apelido).
+- O Nubank repete o mesmo código (FITID) em todas as parcelas; o app já considera isso.
+
+6. DCP E ENVELOPES SEMANAIS
+- DCP = Despesas Cotidianas Provisionadas: verba para os gastos do dia a dia (mercado, café, delivery). A pessoa define um valor base semanal. Há um piso mínimo (Mínimo Vital, hoje R$ 530 por semana).
+- Cada semana (segunda a domingo) é um envelope DCP que aparece no Plano. Mostra: disponibilizado (valor base ± sobra ou estouro carregado), usado (soma dos gastos marcados DCP na conta e nos cartões), resta.
+- Semana encerrada: o envelope só fica "atrasado" depois do último dia da semana. Fechar o envelope (EXECUTADO) congela o gasto e redistribui: sobra soma na semana seguinte, estouro desconta nas seguintes (respeitando o piso). Aparece no último dia da semana apenas para exibição; o saldo conta pela data de início.
+- Gasto lançado depois do fechamento é marcado "lançado após o fechamento".
+- É possível reabrir só a ÚLTIMA semana fechada (desfaz a redistribuição).
+- Aba DCP: cada envelope tem período, original, carreado (desconto), total gasto, disponível/sobrou/estourou e a lista de gastos com total. No Dashboard e no Plano há cartão com disponibilizado, usado e o que resta no DCP em aberto, e aviso de estouro projetado no Dashboard.
+- Gasto DCP novo: lançar com categoria DCP (conta ou cartão). O gasto reduz a semana em que a data cai.
+
+7. ENVELOPES DE ASSUNTO (ex.: ANDRÉ, MORADIA, ASSINATURAS)
+- Envelope é uma etiqueta/agrupador com teto opcional. Itens podem ser vinculados a um envelope ao editar (campo Envelope; dá para vincular lançamentos parecidos também). Cada recorrência pode ter envelope padrão.
+- Envelope vinculado a um Cofre tem como teto o saldo do Cofre (calculado na hora).
+
+8. COFRES (RESERVAS E INVESTIMENTOS)
+- Cofre é uma reserva (caixinha). Aporte = saída de conta comum (categoria COFRE). Resgate = entrada de conta comum. Não existe tipo especial de lançamento; o saldo da conta já reflete.
+- Saldo do Cofre = aportes − resgates + rendimento acumulado. Rendimento NÃO é lançamento no Fluxo (é dinheiro rendendo dentro do cofre).
+- Tipos (escolhidos na criação, não mudam): pós-fixado (% do CDI), pré-fixado (taxa ao ano), IPCA+X%, renda variável. Rendimento é estimado: corrige automático na virada de ciclo e no botão "Atualizar rendimento agora"; não desconta IR. O botão "Corrigir com o saldo real do banco" reancora o valor.
+- 1 Cofre pode alimentar vários envelopes; desvincular congela o teto. Apagar cofre com saldo ou vinculado a envelope ativo é bloqueado. O ícone 🏦 no saldo de hoje mostra cada cofre e o patrimônio total.
+
+9. RECEITAS
+- Fontes de receita (plantões em HSA, HSI, HDWC/SESSC etc.): lista de fontes; cada uma tem Chega (quando e quanto), Cai na (conta) e Depois move (transferência para outra conta, se houver). Abas Regular e Esporádico (esporádico: data, valor e desconto em "Chega", botão "Lançar R$ X em DD/MM").
+- Receita EXECUTADA não pode ter os plantões editados. Valores decimais devem ser conferidos (ex.: 101,54).
+
+10. TRANSFERÊNCIAS E EMPRÉSTIMOS
+- Transferência entre contas próprias = dois lançamentos espelhados (saída numa conta, entrada na outra). Executar um executa o outro. Nunca nasce EXECUTADA com data futura.
+- Transferências entre contas próprias (inclusive lucros PJ→PF) distorcem a % de "Saídas" do Dashboard (a soma líquida é zero).
+- Empréstimo entre contas: pode agendar devolução (uma ou várias parcelas; a soma não passa do emprestado).
+- Empréstimo bancário: "Criar empréstimo" pede o vencimento da 1ª parcela (data exata) e a caixa "O crédito já está lançado (veio do extrato) — criar só as parcelas" evita crédito duplicado. Apagar o empréstimo inteiro não apaga crédito já conciliado com o extrato.
+
+11. CONCILIAÇÃO DE EXTRATO (OFX)
+- Enviar o arquivo OFX da conta: o app casa cada linha do banco com os previstos e executa o que casar. Mostra "Saldo bate / não bate" comparando o saldo do banco com o do app e aponta o primeiro dia divergente.
+- Item sem par vira lançamento novo; um previsto pode ser pareado à mão. Duplicatas e mesclagens são sugeridas e confirmadas pela pessoa.
+- Compra que o banco lança com data diferente (ex.: 30/10 que o banco registra em 01/11): a data do banco decide a fatura; se preciso, apagar o lançamento e relançar com a data do banco.
+
+12. NOTIFICAÇÕES (MacroDroid)
+- Notificação do Nubank no celular vai para a fila "A CLASSIFICAR" no Dashboard. A pessoa toca para lançar (conta, cartão ou DCP) ou para casar com um previsto já cadastrado ("Já está cadastrada? Toque para casar").
+- Funciona hoje para compras no cartão (crédito). Pix e débito ainda não são lidos.
+
+13. DASHBOARD
+- Mostra, por ciclo (em curso e próximos): receitas, saídas, saldo e gráfico. "Ver as N saídas deste ciclo" lista as saídas com % de cada uma. Soma todas as contas. Tem aviso de estouro de DCP e a liquidez (menor saldo projetado e quando).
+- "Primeiro dia negativo" e "menor saldo previsto" no Plano seguem a conta escolhida.
+
+14. APAGAR (RESUMO)
+- Um lançamento comum: abrir > Editar > Apagar (no fim). Item executado: pedir cuidado, pois altera o saldo real.
+- Futuros de uma recorrência: ver seção 4 (todos, a partir de um lançamento, só uma duplicata).
+- Compra de cartão: apagar o item na lista do cartão (não a linha da fatura); fatura travada bloqueia.
+- Cofre, empréstimo e fonte de receita têm botão Apagar próprio com regras de bloqueio (seções 8, 9 e 10).
+
+15. LIMITAÇÕES CONHECIDAS
+- Assistente: não vê prints perfeitos; pode errar data sem dia e categoria de estabelecimento desconhecido. Sempre confirmar com a pessoa antes de gravar.
+- Rendimento de cofre é estimativa. Pix/débito por notificação ainda não funciona.
+- O script novo só vale após o cache (até 1 h) ou ao tocar "⟳ Script".

@@ -9502,6 +9502,25 @@ function Timeline({data,onUpdate,onIrPara}){
 }
 
 // ── SYSTEM PROMPT GEMINI ──────────────────────────────────────────────────────
+// Manual de funcionamento para o Gemini: lido de manual_tesouraria.txt (mesmo site); se falhar, usa o resumo.
+let _MANUAL_TXT=null;
+const _MANUAL_CURTO=`COMO O TESOURARIA FUNCIONA (use para explicar e orientar; não invente regras fora daqui):
+• Status: PROGRAMADO = previsto, pode mudar. EXECUTADO = já aconteceu, nunca tem data futura.
+• Fatura de cartão é um lançamento comum no Plano (tipo começa com "CARTAO"), com o total das compras do período. Fecha dia 31 e vence dia 7 (conforme cadastro do cartão); a data da compra no banco decide em qual fatura ela cai.
+• Pagar a fatura inteira: executar a linha da fatura (botão "Executar" / "Executar agora" no item aberto). Vira EXECUTADO e o saldo cai.
+• Pagar PARTE da fatura: abrir a linha da fatura, tocar em Executar e informar o valor realmente pago (menor que o total). A fatura vira EXECUTADO com o valor pago e o que faltou (restante) vira um novo lançamento PROGRAMADO na mesma data, editável como qualquer outro (pode mudar a data ou somar na próxima fatura). Se pagar parcial de novo, o novo restante segue a mesma regra.
+• Pagar a mais do que a fatura: o excedente vira crédito na próxima fatura do mesmo cartão.
+• Pagamento avulso (pelo botão "+", pagamento de fatura): registra o valor pago numa linha própria na data escolhida e abate o valor da fatura-alvo, sem mudar a data dela.
+• Fatura travada (conciliada com o extrato) não aceita mais mudanças nas parcelas; destravar na aba Cartões.
+• Parcelas: parcela 1 na data da compra; parcelas 2+ no primeiro dia do período de cada fatura.
+• DCP (Despesas Cotidianas Provisionadas) = verba semanal para gastos do dia a dia. Cada semana é um envelope: disponibilizado = valor base ± sobra/estouro carregado da semana anterior; usado = gastos da semana; resta = diferença. Semana encerrada fecha o envelope (EXECUTADO). Estouro desconta da semana seguinte, sobra soma.
+• Ciclo = período mensal configurável (começa no dia CICLO_DIA). Dashboard agrupa o ciclo pela data.
+• Conciliação: a pessoa envia o OFX/extrato; o app casa cada linha do banco com o previsto (valor, data e nome). Compra sem previsto vira lançamento novo.
+• "Já foi cobrado": previsto que o banco já cobrou, mas ainda sem confirmação do extrato (amarelo).
+• Notificações do Nubank chegam na fila "A CLASSIFICAR" no Dashboard; a pessoa toca para lançar ou casar com um previsto.
+• Salvar uma edição não executa o item; para executar vencidos usar "Executar vencidos" no topo do Plano.
+• Quando a pessoa pedir algo que exige tocar no app (executar, travar, destravar), explique os passos curtos em vez de inventar uma ação; use as ações JSON abaixo só para o que elas cobrem (ex.: "baixa" com valorReal na linha da fatura faz o pagamento parcial).`;
+try{fetch("manual_tesouraria.txt?v=20261102b").then(r=>r.ok?r.text():null).then(t=>{if(t&&t.length>2000)_MANUAL_TXT="MANUAL DO TESOURARIA:\n"+t;}).catch(()=>{});}catch(e){}
 function buildPrompt(data){
   const hj=hoje(),fluxo=data.fluxo||[],cfg=data.config||{};
   const ex=fluxo.filter(r=>r.status==="EXECUTADO").sort((a,b)=>a.data>b.data?1:-1);
@@ -9669,22 +9688,7 @@ REGRAS DE OPERAÇÃO:
 CONTAS CADASTRADAS (use SEMPRE o id exato em "forma" ao lançar em conta; se houver mais de uma e a pessoa não disse qual, pergunte qual conta antes de propor o JSON):
 ${contasListaTxt}
 
-COMO O TESOURARIA FUNCIONA (use para explicar e orientar; não invente regras fora daqui):
-• Status: PROGRAMADO = previsto, pode mudar. EXECUTADO = já aconteceu, nunca tem data futura.
-• Fatura de cartão é um lançamento comum no Plano (tipo começa com "CARTAO"), com o total das compras do período. Fecha dia 31 e vence dia 7 (conforme cadastro do cartão); a data da compra no banco decide em qual fatura ela cai.
-• Pagar a fatura inteira: executar a linha da fatura (botão "Executar" / "Executar agora" no item aberto). Vira EXECUTADO e o saldo cai.
-• Pagar PARTE da fatura: abrir a linha da fatura, tocar em Executar e informar o valor realmente pago (menor que o total). A fatura vira EXECUTADO com o valor pago e o que faltou (restante) vira um novo lançamento PROGRAMADO na mesma data, editável como qualquer outro (pode mudar a data ou somar na próxima fatura). Se pagar parcial de novo, o novo restante segue a mesma regra.
-• Pagar a mais do que a fatura: o excedente vira crédito na próxima fatura do mesmo cartão.
-• Pagamento avulso (pelo botão "+", pagamento de fatura): registra o valor pago numa linha própria na data escolhida e abate o valor da fatura-alvo, sem mudar a data dela.
-• Fatura travada (conciliada com o extrato) não aceita mais mudanças nas parcelas; destravar na aba Cartões.
-• Parcelas: parcela 1 na data da compra; parcelas 2+ no primeiro dia do período de cada fatura.
-• DCP (Despesas Cotidianas Provisionadas) = verba semanal para gastos do dia a dia. Cada semana é um envelope: disponibilizado = valor base ± sobra/estouro carregado da semana anterior; usado = gastos da semana; resta = diferença. Semana encerrada fecha o envelope (EXECUTADO). Estouro desconta da semana seguinte, sobra soma.
-• Ciclo = período mensal configurável (começa no dia CICLO_DIA). Dashboard agrupa o ciclo pela data.
-• Conciliação: a pessoa envia o OFX/extrato; o app casa cada linha do banco com o previsto (valor, data e nome). Compra sem previsto vira lançamento novo.
-• "Já foi cobrado": previsto que o banco já cobrou, mas ainda sem confirmação do extrato (amarelo).
-• Notificações do Nubank chegam na fila "A CLASSIFICAR" no Dashboard; a pessoa toca para lançar ou casar com um previsto.
-• Salvar uma edição não executa o item; para executar vencidos usar "Executar vencidos" no topo do Plano.
-• Quando a pessoa pedir algo que exige tocar no app (executar, travar, destravar), explique os passos curtos em vez de inventar uma ação; use as ações JSON abaixo só para o que elas cobrem (ex.: "baixa" com valorReal na linha da fatura faz o pagamento parcial).
+${_MANUAL_TXT||_MANUAL_CURTO}
 
 AÇÕES (use quando a pessoa pedir operações na planilha):
 Coloque o JSON em linha isolada, ANTES da explicação. NUNCA misture JSON com texto corrido.
@@ -13983,7 +13987,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261102.2010 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261102.2040 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14109,7 +14113,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261102.2010
+      // HTML v3.20261102.2040
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
