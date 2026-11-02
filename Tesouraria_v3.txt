@@ -1,4 +1,4 @@
-// VERSAO: v3.20261102.1300
+// VERSAO: v3.20261102.2110
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -164,6 +164,7 @@ function dispatch(p) {
     case "editar":       return editar(ss, p);
     case "mesclarFaturaComSeguinte": return mesclarFaturaComSeguinte(ss, p);
     case "pagarFaturaAvulso": return pagarFaturaAvulso(ss, p);
+    case "agendarRestanteFatura": return agendarRestanteFatura(ss, p);
     case "deletar":      return deletar(ss, p);
     case "editarCartaoItem":  return editarCartaoItem(ss, p);
     case "deletarCartaoItem": return deletarCartaoItem(ss, p);
@@ -424,7 +425,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261102.1300",
+    scriptVersion: "v3.20261102.2110",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -4668,6 +4669,55 @@ function mesclarFaturaComSeguinte(ss, p) {
   const cartaoTipo = tipoAtual.replace(/^CARTAO\s*/i, "").trim();
   _somarNaProximaFatura(ss, cartaoTipo, row, valor);
   sh.deleteRow(row);
+  SpreadsheetApp.flush();
+  return getData(ss);
+}
+
+/**
+ * [NOVO 02/11, pedido do Marcus] Ao reduzir o valor de uma fatura PROGRAMADA, o app
+ * pergunta se quer agendar o restante. Cria uma linha PROGRAMADO (mesmo tipo/conta/
+ * categoria da fatura), na data escolhida, com a mesma marca do restante do baixa()
+ * (restanteDeFatura). Nao mexe na fatura original. Idempotente: se ja existe um
+ * restante PROGRAMADO dessa fatura na mesma data e valor, nao cria outro.
+ * p.row = fatura, p.data = ISO, p.valor = restante (positivo).
+ */
+function agendarRestanteFatura(ss, p) {
+  const sh  = ss.getSheetByName("FLUXO");
+  const row = Number(p.row);
+  const restante = Math.round(Math.abs(Number(p.valor)) * 100) / 100;
+  if (!(restante > 0.01)) throw new Error("Valor do restante invalido.");
+  if (!p.data) throw new Error("Informe a data do restante.");
+  const tipo = String(sh.getRange(row, COL.TIPO).getValue());
+  if (!_ehTipoFaturaCartao(tipo)) throw new Error("Essa linha nao e uma fatura de cartao.");
+  const dataNova = parseDateBRT(p.data);
+  let obsAlvo = {};
+  try { obsAlvo = JSON.parse(sh.getRange(row, COL.OBS).getValue() || "{}"); } catch (e) {}
+  const dataAtual = sh.getRange(row, COL.DATA).getValue();
+  const vencOriginal = obsAlvo.faturaOriginalVenc || obsAlvo.dataOriginal ||
+    (dataAtual instanceof Date ? fmtDateSimple(dataAtual) : null);
+
+  const last = sh.getLastRow();
+  if (last >= FLUXO_START) {
+    const rows = sh.getRange(FLUXO_START, 1, last - FLUXO_START + 1, 9).getValues();
+    for (let i = 0; i < rows.length; i++) {
+      let o = {}; try { o = JSON.parse(rows[i][8] || "{}"); } catch (e) {}
+      if (Number(o.restanteDeFatura) === row && String(rows[i][6]) === "PROGRAMADO" &&
+          Math.abs(Math.abs(Number(rows[i][2])) - restante) < 0.01 &&
+          rows[i][0] instanceof Date && fmtDateSimple(rows[i][0]) === fmtDateSimple(dataNova)) {
+        return getData(ss); // ja existe, nada a fazer
+      }
+    }
+  }
+  const categoria = String(sh.getRange(row, COL.CAT).getValue());
+  const forma     = String(sh.getRange(row, COL.FORMA).getValue());
+  const desc      = String(sh.getRange(row, COL.DESC).getValue());
+  const obsNova = { restanteDeFatura: row };
+  if (obsAlvo.contaManual) obsNova.contaManual = true;
+  if (vencOriginal) obsNova.faturaOriginalVenc = vencOriginal;
+  sh.getRange(last + 1, 1, 1, 9).setValues([[
+    dataNova, desc, -restante, tipo, categoria, forma, "PROGRAMADO",
+    calcCiclo(dataNova), JSON.stringify(obsNova)
+  ]]);
   SpreadsheetApp.flush();
   return getData(ss);
 }
