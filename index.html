@@ -7323,6 +7323,32 @@ function CardNotificacoes({data,onUpdate}){
     try{ await api({action:"ignorarNotificacao",key:it.key}); onUpdate(await api({action:"getData"})); }catch(e){alert(e.message);}
     setBusy("");
   };
+  const [todas,setTodas]=useState({});
+  const nrm=t=>String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9 ]+/g," ").replace(/\s+/g," ").trim();
+  const candidatosDe=it=>{
+    const cartao=cartaoDe(it); if(!cartao) return {top:[],all:[]};
+    const est=nrm(it.estab), palavras=est.split(" ").filter(w=>w.length>=4);
+    const base=((data.cartaoItens||{})[cartao]||[]).filter(r=>{
+      if(String(r[7]||"").toUpperCase()!=="PENDENTE") return false;
+      let ob={}; try{ob=JSON.parse(String(_obsCartaoRaw(r)||"{}"));}catch(e){}
+      return !ob.confirmadoOfx;
+    }).map(r=>{
+      let ob={}; try{ob=JSON.parse(String(_obsCartaoRaw(r)||"{}"));}catch(e){}
+      const nome=nrm((ob.apelido||"")+" "+r[1]);
+      const nm=palavras.some(w=>nome.includes(w))||nome.split(" ").filter(w=>w.length>=4).some(w=>est.includes(w));
+      const v=Math.abs(Number(r[2])||0), vm=Math.abs(v-it.valor)<=Math.max(1,it.valor*0.15);
+      const dias=Math.abs((new Date(String(r[0]).slice(0,10)+"T12:00:00")-new Date(it.data+"T12:00:00"))/864e5)||0;
+      return {row:_linhaCartao(r),desc:String(r[1]),valor:v,data:String(r[0]).slice(0,10),score:(nm?2:0)+(vm?1:0),dias};
+    }).sort((x,y)=>y.score-x.score||x.dias-y.dias);
+    return {top:base.filter(x=>x.score>0&&x.dias<=45).slice(0,4),all:base.slice(0,40)};
+  };
+  const vincular=async(it,cand)=>{
+    const cartao=cartaoDe(it);
+    if(!confirm("Casar esta compra com \""+cand.desc+"\"?\n\nA compra prevista passa a valer "+fmt(it.valor)+" em "+dd(it.data)+". Nada novo é criado.")) return;
+    setBusy(it.key);
+    try{ onUpdate(await api({action:"vincularNotificacao",key:it.key,cartao,row:cand.row})); }catch(e){alert(e.message);}
+    setBusy("");
+  };
   const abrirCfg=async()=>{ try{ const r=await api({action:"tokenNotificacao"}); setCfg(r.token); }catch(e){alert(e.message);} };
   const dd=d=>String(d||"").slice(8,10)+"/"+String(d||"").slice(5,7);
   const Pil=({on,children,...p})=><button {...p} style={{minHeight:44,padding:"0 14px",borderRadius:22,border:"1px solid "+(on?C.accent:C.border),background:on?C.accent:"#fff",color:on?"#fff":C.text,fontWeight:700,fontSize:13,fontFamily:"inherit"}}>{children}</button>;
@@ -7344,6 +7370,13 @@ function CardNotificacoes({data,onUpdate}){
       {it.tipo==="CREDITO"?<div>
         {!nt.mapa[chaveDe(it)]&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
           {cartoes.map(c=><Pil key={c.id} on={cartaoDe(it)===c.id} onClick={()=>setK(it.key,{cartao:c.id})}>{c.nome}</Pil>)}</div>}
+        {(()=>{ if(!cartaoDe(it)||!(it.valor>0)) return null; const cd=candidatosDe(it), lista=todas[it.key]?cd.all:cd.top; if(!cd.all.length) return null;
+          return <div style={{marginTop:8,background:"#fff",border:"1px solid "+C.border,borderRadius:14,padding:10}}>
+            <div style={{fontSize:12,fontWeight:700,color:C.textSub,marginBottom:6}}>{lista.length&&!todas[it.key]?"Já está cadastrada? Toque para casar:":"Casar com uma cadastrada:"}</div>
+            {lista.map(cd2=><button key={cd2.row} disabled={busy===it.key} onClick={()=>vincular(it,cd2)} style={{display:"flex",justifyContent:"space-between",gap:8,width:"100%",minHeight:44,alignItems:"center",padding:"0 10px",marginBottom:4,borderRadius:12,border:"1px solid "+C.border,background:C.bg,fontFamily:"inherit",fontSize:13,fontWeight:700,textAlign:"left"}}>
+              <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cd2.desc}</span><span style={{whiteSpace:"nowrap",color:C.textSub,fontWeight:600}}>{fmt(cd2.valor)} · {dd(cd2.data)}</span></button>)}
+            <div onClick={()=>setTodas(s=>({...s,[it.key]:!s[it.key]}))} style={{fontSize:12,fontWeight:800,color:C.accent,cursor:"pointer",padding:"6px 2px"}}>{todas[it.key]?"Ver só as parecidas":"Ver todas as previstas do cartão"}</div>
+          </div>; })()}
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
           {CATS_N.map(c=><Pil key={c} on={catDe(it)===c} onClick={()=>setK(it.key,{cat:c})}>{c==="DESPESA FIXA"?"Fixa":c==="EXTRAORDINARIA"?"Extra":"DCP"}</Pil>)}</div>
         <div style={{display:"flex",gap:8,marginTop:8}}>
@@ -13830,7 +13863,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261031.1450 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261101.2140 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13956,7 +13989,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261031.1450
+      // HTML v3.20261101.2140
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();

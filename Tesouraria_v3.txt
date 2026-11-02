@@ -1,4 +1,4 @@
-// VERSAO: v3.20261031.1450
+// VERSAO: v3.20261101.2140
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -172,6 +172,7 @@ function dispatch(p) {
     case "registrarNotificacao": return registrarNotificacao(ss, p);
     case "classificarNotificacao": return classificarNotificacao(ss, p);
     case "ignorarNotificacao": return ignorarNotificacao(ss, p);
+    case "vincularNotificacao": return vincularNotificacao(ss, p);
     case "tokenNotificacao": return { token: _notifToken() };
     case "adicionarAjusteFatura": return adicionarAjusteFatura(ss, p);
     case "baixaFatura":     return baixaFatura(ss, p);
@@ -423,7 +424,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261031.1450",
+    scriptVersion: "v3.20261101.2140",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -13287,6 +13288,33 @@ function classificarNotificacao(ss, p) {
   }
   loc.sh.getRange(loc.row, 11).setValue("LANCADA");
   loc.sh.getRange(loc.row, 12).setValue(res.novaLinha || "");
+  return res;
+}
+
+// [NOVO 01/11] A compra da notificacao E uma compra ja prevista (ex: assinatura
+// fixa): casa com a linha prevista escolhida (p.row) em vez de criar outra.
+function vincularNotificacao(ss, p) {
+  var loc = _notifAchar(ss, String(p.key));
+  var r = loc.sh.getRange(loc.row, 1, 1, 12).getValues()[0];
+  if (String(r[10]) !== "PENDENTE") return { ...getData(ss), jaTratada: true };
+  var item = { tipo: String(r[4]), valor: Number(r[5]), estab: String(r[6]), final: String(r[7]), escopo: String(r[8]), data: _notifDataIso(r[9]) };
+  if (item.tipo !== "CREDITO") throw new Error("so compras no credito podem ser vinculadas");
+  if (!(item.valor > 0)) throw new Error("Essa notificacao chegou sem valor. Toque em Ignorar.");
+  var cartao = String(p.cartao || "").toUpperCase();
+  if (!cartao || !Number(p.row)) throw new Error("escolha o cartao e a recorrencia");
+  _setConfig(ss.getSheetByName("CONFIG"), "NOTIF_CARTAO_" + _notifChaveCartao(item), cartao);
+  loc.sh.getRange(loc.row, 11).setValue("LANCANDO");
+  SpreadsheetApp.flush();
+  if (_MEMO) _MEMO.notif = undefined;
+  var res;
+  try {
+    res = vincularCompraCartao(ss, { cartao: cartao, row: Number(p.row), descricaoCsv: item.estab || "COMPRA", valorCsv: item.valor, dataCsv: item.data, parcelaCsv: "", fitid: "" });
+  } catch (eV) {
+    loc.sh.getRange(loc.row, 11).setValue("PENDENTE");
+    throw eV;
+  }
+  loc.sh.getRange(loc.row, 11).setValue("LANCADA");
+  loc.sh.getRange(loc.row, 12).setValue(Number(p.row));
   return res;
 }
 
