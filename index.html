@@ -7732,6 +7732,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
   const [dt,setDt]=useState(antecipar?hoje():item.data);
   const [apelidoInput,setApelidoInput]=useState(()=>{let o={};try{o=JSON.parse(item.obs||"{}");}catch(e){}return o.apelido||"";});
   const [descInput,setDescInput]=useState(item.descricao||"");
+  const [editando,setEditando]=useState(!!antecipar); // [02/11] modo "Editar": esconde campos e Salvar ate tocar em Editar
   const [verNomeExtrato,setVerNomeExtrato]=useState(false); // [02/11] nome de conciliacao escondido ate tocar
   const [loadApelido,setLoadApelido]=useState(false);
   const [loadDesc,setLoadDesc]=useState(false);
@@ -8010,6 +8011,11 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
           background:ativo?C.accent:C.borderLight,color:ativo?"#fff":C.textMuted,opacity:ativo?1:0.55}}>{label}</span>;
       })}
     </div>}
+    {!editando&&<div style={{fontSize:13,color:C.textSub,margin:"0 0 10px",display:"flex",flexWrap:"wrap",gap:"4px 14px"}}>
+      {item.categoria!=="DCP_PROVISAO"&&<span onClick={()=>setEditando(true)} style={{cursor:"pointer"}}>Nome: <b style={{color:C.text,borderBottom:"1.5px dashed "+C.textMuted}}>{apelidoInput||item.descricao}</b></span>}
+      <span onClick={()=>setEditando(true)} style={{cursor:"pointer"}}>Data: <b style={{color:C.text,borderBottom:"1.5px dashed "+C.textMuted}}>{fmtD(item.data)}</b></span>
+    </div>}
+    {editando&&<>
     {item.categoria!=="DCP_PROVISAO"&&<div style={{marginBottom:8}}>
       <span style={_LAB}>NOME DE EXIBIÇÃO (opcional)</span>
       <div style={{display:"flex",gap:8,marginTop:4}}>
@@ -8065,6 +8071,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
     {ehFatura&&execMode&&neg&&numBR(val)<Math.abs(item.valor)-0.01&&<div style={{fontSize:10,color:"#B45309",marginBottom:8,fontStyle:"italic"}}>
       Pagamento parcial — o restante (R$ {(Math.abs(item.valor)-numBR(val)).toFixed(2).replace(".",",")}) vira um novo lançamento no Fluxo, na mesma data, editável normalmente.
     </div>}
+    </>}
     {item.categoria==="DCP_PROVISAO"&&execMode&&<div style={{fontSize:10,color:"#B45309",background:C.accentLight,borderRadius:6,padding:"6px 8px",marginBottom:8}}>
       {!dcpSemanaEncerrada(item.data,hoje())&&<div style={{color:C.red,fontWeight:800,marginBottom:6}}>⚠ Esta semana ainda não terminou ({periodoDCP(item.data)}). Fechar agora encerra a semana antes do fim.</div>}
       Fechamento de semana DCP: a sobra/estouro é redistribuída automaticamente entre as próximas segundas e a linha fecha em R$ 0,00 no Histórico — o valor digitado acima é ignorado. Feche as semanas em ordem (a mais antiga primeiro).
@@ -8073,7 +8080,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
         Ciclo atípico — não propagar essa sobra/estouro pro próximo ciclo (fica registrado como perdoado, pra auditoria)
       </label>
     </div>}
-    {fc&&item.status!=="EXECUTADO"&&<div style={{background:"#fff",border:"1px dashed "+C.teal,borderRadius:6,padding:8,marginBottom:8}}>
+    {editando&&fc&&item.status!=="EXECUTADO"&&<div style={{background:"#fff",border:"1px dashed "+C.teal,borderRadius:6,padding:8,marginBottom:8}}>
       <div style={{fontSize:10,color:C.teal,fontWeight:700,marginBottom:4}}>PLANTÕES/VALOR DIFERENTES ESSE MÊS?</div>
       <div style={{fontSize:10,color:C.textMuted,marginBottom:6}}>Deixe valor/hora e alíquota em branco pra usar o padrão da fonte — preencha só o que for diferente neste mês específico.</div>
       <div style={{display:"flex",gap:6,marginBottom:6}}>
@@ -8105,21 +8112,41 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
       style={{width:"100%",marginBottom:8,background:C.surface,color:"#B45309",border:"1px solid #B45309",borderRadius:12,minHeight:44,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
       ↩ Reabrir esta semana DCP (desfaz o fechamento)
     </button>}
+    {editando?<>
     <button onClick={confirmar} disabled={!!load}
       style={{width:"100%",height:42,background:execMode?C.green:C.accent,color:"#fff",borderRadius:12,fontSize:14,fontWeight:800,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
-      {load?"…":(execMode?"Executar":"Salvar")}
+      {load?"…":(execMode?"Executar":"Salvar alterações")}
     </button>
     <div style={{display:"flex",gap:8,marginTop:8}}>
       {podeExecutarHoje&&<button onClick={executarHoje} disabled={!!load}
-        style={{flex:1,height:38,background:C.surface,color:C.green,border:"1px solid "+C.green,borderRadius:12,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+        style={{flex:1,height:38,whiteSpace:"nowrap",background:C.surface,color:C.green,border:"1px solid "+C.green,borderRadius:12,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
         ✓ Executar agora
       </button>}
-      <button onClick={onClose}
+      <button onClick={()=>antecipar?onClose():setEditando(false)}
         style={{flex:podeExecutarHoje?"0 0 auto":1,height:38,padding:"0 18px",background:C.surface,color:C.textSub,borderRadius:12,fontSize:13,fontWeight:700,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
         Cancelar
       </button>
     </div>
     {podeExecutarHoje&&<div style={_DICA}>"Executar agora" grava a data de execução como hoje.</div>}
+    </>:<div style={{display:"flex",gap:8,marginTop:2}}>
+      {execMode&&<button onClick={confirmar} disabled={!!load}
+        style={{flex:1,height:42,whiteSpace:"nowrap",background:C.green,color:"#fff",borderRadius:12,fontSize:14,fontWeight:800,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+        {load?"…":"✓ Executar"}
+      </button>}
+      {!execMode&&podeExecutarHoje&&<button onClick={executarHoje} disabled={!!load}
+        style={{flex:1,height:42,whiteSpace:"nowrap",background:C.surface,color:C.green,border:"1px solid "+C.green,borderRadius:12,fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+        ✓ Executar agora
+      </button>}
+      <button onClick={()=>setEditando(true)}
+        style={{flex:1,height:42,whiteSpace:"nowrap",background:C.surface,color:C.accent,border:"1px solid "+C.accent,borderRadius:12,fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+        ✎ Editar
+      </button>
+      <button onClick={onClose}
+        style={{flex:"0 0 auto",height:42,padding:"0 16px",whiteSpace:"nowrap",background:C.surface,color:C.textSub,borderRadius:12,fontSize:14,fontWeight:700,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
+        Fechar
+      </button>
+    </div>}
+    {editando&&<>
     {/* Categoria -- lista completa das 6, sempre visivel. So DCP<->
         Extraordinario e intercambiavel de verdade -- Fixa/Imposto/Fatura/
         Emprestimo/Cofre ficam sempre travados quando SAO a categoria atual
@@ -8308,6 +8335,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
       </button><div style={_DICA}>Apaga só este lançamento. Não dá para desfazer.</div></>;
     })()}
     </div>
+    </>}
   </div>;
 }
 
@@ -8708,11 +8736,11 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
         const destacado=destaque?.tab==="fluxo"&&destaque.row===item.row;
         return <div key={item.row} id={"fluxo-item-"+item.row}>
         <div onClick={()=>isOpen?setConf(null):setConf(item.row)}
-          style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px",minHeight:44,cursor:"pointer",borderBottom:"1px solid "+C.borderLight,background:destacado?"#FEF3E2":(isOpen?C.bg:(bgItem||C.surface)),transition:"background 1s",
+          style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px",minHeight:44,cursor:"pointer",borderBottom:"1px solid "+C.borderLight,background:isOpen?C.dark:(destacado?"#FEF3E2":(bgItem||C.surface)),transition:"background 1s",
           borderLeft:corItem?"3px solid "+corItem:"none"}}>
           <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:13,fontWeight:700,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}</div>
-            <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{item.categoria==="DCP_PROVISAO"?periodoDCP(item.data):(<>{tipoDisplay(item.tipo,data)}{item.categoria&&item.categoria!==item.tipo?" · "+item.categoria:""} · {item.forma}</>)}</div>
+            <div style={{fontSize:13,fontWeight:700,color:isOpen?"#FFFFFF":(descCor||C.text),whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}</div>
+            <div style={{fontSize:10,color:isOpen?"#A9B6DA":C.textMuted,marginTop:1}}>{item.categoria==="DCP_PROVISAO"?periodoDCP(item.data):(<>{tipoDisplay(item.tipo,data)}{item.categoria&&item.categoria!==item.tipo?" · "+item.categoria:""} · {item.forma}</>)}</div>
             {item.status==="EXECUTADO"&&item.categoria!=="DCP_PROVISAO"&&<div style={{fontSize:11,fontWeight:800,color:C.green,marginTop:2}}><span style={{fontSize:15,lineHeight:1,marginRight:3}}>✓</span>executado</div>}
             {/* [24/07] Selos (status, conciliacao, envelope) sempre numa
                 terceira linha propria, com flex-wrap -- antes disputavam
@@ -8737,7 +8765,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
                 {(()=>{const ie=infoEnvelopeItem(item);return ie?<TagEnvelopeCustom nome={ie.nome} saldo={ie.saldo}/>:null;})()}
               </div>}
           </div>
-          {item.categoria==="DCP_PROVISAO"?<ValorDCPProvisao valor={item.valor} dataEnvelope={item.data} saldoApos={item.saldoProjetado}/>:<span style={{fontWeight:800,color:item.valor<0?C.red:C.blue,flexShrink:0,fontSize:14,fontVariantNumeric:"tabular-nums"}}>{fmt(item.valor)}</span>}
+          {item.categoria==="DCP_PROVISAO"?<ValorDCPProvisao valor={item.valor} dataEnvelope={item.data} saldoApos={item.saldoProjetado}/>:<span style={{fontWeight:800,color:isOpen?(item.valor<0?"#FFB4AC":"#7FE0B5"):(item.valor<0?C.red:C.blue),flexShrink:0,fontSize:14,fontVariantNumeric:"tabular-nums"}}>{fmt(item.valor)}</span>}
         </div>
         {isOpen&&<PainelEdicaoItem key={item.row} item={item} data={data} onUpdate={onUpdate} onClose={()=>setConf(null)} onIrPara={onIrPara}
           antecipar={!!(destaque&&destaque.antecipar&&destaque.row===item.row)}/>}
@@ -8982,11 +9010,11 @@ function Historico({data,onUpdate,destaque,onIrPara}){
         vazio={!itens.length&&!cartaoDia.length} abertoInicial={gi===0} forcarAberto={!!busca.trim()||itemNoDia||(!!diaAlvo&&gdt===diaAlvo)} sinal={sinalDias}>
         {itens.map(item=>{const {cor:corItem,selo,bg:bgItem,descCor,confirmadoExtrato}=corDoItem(item,hj);const isOpen=conf===item.row;const destacado=destaque?.tab==="historico"&&destaque.row===item.row;return <div key={item.row} id={"hist-item-"+item.row}>
           <div onClick={()=>isOpen?setConf(null):setConf(item.row)}
-            style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px",minHeight:44,cursor:"pointer",borderBottom:isOpen?"none":"1px solid "+C.borderLight,background:destacado?"#FEF3E2":(isOpen?C.bg:(bgItem||C.surface)),transition:"background 1s",
+            style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px",minHeight:44,cursor:"pointer",borderBottom:isOpen?"none":"1px solid "+C.borderLight,background:isOpen?C.dark:(destacado?"#FEF3E2":(bgItem||C.surface)),transition:"background 1s",
             borderLeft:corItem?"3px solid "+corItem:"none"}}>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:13,fontWeight:700,color:descCor||C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}</div>
-              <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{item.categoria==="DCP_PROVISAO"?periodoDCP(item.data):(<>{tipoDisplay(item.tipo,data)}{item.categoria&&item.categoria!==item.tipo?" · "+item.categoria:""}</>)}</div>
+              <div style={{fontSize:13,fontWeight:700,color:isOpen?"#FFFFFF":(descCor||C.text),whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nomeExibicao(item,data)}</div>
+              <div style={{fontSize:10,color:isOpen?"#A9B6DA":C.textMuted,marginTop:1}}>{item.categoria==="DCP_PROVISAO"?periodoDCP(item.data):(<>{tipoDisplay(item.tipo,data)}{item.categoria&&item.categoria!==item.tipo?" · "+item.categoria:""}</>)}</div>
               {(selo||confirmadoExtrato||(item.categoria!=="DCP_PROVISAO"&&item.dcpEnvelope)||infoEnvelopeItem(item)||infoTransferencia(item,data))&&
                 <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:3,alignItems:"center"}}>
                   {(()=>{const it=infoTransferencia(item,data); return it&&
@@ -9005,7 +9033,7 @@ function Historico({data,onUpdate,destaque,onIrPara}){
                   {(()=>{const ie=infoEnvelopeItem(item);return ie?<TagEnvelopeCustom nome={ie.nome} saldo={ie.saldo}/>:null;})()}
                 </div>}
             </div>
-            {item.categoria==="DCP_PROVISAO"?<ValorDCPFechado item={item}/>:<span style={{fontWeight:800,color:item.valor<0?C.red:C.blue,flexShrink:0,fontSize:14,fontVariantNumeric:"tabular-nums"}}>{fmt(item.valor)}</span>}
+            {item.categoria==="DCP_PROVISAO"?<ValorDCPFechado item={item}/>:<span style={{fontWeight:800,color:isOpen?(item.valor<0?"#FFB4AC":"#7FE0B5"):(item.valor<0?C.red:C.blue),flexShrink:0,fontSize:14,fontVariantNumeric:"tabular-nums"}}>{fmt(item.valor)}</span>}
           </div>
           {isOpen&&<PainelEdicaoItem key={item.row} item={item} data={data} onUpdate={onUpdate} onClose={()=>setConf(null)} onIrPara={onIrPara}/>}
         </div>;})}
@@ -13938,7 +13966,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261102.1750 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261102.1840 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14064,7 +14092,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261102.1750
+      // HTML v3.20261102.1840
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
