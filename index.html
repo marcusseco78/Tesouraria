@@ -6352,22 +6352,34 @@ function ConciliarExtratoTab({data,onUpdate,contaInicial,arquivoInicial,chaveFil
   // hora do upload do extrato, nunca avisada de que o rendimento acabou de
   // ser lançado. O lançamento em si sempre funcionou certo; só o aviso
   // continuava preso no número de antes, como se nada tivesse resolvido.
-  function _ajustarComparacaoSaldoPorRendimento(delta){
-    let csAtualizado=null;
-    setResultado(res=>{
-      if(!res||!res.comparacaoSaldo) return res;
-      const novaDif=_round2(Number(res.comparacaoSaldo.diferenca||0)-delta);
-      csAtualizado={...res.comparacaoSaldo,diferenca:novaDif,bate:Math.abs(novaDif)<=0.01};
-      return {...res,comparacaoSaldo:csAtualizado};
-    });
-    // [NOVO 01/10] Esse caminho não passa de novo pelo conciliarExtrato (que é
-    // quem grava o saldo confirmado sozinho) -- se o lançamento do rendimento
-    // fechou a conta, grava aqui também, senão a marca nunca avançava.
-    if(csAtualizado&&csAtualizado.bate){
-      api({action:"confirmarSaldoConciliado",conta:contaExtrato,data:csAtualizado.data,saldo:csAtualizado.saldoBanco,ini:(resultado&&resultado.periodo&&resultado.periodo.inicio)||"",fim:csAtualizado.data}).catch(()=>{});
-      setResultado(res=>res?{...res,ultimoSaldoConfirmado:{data:csAtualizado.data,valor:csAtualizado.saldoBanco}}:res);
+  // [01/11] O aviso "Saldo não bate" era uma foto do upload: corrigir um valor
+  // depois (ex.: INSS 1.042 -> 1.072,61) não mudava o aviso. Agora ele é
+  // recalculado a partir dos lançamentos atuais toda vez que o Fluxo muda
+  // (vale também para o rendimento do mês). Conta absoluta, sem delta.
+  useEffect(()=>{
+    const cs0=resultado&&resultado.comparacaoSaldo; if(!cs0) return;
+    const conta=String(contaExtrato||"CONTA");
+    const execs=(data.fluxo||[]).filter(r=>r.status==="EXECUTADO"&&(r.forma||"CONTA")===conta&&r.data<=cs0.data);
+    const ord=execs.map((r,i)=>[r,i]).sort((a,b)=>a[0].data<b[0].data?-1:a[0].data>b[0].data?1:a[1]-b[1]).map(x=>x[0]);
+    if(!ord.length||ord[ord.length-1].saldoRealConta==null) return;
+    const saldoApp=_round2(Number(ord[ord.length-1].saldoRealConta));
+    const dif=_round2(Number(cs0.saldoBanco)-saldoApp);
+    if(Math.abs(saldoApp-Number(cs0.saldoApp))<0.005&&Math.abs(dif-Number(cs0.diferenca))<0.005) return;
+    const delta=_round2(saldoApp-Number(cs0.saldoApp));
+    const bate=Math.abs(dif)<0.01;
+    let dg=cs0.diagnostico;
+    if(dg&&dg.primeiroDiaDivergente){
+      const pd=dg.primeiroDiaDivergente;
+      dg={...dg,primeiroDiaDivergente:{...pd,diferenca:_round2(Number(pd.diferenca)-delta),
+        app:execs.filter(r=>r.data===pd.data).map(r=>({row:r.row,desc:String(r.descricao||"").slice(0,60),valor:r.valor}))}};
     }
-  }
+    setResultado(res=>res&&res.comparacaoSaldo?{...res,comparacaoSaldo:{...res.comparacaoSaldo,saldoApp,diferenca:bate?0:dif,bate,diagnostico:dg,ajustado:bate?true:res.comparacaoSaldo.ajustado}}:res);
+    if(bate){
+      api({action:"confirmarSaldoConciliado",conta:contaExtrato,data:cs0.data,saldo:cs0.saldoBanco,ini:(resultado.periodo&&resultado.periodo.inicio)||"",fim:cs0.data}).catch(()=>{});
+      setResultado(res=>res?{...res,ultimoSaldoConfirmado:{data:cs0.data,valor:cs0.saldoBanco}}:res);
+    }
+  },[data.fluxo]);
+  function _ajustarComparacaoSaldoPorRendimento(){ /* o useEffect acima recalcula a partir do Fluxo */ }
   async function lancarRendimento(valorParaLancar,dataFim){
     setLancandoRendimento(true);
     try{
@@ -13863,7 +13875,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261101.2140 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261101.2330 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -13989,7 +14001,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261101.2140
+      // HTML v3.20261101.2330
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
