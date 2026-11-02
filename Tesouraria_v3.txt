@@ -1,4 +1,4 @@
-// VERSAO: v3.20261101.2330
+// VERSAO: v3.20261102.1300
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -424,7 +424,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261101.2330",
+    scriptVersion: "v3.20261102.1300",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -8254,11 +8254,25 @@ function _resumoDCPCicloAtual(ss) {
     return { data: pv.data, meta: meta, gasto: gasto, status: pv.status };
   });
 
+  // [NOVO 02/11] Disponibilizado (meta) e usado (gasto) de TODO envelope, de
+  // qualquer ciclo, pela data-chave -- a aba DCP mostra isso em cada envelope.
+  // Fechado usa os numeros congelados no fechamento (obs.fx.m / obs.fx.g).
+  var porEnvelope = {};
+  est.provisoes.forEach(function(pv) {
+    var fx = pv.obs && pv.obs.fx;
+    var fechado = pv.status === "EXECUTADO" && fx && typeof fx.g === "number";
+    porEnvelope[pv.data] = {
+      meta: _round2(fechado && typeof fx.m === "number" ? fx.m : est.base + pv.carry),
+      gasto: fechado ? _round2(fx.g) : _round2(est.consumo[pv.data] || 0)
+    };
+  });
+
   return {
     base: est.base,
     numSemanas: semanas.length,
     totalGasto: _round2(semanas.reduce(function(s, w) { return s + w.gasto; }, 0)),
-    semanas: semanas
+    semanas: semanas,
+    porEnvelope: porEnvelope
   };
 }
 
