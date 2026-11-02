@@ -7937,7 +7937,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
 
   const _contaChip=(data.contas||[]).find(c=>c.id===(item.forma||"CONTA"));
   const _catChip=(()=>{try{const b=unificarBucketGasto(item);return TITULO_CAT_UNIFICADO[b]||null;}catch(e){return null;}})();
-  const _chip={fontSize:12,fontWeight:700,padding:"4px 11px",borderRadius:20,background:C.surface,border:"1px solid "+C.border,color:C.textSub};
+  const _chip={display:"inline-flex",alignItems:"center",minHeight:40,fontSize:13,fontWeight:700,padding:"0 14px",borderRadius:20,background:C.surface,border:"1px solid "+C.border,color:C.textSub};
   // [02/11, pedido do Marcus] painel ~20% menor (textos, campos e pilulas juntos)
   return <div style={{background:C.bg,padding:"14px 16px 16px",borderBottom:"1px solid "+C.border,zoom:0.8}}>
     {/* [NOVO 19/10, visual novo, Lote 1C] Mesma logica; muda so o desenho: chips no topo, campos de 48 px,
@@ -8003,10 +8003,10 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
         </div>
       </div>;
     })()}
-    {diaTipoInfo&&<div style={{display:"flex",gap:4,marginBottom:8}}>
+    {diaTipoInfo&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
       {[["FIXO","Fixo"],["N_UTIL",diaTipoInfo.tipo==="N_UTIL"&&diaTipoInfo.n?diaTipoInfo.n+"º útil":"Nº útil"],["ULTIMO_UTIL","Último útil"]].map(([id,label])=>{
         const ativo=id===diaTipoInfo.tipo;
-        return <span key={id} style={{padding:"3px 8px",borderRadius:12,fontSize:9,fontWeight:800,
+        return <span key={id} style={{display:"inline-flex",alignItems:"center",minHeight:40,padding:"0 14px",borderRadius:20,fontSize:13,fontWeight:700,
           background:ativo?C.accent:C.borderLight,color:ativo?"#fff":C.textMuted,opacity:ativo?1:0.55}}>{label}</span>;
       })}
     </div>}
@@ -8106,16 +8106,16 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
       ↩ Reabrir esta semana DCP (desfaz o fechamento)
     </button>}
     <button onClick={confirmar} disabled={!!load}
-      style={{width:"100%",height:48,background:execMode?C.green:C.accent,color:"#fff",borderRadius:12,fontSize:15,fontWeight:800,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+      style={{width:"100%",height:42,background:execMode?C.green:C.accent,color:"#fff",borderRadius:12,fontSize:14,fontWeight:800,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
       {load?"…":(execMode?"Executar":"Salvar")}
     </button>
     <div style={{display:"flex",gap:8,marginTop:8}}>
       {podeExecutarHoje&&<button onClick={executarHoje} disabled={!!load}
-        style={{flex:1,height:44,background:C.surface,color:C.green,border:"1px solid "+C.green,borderRadius:12,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+        style={{flex:1,height:38,background:C.surface,color:C.green,border:"1px solid "+C.green,borderRadius:12,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
         ✓ Executar agora
       </button>}
       <button onClick={onClose}
-        style={{flex:podeExecutarHoje?"0 0 auto":1,height:44,padding:"0 18px",background:C.surface,color:C.textSub,borderRadius:12,fontSize:13,fontWeight:700,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
+        style={{flex:podeExecutarHoje?"0 0 auto":1,height:38,padding:"0 18px",background:C.surface,color:C.textSub,borderRadius:12,fontSize:13,fontWeight:700,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
         Cancelar
       </button>
     </div>
@@ -8176,7 +8176,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
       <span style={_LAB}>CATEGORIA
         <span style={{marginLeft:6,fontSize:8,background:"#fff",color:C.textMuted,padding:"1px 6px",borderRadius:8,fontWeight:700,letterSpacing:0}}>travada</span>
       </span>
-      <div style={{marginTop:5,padding:"9px 14px",borderRadius:20,fontSize:13,fontWeight:700,display:"inline-block",
+      <div style={{marginTop:5,minHeight:40,padding:"0 14px",borderRadius:20,fontSize:13,fontWeight:700,display:"inline-flex",alignItems:"center",
         border:"1px solid "+C.accent,background:C.accent,color:"#fff"}}>
         Receita
       </div>
@@ -8185,7 +8185,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
       <span style={_LAB}>CATEGORIA
         <span style={{marginLeft:6,fontSize:8,background:"#fff",color:C.textMuted,padding:"1px 6px",borderRadius:8,fontWeight:700,letterSpacing:0}}>travada</span>
       </span>
-      <div style={{marginTop:5,padding:"9px 14px",borderRadius:20,fontSize:13,fontWeight:700,display:"inline-block",
+      <div style={{marginTop:5,minHeight:40,padding:"0 14px",borderRadius:20,fontSize:13,fontWeight:700,display:"inline-flex",alignItems:"center",
         border:"1px solid "+C.accent,background:C.accent,color:"#fff"}}>
         Avulso
       </div>
@@ -13938,7 +13938,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261102.1745 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261102.1750 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14064,7 +14064,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261102.1745
+      // HTML v3.20261102.1750
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
