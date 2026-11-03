@@ -14,7 +14,7 @@ Regra para o assistente: só afirme o que está aqui ou nos números da mensagem
 2. ABRIR E EDITAR UM ITEM
 - Tocar na linha abre o item (fica azul-marinho). Aparecem: botão Executar / Executar agora (quando existe), ✎ Editar e Fechar.
 - Tocar no nome ou na data também abre o modo Editar. No Editar ficam: nome de exibição, nome no extrato (usado na conciliação), data, valor, categoria, conta, envelope, "Salvar alterações", Cancelar e, no fim, Apagar.
-- Salvar NÃO executa o item. Para executar vencidos em lote há o botão "Executar vencidos" no topo do Plano.
+- Salvar NÃO executa o item. Para executar vencidos em lote há o botão "Executar vencidos" no topo do Plano (lista os PROGRAMADOS de hoje ou anteriores, com valor editável; faturas de cartão e envelopes DCP ficam de fora: executar fatura é sempre pelo item dela).
 - Item EXECUTADO: valor e status protegidos; a data pode ser corrigida (a etiqueta de ciclo acompanha), mas nunca para o futuro.
 - Item de fatura travada (conciliada) não aceita mudar valor, data ou status; categoria pode.
 
@@ -39,6 +39,7 @@ Regra para o assistente: só afirme o que está aqui ou nos números da mensagem
 - Compra parcelada: parcela 1 na data da compra; parcelas 2 em diante no primeiro dia do período de cada fatura. O app corrige data de parcelas 2+ (só PENDENTE e fatura não travada).
 - Compra do cartão pode ter a etiqueta DCP (conta no envelope semanal).
 - Pagar a fatura inteira: item da fatura > Executar (ou Executar agora, que usa a data de hoje).
+- Reduzir o valor de uma fatura PROGRAMADA e salvar: o app pergunta "Agendar o restante da fatura?" (valor e data editáveis) e cria o lançamento do restante PROGRAMADO, sem executar nada.
 - Pagar PARTE: Executar a fatura informando o valor pago (menor que o total). A fatura original vira EXECUTADO com o valor pago e o que faltou vira um novo lançamento PROGRAMADO na mesma data, editável (pode mudar a data ou embutir na próxima fatura). Pagando parcial de novo, repete a regra. Nada se perde.
 - Pagar a mais: o excedente vira crédito na próxima fatura do mesmo cartão.
 - Pagamento avulso (botão "+" > pagamento de fatura): grava o pagamento em linha própria na data escolhida e abate da fatura-alvo sem mudar a data dela.

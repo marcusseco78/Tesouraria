@@ -9546,7 +9546,7 @@ const _MANUAL_CURTO=`COMO O TESOURARIA FUNCIONA (use para explicar e orientar; n
 • Notificações do Nubank chegam na fila "A CLASSIFICAR" no Dashboard; a pessoa toca para lançar ou casar com um previsto.
 • Salvar uma edição não executa o item; para executar vencidos usar "Executar vencidos" no topo do Plano.
 • Quando a pessoa pedir algo que exige tocar no app (executar, travar, destravar), explique os passos curtos em vez de inventar uma ação; use as ações JSON abaixo só para o que elas cobrem (ex.: "baixa" com valorReal na linha da fatura faz o pagamento parcial).`;
-try{fetch("manual_tesouraria.txt?v=20261102b").then(r=>r.ok?r.text():null).then(t=>{if(t&&t.length>2000)_MANUAL_TXT="MANUAL DO TESOURARIA:\n"+t;}).catch(()=>{});}catch(e){}
+try{fetch("manual_tesouraria.txt?v=20261102c").then(r=>r.ok?r.text():null).then(t=>{if(t&&t.length>2000)_MANUAL_TXT="MANUAL DO TESOURARIA:\n"+t;}).catch(()=>{});}catch(e){}
 function buildPrompt(data){
   const hj=hoje(),fluxo=data.fluxo||[],cfg=data.config||{};
   const ex=fluxo.filter(r=>r.status==="EXECUTADO").sort((a,b)=>a.data>b.data?1:-1);
@@ -14013,7 +14013,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261102.2110 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261102.2240 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14139,7 +14139,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261102.2110
+      // HTML v3.20261102.2240
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
