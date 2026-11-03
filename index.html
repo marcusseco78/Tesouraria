@@ -2973,6 +2973,7 @@ function EmprestimosPassivos({data,onUpdate}){
   const [showFormDPF,setShowFormDPF]=useState(false);
   const [loadApagarEmp,setLoadApagarEmp]=useState(null);
   const [loadEnvEmp,setLoadEnvEmp]=useState(null);
+  const [empAberto,setEmpAberto]=useState(null); // [02/11] empréstimo aberto (mesmo padrão marinho dos itens)
   const envelopesDisponiveis=useMemo(()=>parseEnvelopesCustom(data),[data.config]);
   async function mudarEnvelopeEmprestimo(desc,envelopeId){
     setLoadEnvEmp(desc);
@@ -3035,31 +3036,39 @@ function EmprestimosPassivos({data,onUpdate}){
           ordenados por "menos parcelas faltando", o que fazia os JA
           quitados (restantes=0) aparecerem no TOPO da lista, disputando
           atencao com os que realmente ainda precisam de acompanhamento. */}
-      {emprestimos.filter(it=>it.restantes>0).map(it=><div key={it.desc} style={{background:C.bg||"#F5F6F8",border:"1px solid "+C.borderLight,borderRadius:8,padding:10,marginBottom:6}}>
-        <div style={{fontSize:13,fontWeight:700,color:C.text}}>{it.desc}</div>
-        <div style={{display:"flex",justifyContent:"space-between",marginTop:4,fontSize:11,color:C.textMuted}}>
-          <span>Valor: <b style={{color:C.red}}>{fmt(it.valor)}</b></span>
-          <span>{it.parcAtualReal}/{it.parcTotalReal} parcelas</span>
+      {emprestimos.filter(it=>it.restantes>0).map(it=>{const aberto=empAberto===it.desc;
+        return <div key={it.desc} style={{border:"1px solid "+C.borderLight,borderRadius:12,overflow:"hidden",marginBottom:6,background:C.surface}}>
+        <div onClick={()=>setEmpAberto(aberto?null:it.desc)} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 12px",minHeight:44,cursor:"pointer",background:aberto?C.dark:C.surface}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:13,fontWeight:700,color:aberto?"#FFFFFF":C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.desc}</div>
+            <div style={{fontSize:10,color:aberto?"#A9B6DA":C.textMuted,marginTop:1}}>{it.parcAtualReal}/{it.parcTotalReal} parcelas · faltam {it.restantes}</div>
+          </div>
+          <span style={{fontWeight:800,fontSize:14,color:aberto?"#FFB4AC":C.dark,fontVariantNumeric:"tabular-nums",flexShrink:0}}>{fmt(it.valor)}</span>
+          <span style={{fontSize:11,color:aberto?"#A9B6DA":C.textMuted}}>{aberto?"▲":"▼"}</span>
         </div>
-        <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>
-          Faltam {it.restantes} · última em <b>{fmtD(it.dataUltimaISO)}</b>
+        {aberto&&<div style={{background:C.bg||"#F5F6F8",padding:"12px 12px 14px",borderTop:"1px solid "+C.border}}>
+        <div style={{fontSize:11,color:C.textMuted}}>
+          Última parcela em <b>{fmtD(it.dataUltimaISO)}</b>
         </div>
         {(it.dataCreditoISO||it.primeiraISO)&&<div style={{fontSize:11,color:C.textMuted,marginTop:2}}>
           {it.dataCreditoISO&&<>Contratado em <b>{fmtD(it.dataCreditoISO)}</b></>}{it.dataCreditoISO&&it.primeiraISO&&" · "}{it.primeiraISO&&<>1ª parcela em <b>{fmtD(it.primeiraISO)}</b></>}
         </div>}
-        {envelopesDisponiveis.length>0&&<div style={{marginTop:6}}>
-          <select value={it.envelopePadrao||""} disabled={loadEnvEmp===it.desc}
-            onChange={e=>mudarEnvelopeEmprestimo(it.desc,e.target.value)}
-            style={{width:"100%",padding:"5px 7px",borderRadius:6,border:"1px solid "+C.border,fontSize:11,fontFamily:"inherit",background:C.surface,color:C.text}}>
-            <option value="">Sem envelope</option>
-            {envelopesDisponiveis.map(env=><option key={env.id} value={env.id}>💌 {env.nome}</option>)}
-          </select>
+        {envelopesDisponiveis.length>0&&<div style={{marginTop:10}}>
+          <div style={{fontSize:10,fontWeight:700,letterSpacing:".06em",color:C.textMuted,marginBottom:6}}>ENVELOPE</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {[{id:"",nome:"Sem envelope"},...envelopesDisponiveis].map(env=>{const sel=(it.envelopePadrao||"")===env.id;
+              return <button key={env.id||"nenhum"} disabled={loadEnvEmp===it.desc} onClick={()=>{if(!sel)mudarEnvelopeEmprestimo(it.desc,env.id);}}
+                style={{display:"inline-flex",alignItems:"center",minHeight:40,fontSize:13,fontWeight:700,padding:"0 14px",borderRadius:20,cursor:"pointer",fontFamily:"inherit",
+                  background:sel?C.accent:C.surface,border:"1px solid "+(sel?C.accent:C.border),color:sel?"#fff":C.textSub}}>{env.nome}</button>;})}
+          </div>
         </div>}
+        <div style={{borderTop:"1px solid "+C.border,margin:"14px 0 8px"}}/>
         <button onClick={()=>apagarEmprestimoInteiro(it.desc)} disabled={loadApagarEmp===it.desc}
-          style={{width:"100%",marginTop:6,padding:"5px",borderRadius:6,background:"transparent",color:C.red,fontSize:10,border:"1px dashed #F3C6C1",cursor:"pointer",fontFamily:"inherit"}}>
+          style={{width:"100%",height:38,borderRadius:12,background:"transparent",color:C.red,fontSize:13,fontWeight:700,border:"1px solid "+C.red,cursor:"pointer",fontFamily:"inherit"}}>
           {loadApagarEmp===it.desc?"…":'🗑 Apagar este empréstimo inteiro'}
         </button>
-      </div>)}
+        </div>}
+      </div>;})}
       {(()=>{const quitados=emprestimos.filter(it=>it.restantes===0);
         return quitados.length>0&&<details style={{marginTop:6}}>
           <summary style={{fontSize:11,fontWeight:700,color:C.textMuted,cursor:"pointer",padding:"6px 0"}}>
@@ -4196,6 +4205,7 @@ function CardCofre({cofre,onUpdate,data}){
   // status calculado certo em lancarCofre).
   const [dataLanc,setDataLanc]=useState(()=>hoje());
   const [load,setLoad]=useState(false);
+  const [cofreAberto,setCofreAberto]=useState(false); // [02/11] card do cofre fechado por padrao; tocar abre (marinho)
   const [loadApagar,setLoadApagar]=useState(false);
   const [loadRendimento,setLoadRendimento]=useState(false);
   const [resultadoRendimento,setResultadoRendimento]=useState(null);
@@ -4341,20 +4351,24 @@ function CardCofre({cofre,onUpdate,data}){
     futuroCofre=projetarLinhaFutura(_accCofre,cofre.tipoInvestimento||"cdi",taxasCofre,data.config?.CICLO_INICIO,eventosReaisCofre,1);
   }
 
-  return <div style={{background:C.tealLight,border:"1px solid #BFE3D2",borderRadius:10,padding:10,marginBottom:8}}>
+  return <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:12,overflow:"hidden",marginBottom:8}}>
+    <div onClick={()=>setCofreAberto(v=>!v)} style={{cursor:"pointer",padding:"11px 12px",minHeight:44,background:cofreAberto?C.dark:C.surface}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
       <div style={{flex:1,minWidth:0}}>
-        <div style={{fontSize:13,fontWeight:700,color:C.text}}>🏦 {cofre.nome}</div>
+        <div style={{fontSize:13,fontWeight:700,color:cofreAberto?"#FFFFFF":C.text}}>🏦 {cofre.nome}</div>
         <PilulasTipoInvestimento cofre={cofre}/>
         <div style={{display:"flex",alignItems:"center",flexWrap:"wrap",gap:6,marginTop:5}}>
           <span style={{padding:"4px 10px",borderRadius:14,fontSize:12,fontWeight:800,background:C.tealLight,color:C.teal}}>
             {_detalheTaxaCofre(cofre)}
           </span>
-          {!ehRV&&<span style={{fontSize:10,color:C.textMuted}}>rendimento acumulado: {fmt(cofre.rendimentoAcumulado||0)}</span>}
+          {!ehRV&&<span style={{fontSize:10,color:cofreAberto?"#A9B6DA":C.textMuted}}>rendimento acumulado: {fmt(cofre.rendimentoAcumulado||0)}</span>}
         </div>
       </div>
-      <div style={{fontSize:16,fontWeight:800,color:C.teal,flexShrink:0,marginLeft:8}}>{fmt(cofre.saldo)}</div>
+      <div style={{fontSize:16,fontWeight:800,color:cofreAberto?"#7FE0B5":C.teal,flexShrink:0,marginLeft:8}}>{fmt(cofre.saldo)}</div>
+      <span style={{fontSize:11,color:cofreAberto?"#A9B6DA":C.textMuted,marginLeft:8,paddingTop:3}}>{cofreAberto?"▲":"▼"}</span>
     </div>
+    </div>
+    {cofreAberto&&<div style={{background:C.bg||"#F5F6F8",padding:"12px 12px 14px",borderTop:"1px solid "+C.border}}>
 
     {/* [25/07] Renda Variavel mostra a posicao por papel -- um numero so de
         saldo esconderia informacao real (quantas acoes, a que cotacao). */}
@@ -4509,6 +4523,7 @@ function CardCofre({cofre,onUpdate,data}){
       🗑 Apagar este cofre
     </button>
     <TimelineSaldo historico={historicoCofre} futuro={futuroCofre} corPositivo={C.teal} corNegativo={C.red}/>
+    </div>}
   </div>;
 }
 
@@ -9479,17 +9494,17 @@ function Timeline({data,onUpdate,onIrPara}){
               <>
               <div onClick={()=>setItemAbertoRow(painelAberto?null:s.item.item.row)}
                 style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",
-                background:painelAberto?C.accentLight:(ehDCP?C.yellowLight:"transparent"),borderRadius:(painelAberto||ehDCP)?8:0,
-                borderLeft:painelAberto?"3px solid "+C.accent:(ehDCP?"3px solid #B45309":"3px solid transparent"),
+                background:painelAberto?C.dark:(ehDCP?C.yellowLight:"transparent"),borderRadius:(painelAberto||ehDCP)?8:0,
+                borderLeft:painelAberto?"3px solid "+C.dark:(ehDCP?"3px solid #B45309":"3px solid transparent"),
                 borderBottom:(ehDCP&&!painelAberto)?"none":"1px solid "+C.borderLight,padding:"8px 8px"}}>
                 <div data-fade style={{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%",transition:"opacity .06s linear"}}>
                   <div>
-                    <div style={{fontWeight:700,fontSize:14}}>{s.item.descricao}</div>
-                    <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>{s.item.categoriaTxt}{s.item.status==="EXECUTADO"&&<span style={{marginLeft:5,color:C.green}}>✓</span>}</div>
+                    <div style={{fontWeight:700,fontSize:14,color:painelAberto?"#FFFFFF":undefined}}>{s.item.descricao}</div>
+                    <div style={{fontSize:11,color:painelAberto?"#A9B6DA":C.textMuted,marginTop:2}}>{s.item.categoriaTxt}{s.item.status==="EXECUTADO"&&<span style={{marginLeft:5,color:C.green}}>✓</span>}</div>
                   </div>
                   {s.item.item.categoria==="DCP_PROVISAO"
                     ?(s.item.status==="EXECUTADO"?<ValorDCPFechado item={s.item.item}/>:<ValorDCPProvisao valor={s.item.valor} dataEnvelope={s.item.item.data} saldoApos={s.item.item.saldoProjetado}/>)
-                    :<div style={{fontWeight:800,fontSize:14,color:s.item.valor<0?C.red:C.green,fontVariantNumeric:"tabular-nums"}}>{fmt(s.item.valor)}</div>}
+                    :<div style={{fontWeight:800,fontSize:14,color:painelAberto?(s.item.valor<0?"#FFB4AC":"#7FE0B5"):(s.item.valor<0?C.red:C.green),fontVariantNumeric:"tabular-nums"}}>{fmt(s.item.valor)}</div>}
                 </div>
               </div>
               {/* [25/07] Painel INLINE, mesmo padrao do Fluxo/Historico --
@@ -10174,16 +10189,16 @@ function SecaoRecorrencias({titulo,totalEquiv,resumo,pctTotal,itemExtra,modoNovo
     {lista.map(item=>{const isOpen=edit===item.idx;return <div key={item.idx}>
       {(()=>{const ex=itemExtra?itemExtra(item):{};return <div onClick={()=>isOpen?setEdit(null):abrir(item)}
         style={{padding:"10px 16px",minHeight:56,boxSizing:"border-box",
-          borderBottom:"1px solid "+C.borderLight,background:isOpen?bg:C.surface,cursor:"pointer",opacity:ex.fade&&!isOpen?.72:1}}>
+          borderBottom:"1px solid "+C.borderLight,background:isOpen?C.dark:C.surface,cursor:"pointer",opacity:ex.fade&&!isOpen?.72:1}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:14,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginBottom:4}}>
+          <div style={{fontSize:14,fontWeight:700,color:isOpen?"#FFFFFF":C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginBottom:4}}>
             {item.desc}{String(item.ativo).toUpperCase()==="N"&&<span style={{marginLeft:6,fontSize:10,fontWeight:700,color:C.red,background:C.redLight,borderRadius:4,padding:"1px 5px"}}>DESATIVADA</span>}
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
             <span style={{fontSize:11,background:C.borderLight,borderRadius:5,padding:"2px 7px",color:C.textSub,fontWeight:600}}>{fmtDia(item.diaVenc,ehCartao(item))}</span>
             {item.parcTotal>0&&<span style={{fontSize:11,color:C.textMuted}}>{item.parcAtual}/{item.parcTotal} parcelas</span>}
-            <span style={{fontSize:10,color:C.textMuted}}>{nomeDestinoRecorrencia(item,data)}</span>
+            <span style={{fontSize:10,color:isOpen?"#A9B6DA":C.textMuted}}>{nomeDestinoRecorrencia(item,data)}</span>
             {item.tolerancia!=null&&item.tolerancia!==""&&<span style={{fontSize:10,background:C.borderLight,color:C.textSub,borderRadius:5,padding:"2px 6px",fontWeight:600}}>
               {Number(item.tolerancia)===0?"não posterga":"posterga até "+item.tolerancia+"d"}
             </span>}
@@ -10197,12 +10212,12 @@ function SecaoRecorrencias({titulo,totalEquiv,resumo,pctTotal,itemExtra,modoNovo
           </div>
         </div>
         <div style={{textAlign:"right",flexShrink:0,marginRight:6}}>
-          <div style={{fontSize:16,fontWeight:800,color:item.valor<0?C.dark:C.green,fontVariantNumeric:"tabular-nums"}}>{fmt(item.valor)}</div>
+          <div style={{fontSize:16,fontWeight:800,color:isOpen?(item.valor<0?"#FFB4AC":"#7FE0B5"):(item.valor<0?C.dark:C.green),fontVariantNumeric:"tabular-nums"}}>{fmt(item.valor)}</div>
           {modoNovo
-            ?(ex.eq!=null&&Math.abs(Math.abs(ex.eq)-Math.abs(item.valor))>0.5&&<div style={{fontSize:10,color:C.textMuted,marginTop:2}}>≈ {fmt(ex.eq)}/mês</div>)
-            :<div style={{fontSize:10,color:C.textMuted,marginTop:2}}>{item.tipo}</div>}
+            ?(ex.eq!=null&&Math.abs(Math.abs(ex.eq)-Math.abs(item.valor))>0.5&&<div style={{fontSize:10,color:isOpen?"#A9B6DA":C.textMuted,marginTop:2}}>≈ {fmt(ex.eq)}/mês</div>)
+            :<div style={{fontSize:10,color:isOpen?"#A9B6DA":C.textMuted,marginTop:2}}>{item.tipo}</div>}
         </div>
-        <span style={{fontSize:11,color:C.textMuted}}>{isOpen?"▲":"▼"}</span>
+        <span style={{fontSize:11,color:isOpen?"#A9B6DA":C.textMuted}}>{isOpen?"▲":"▼"}</span>
         </div>
         {ex.pct!=null&&<div style={{height:5,borderRadius:3,background:C.borderLight,overflow:"hidden",marginTop:8}}><div style={{width:Math.max(ex.pct,1.5)+"%",height:"100%",background:C.accent,opacity:.85,borderRadius:3}}/></div>}
       </div>;})()}
@@ -13575,26 +13590,23 @@ function Cartoes({data,onUpdate,destaque,onIrPara,fila}){
           return <React.Fragment key={linhaR!=null?linhaR:i}>
           {cabecalhoData}
           <div id={"cart-item-"+linhaR}>
-          <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 12px",
-            background:destacado?"#FEF3E2":(previsto?C.borderLight:(r[7]==="PAGO"?C.greenLight:C.surface)),transition:"background 1s",
+          <div onClick={linhaR!=null&&!eLoad?()=>(isOpen?setEditRow(null):abrirEdicaoItem(r)):undefined} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 12px",minHeight:44,cursor:linhaR!=null?"pointer":"default",
+            background:isOpen?C.dark:destacado?"#FEF3E2":(previsto?C.borderLight:(r[7]==="PAGO"?C.greenLight:C.surface)),transition:"background 1s",
             opacity:previsto?0.85:1,
             borderLeft:previsto?"3px dashed "+C.textMuted:"none",
             borderBottom:"1px solid "+C.borderLight,borderRadius:i===0?10:0}}>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:13,fontWeight:600,color:previsto?C.textSub:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{apelidoAtual||r[1]}</div>
-              <div style={{fontSize:10,color:C.textMuted,marginTop:1}}>{fmtD(r[0])} · parc:{r[3]} · {r[5]}{(()=>{const envId=_obsEnvelopeId(_obsCartaoRaw(r));if(!envId)return null;const env=parseEnvelopesCustom(data).find(e=>e.id===envId);return env?<TagEnvelopeCustom nome={env.nome}/>:null;})()}</div>
+              <div style={{fontSize:13,fontWeight:600,color:isOpen?"#FFFFFF":(previsto?C.textSub:C.text),whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{apelidoAtual||r[1]}</div>
+              <div style={{fontSize:10,color:isOpen?"#A9B6DA":C.textMuted,marginTop:1}}>{fmtD(r[0])} · parc:{r[3]} · {r[5]}{(()=>{const envId=_obsEnvelopeId(_obsCartaoRaw(r));if(!envId)return null;const env=parseEnvelopesCustom(data).find(e=>e.id===envId);return env?<TagEnvelopeCustom nome={env.nome}/>:null;})()}</div>
             </div>
-            <span style={{fontSize:12,fontWeight:700,color:previsto?C.textSub:(r[7]==="PAGO"?C.green:C.red),flexShrink:0}}>{fmt(r[2])}</span>
+            <span style={{fontSize:12,fontWeight:700,color:isOpen?"#FFB4AC":(previsto?C.textSub:(r[7]==="PAGO"?C.green:C.red)),flexShrink:0}}>{fmt(r[2])}</span>
             {previsto?<span style={{fontSize:9,color:C.textMuted,padding:"2px 7px",borderRadius:10,
               border:"1px dashed "+C.border,flexShrink:0,fontWeight:600}}>PREVISTO</span>
             :<span style={{fontSize:9,background:r[7]==="PAGO"?C.greenLight:C.accentLight,
               color:r[7]==="PAGO"?C.green:C.accent,padding:"2px 7px",borderRadius:10,flexShrink:0,fontWeight:700}}>
               {r[7]}
             </span>}
-            {linhaR!=null&&<button onClick={()=>isOpen?setEditRow(null):abrirEdicaoItem(r)} disabled={eLoad}
-              style={{background:previsto?"transparent":C.borderLight,color:C.textSub,borderRadius:8,padding:"5px 10px",fontSize:16,border:"1px solid "+C.border,cursor:"pointer",flexShrink:0,lineHeight:1}}>
-              {isOpen?"×":"⋮"}
-            </button>}
+            
           </div>
           {isOpen&&<PainelEdicaoItemCartao r={r} eDesc={eDesc} setEDesc={setEDesc} eValor={eValor} setEValor={setEValor}
             eData={eData} setEData={setEData}
@@ -13674,8 +13686,8 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
     if(!o.diaTipo) return null;
     return {tipo:o.diaTipo,n:o.diaN};
   })();
-  return <div style={{background:C.accentLight,padding:"10px 14px",
-    borderBottom:"1px solid "+C.accent,borderLeft:"3px solid "+C.accent}}>
+  return <div style={{background:C.bg,padding:"12px 14px",
+    borderBottom:"1px solid "+C.border}}>
     {diaTipoInfoCartao&&<div style={{display:"flex",gap:4,marginBottom:8}}>
       {[["FIXO","Fixo"],["N_UTIL",diaTipoInfoCartao.tipo==="N_UTIL"&&diaTipoInfoCartao.n?diaTipoInfoCartao.n+"º útil":"Nº útil"],["ULTIMO_UTIL","Último útil"]].map(([id,label])=>{
         const ativo=id===diaTipoInfoCartao.tipo;
@@ -13827,11 +13839,11 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
     </div>}
     <div style={{display:"flex",gap:8}}>
       <button onClick={onSalvar} disabled={eLoad||!eDesc.trim()||!eValor||!eCategoria}
-        style={{flex:1,background:C.accent,color:"#fff",borderRadius:6,padding:"7px",fontSize:12,fontWeight:700,border:"none",cursor:"pointer"}}>
-        {eLoad?"…":"Salvar"}
+        style={{flex:1,height:42,background:C.accent,color:"#fff",borderRadius:12,padding:"0 7px",fontSize:14,fontWeight:800,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+        {eLoad?"…":"Salvar alterações"}
       </button>
       <button onClick={onCancelar} disabled={eLoad}
-        style={{background:C.borderLight,color:C.textSub,borderRadius:6,padding:"7px 12px",fontSize:12,border:"none",cursor:"pointer"}}>
+        style={{height:42,background:C.surface,color:C.textSub,borderRadius:12,padding:"0 16px",fontSize:13,fontWeight:700,border:"1px solid "+C.border,cursor:"pointer",fontFamily:"inherit"}}>
         Cancelar
       </button>
     </div>
@@ -14013,7 +14025,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261102.2240 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261102.2310 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14139,7 +14151,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261102.2240
+      // HTML v3.20261102.2310
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
