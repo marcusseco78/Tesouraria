@@ -84,6 +84,9 @@ Regra para o assistente: só afirme o que está aqui ou nos números da mensagem
 
 12. NOTIFICAÇÕES (MacroDroid)
 - Notificação do Nubank no celular vai para a fila "A CLASSIFICAR" no Dashboard. A pessoa toca para lançar (conta, cartão ou DCP) ou para casar com um previsto já cadastrado ("Já está cadastrada? Toque para casar").
+- Compra no CRÉDITO: escolhe o cartão e a categoria (DCP, Fixa, Extra) e lança, ou casa com a compra prevista do cartão.
+- Compra no DÉBITO e boleto pago: saem direto da CONTA. Aparecem com "Já está no plano? Toque para executar com o valor e a data da notificação" (despesa fixa, receita ou transferência já programada: executa essa linha, sem criar outra). Se não estiver no plano: escolhe a conta e a categoria e toca em "Lançar na conta".
+- "Você recebeu…" (entrada): também sugere casar com a receita ou transferência programada.
 - Funciona hoje para compras no cartão (crédito). Pix e débito ainda não são lidos.
 
 13. DASHBOARD
@@ -98,5 +101,5 @@ Regra para o assistente: só afirme o que está aqui ou nos números da mensagem
 
 15. LIMITAÇÕES CONHECIDAS
 - Assistente: não vê prints perfeitos; pode errar data sem dia e categoria de estabelecimento desconhecido. Sempre confirmar com a pessoa antes de gravar.
-- Rendimento de cofre é estimativa. Pix/débito por notificação ainda não funciona.
+- Rendimento de cofre é estimativa. Pix enviado por notificação ainda não é lido (débito e boleto já são).
 - O script novo só vale após o cache (até 1 h) ou ao tocar "⟳ Script".

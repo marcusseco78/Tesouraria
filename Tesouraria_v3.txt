@@ -1,4 +1,4 @@
-// VERSAO: v3.20261102.2110
+// VERSAO: v3.20261103.1650
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -174,6 +174,8 @@ function dispatch(p) {
     case "classificarNotificacao": return classificarNotificacao(ss, p);
     case "ignorarNotificacao": return ignorarNotificacao(ss, p);
     case "vincularNotificacao": return vincularNotificacao(ss, p);
+    case "classificarNotificacaoConta": return classificarNotificacaoConta(ss, p);
+    case "vincularNotificacaoPlano": return vincularNotificacaoPlano(ss, p);
     case "tokenNotificacao": return { token: _notifToken() };
     case "adicionarAjusteFatura": return adicionarAjusteFatura(ss, p);
     case "baixaFatura":     return baixaFatura(ss, p);
@@ -425,7 +427,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261102.2110",
+    scriptVersion: "v3.20261103.1650",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -13262,6 +13264,12 @@ function _parseNotificacao(titulo, texto) {
       if (mr) out.estab = mr[1].trim();
     }
     out.escopo = /empresas/i.test(low) ? "PJ" : "PF";
+  } else if (/compra/.test(low) && /d[e\u00e9]bito/.test(low)) {
+    // [NOVO 03/11] Debito sai DIRETO DA CONTA (nao e compra de cartao).
+    out.tipo = "DEBITO";
+    var md = t.match(/ em (.+?)(?: para o | para a | no seu | na sua |\.|$)/i);
+    if (md) out.estab = md[1].trim();
+    out.escopo = /empresas/i.test(low) ? "PJ" : "PF";
   } else if (/compra/.test(low)) {
     out.tipo = "CREDITO";
     var me = t.match(/ em (.+?)(?: para o | para a | no seu | no cart|\.|$)/i);
@@ -13306,15 +13314,24 @@ function _lerNotificacoesPendentes(ss) {
   if (!sh || sh.getLastRow() < 2) return { itens: [], mapa: {} };
   var rows = sh.getRange(2, 1, sh.getLastRow() - 1, 12).getValues();
   var cfg = readConfig(ss);
-  var mapa = {};
-  Object.keys(cfg).forEach(function(k) { if (k.indexOf("NOTIF_CARTAO_") === 0) mapa[k.slice(13)] = String(cfg[k]); });
+  var mapa = {}, contaMapa = {};
+  Object.keys(cfg).forEach(function(k) {
+    if (k.indexOf("NOTIF_CARTAO_") === 0) mapa[k.slice(13)] = String(cfg[k]);
+    if (k.indexOf("NOTIF_CONTA_") === 0) contaMapa[k.slice(12)] = String(cfg[k]);
+  });
   var itens = [];
   rows.forEach(function(r, i) {
     if (String(r[10]) !== "PENDENTE") return;
-    itens.push({ row: i + 2, key: String(r[0]), titulo: String(r[2]), texto: String(r[3]), tipo: String(r[4]), valor: Number(r[5]) || 0,
-      estab: String(r[6]), final: String(r[7]), escopo: String(r[8]), data: _notifDataIso(r[9]) });
+    var tipo = String(r[4]), estab = String(r[6]), escopo = String(r[8]), fin = String(r[7]);
+    // [03/11] Notificacao gravada antes da regra do debito: relê o tipo pelo texto.
+    if (tipo === "CREDITO") {
+      var re = _parseNotificacao(String(r[2]), String(r[3]));
+      if (re.tipo === "DEBITO") { tipo = "DEBITO"; estab = re.estab || estab; escopo = re.escopo || escopo; fin = ""; }
+    }
+    itens.push({ row: i + 2, key: String(r[0]), titulo: String(r[2]), texto: String(r[3]), tipo: tipo, valor: Number(r[5]) || 0,
+      estab: estab, final: fin, escopo: escopo, data: _notifDataIso(r[9]) });
   });
-  return { itens: itens.reverse().slice(0, 30), mapa: mapa };
+  return { itens: itens.reverse().slice(0, 30), mapa: mapa, contaMapa: contaMapa };
 }
 
 function _notifAchar(ss, key) {
@@ -13379,6 +13396,78 @@ function vincularNotificacao(ss, p) {
   }
   loc.sh.getRange(loc.row, 11).setValue("LANCADA");
   loc.sh.getRange(loc.row, 12).setValue(Number(p.row));
+  return res;
+}
+
+// [NOVO 03/11] Debito/boleto pago: sai direto da CONTA. Lanca como saida
+// EXECUTADA na conta escolhida (lembra a conta por PF/PJ).
+function classificarNotificacaoConta(ss, p) {
+  var loc = _notifAchar(ss, String(p.key));
+  var r = loc.sh.getRange(loc.row, 1, 1, 12).getValues()[0];
+  if (String(r[10]) !== "PENDENTE") return { ...getData(ss), jaTratada: true };
+  var re = _parseNotificacao(String(r[2]), String(r[3]));
+  var tipo = re.tipo === "DEBITO" ? "DEBITO" : String(r[4]);
+  if (tipo !== "DEBITO" && tipo !== "BOLETO") throw new Error("so debito ou boleto pago podem ser lancados na conta");
+  var valor = Number(r[5]) || re.valor;
+  if (!(valor > 0)) throw new Error("Essa notificacao chegou sem valor. Toque em Ignorar e lance a mao.");
+  var conta = String(p.conta || "").toUpperCase();
+  if (!conta) throw new Error("escolha a conta");
+  var escopo = (re.escopo || String(r[8]) || "PF") === "PJ" ? "PJ" : "PF";
+  var cat = String(p.categoria || "DCP").toUpperCase();
+  if (["DCP", "DESPESA FIXA", "EXTRAORDINARIA"].indexOf(cat) < 0) cat = "DCP";
+  var estab = String(r[6]) || re.estab;
+  var desc = String(p.descricao || estab || (tipo === "BOLETO" ? "BOLETO" : "DEBITO")).toUpperCase();
+  var dataIso = _notifDataIso(r[9]);
+  if (dataIso > _hojeISOBRT()) dataIso = _hojeISOBRT();
+  _setConfig(ss.getSheetByName("CONFIG"), "NOTIF_CONTA_" + escopo, conta);
+  loc.sh.getRange(loc.row, 11).setValue("LANCANDO");
+  SpreadsheetApp.flush();
+  if (_MEMO) _MEMO.notif = undefined;
+  var res;
+  try {
+    res = lancar(ss, { data: dataIso, descricao: desc, valor: -Math.abs(valor), tipo: cat, categoria: cat, forma: conta, status: "EXECUTADO", obs: "" });
+  } catch (eC) {
+    loc.sh.getRange(loc.row, 11).setValue("PENDENTE");
+    throw eC;
+  }
+  loc.sh.getRange(loc.row, 11).setValue("LANCADA");
+  return res;
+}
+
+// [NOVO 03/11] A notificacao corresponde a um lancamento PROGRAMADO do plano
+// (despesa fixa, receita, transferencia...): executa essa linha com o VALOR e a
+// DATA da notificacao (baixa), em vez de criar outra.
+function vincularNotificacaoPlano(ss, p) {
+  var loc = _notifAchar(ss, String(p.key));
+  var r = loc.sh.getRange(loc.row, 1, 1, 12).getValues()[0];
+  if (String(r[10]) !== "PENDENTE") return { ...getData(ss), jaTratada: true };
+  var re = _parseNotificacao(String(r[2]), String(r[3]));
+  var tipo = re.tipo === "DEBITO" ? "DEBITO" : String(r[4]);
+  if (["DEBITO", "BOLETO", "TRANSF_RECEBIDA"].indexOf(tipo) < 0) throw new Error("esse tipo de notificacao nao casa com o plano");
+  var valor = Number(r[5]) || re.valor;
+  if (!(valor > 0)) throw new Error("Essa notificacao chegou sem valor. Toque em Ignorar.");
+  var row = Number(p.row);
+  var shF = ss.getSheetByName("FLUXO");
+  if (!row || row < FLUXO_START || row > shF.getLastRow()) throw new Error("lancamento do plano nao encontrado");
+  var linha = shF.getRange(row, 1, 1, COL.OBS).getValues()[0];
+  if (String(linha[COL.STATUS - 1]) !== "PROGRAMADO") throw new Error("Esse lancamento do plano ja foi executado ou mudou. Atualize a tela.");
+  if (String(linha[COL.CAT - 1]).toUpperCase() === "DCP_PROVISAO" || _ehTipoFaturaCartao(String(linha[COL.TIPO - 1]))) throw new Error("fatura e envelope DCP nao casam por aqui");
+  var sinalPlano = Number(linha[COL.VALOR - 1]) < 0 ? -1 : 1;
+  var sinalEsperado = tipo === "TRANSF_RECEBIDA" ? 1 : -1;
+  if (sinalPlano !== sinalEsperado) throw new Error("O lancamento escolhido e " + (sinalPlano < 0 ? "uma saida" : "uma entrada") + ", mas a notificacao e " + (sinalEsperado < 0 ? "uma saida" : "uma entrada") + ".");
+  var dataIso = _notifDataIso(r[9]);
+  loc.sh.getRange(loc.row, 11).setValue("LANCANDO");
+  SpreadsheetApp.flush();
+  if (_MEMO) _MEMO.notif = undefined;
+  var res;
+  try {
+    res = baixa(ss, { row: row, valorReal: sinalEsperado * valor, dataReal: dataIso });
+  } catch (eP) {
+    loc.sh.getRange(loc.row, 11).setValue("PENDENTE");
+    throw eP;
+  }
+  loc.sh.getRange(loc.row, 11).setValue("LANCADA");
+  loc.sh.getRange(loc.row, 12).setValue(row);
   return res;
 }
 

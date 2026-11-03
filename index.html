@@ -1406,16 +1406,18 @@ function _tmEnd(j,ok){
 }
 
 async function api(payload){
-  tocarSom("inicio");
-  _tmStart(payload);
+  // [03/11] _bg = chamada de segundo plano (ex.: aviso de estouro): nao toca som e
+  // nao sobrescreve a faixa de tempos da acao que o Marcus acabou de fazer.
+  const _bg=!!(payload&&payload._bg);
+  if(_bg){ payload={...payload}; delete payload._bg; }
+  if(!_bg){ tocarSom("inicio"); _tmStart(payload); }
   let r,j;
   try{
     r=await fetch(getApiUrl(),{method:"POST",redirect:"follow",
       headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(payload)});
     j=await r.json();
   }catch(e){
-    _tmEnd(null,false);
-    tocarSom("erro");
+    if(!_bg){ _tmEnd(null,false); tocarSom("erro"); }
     // [NOVO 29/09] Achado real com o Marcus: o servidor GRAVAVA e a resposta falhava
     // depois (pagina de erro do Google em vez de JSON) -- o erro cru ("Unexpected
     // token...") nao dizia isso. err.incerto = "pode ter gravado mesmo assim".
@@ -1424,14 +1426,12 @@ async function api(payload){
     throw err;
   }
   if(!j.ok){
-    _tmEnd(j,false);
-    tocarSom("erro");
+    if(!_bg){ _tmEnd(j,false); tocarSom("erro"); }
     const err=new Error(j.error||"O servidor devolveu um erro sem descrição. A operação PODE ter sido gravada mesmo assim.");
     if(!j.error) err.incerto=true;
     throw err;
   }
-  _tmEnd(j,true);
-  tocarSom("sucesso");
+  if(!_bg){ _tmEnd(j,true); tocarSom("sucesso"); }
   return j;
 }
 
@@ -7360,6 +7360,43 @@ function CardNotificacoes({data,onUpdate}){
   const cartaoDe=it=>sel[it.key]?.cartao||nt.mapa[chaveDe(it)]||"";
   const catDe=it=>sel[it.key]?.cat||"DCP";
   const setK=(k,v)=>setSel(s=>({...s,[k]:{...(s[k]||{}),...v}}));
+  // [NOVO 03/11] Débito e boleto pago saem direto da CONTA (não é cartão).
+  const contasN=(data.contas||[]).filter(c=>c.ativa!==false);
+  const contaMapa=nt.contaMapa||{};
+  const contaDe=it=>sel[it.key]?.conta||contaMapa[it.escopo==="PJ"?"PJ":"PF"]||"";
+  const ehSaidaConta=it=>it.tipo==="DEBITO"||it.tipo==="BOLETO";
+  const estabDe=it=>it.estab||(it.tipo==="BOLETO"?((String(it.texto||"").match(/ para (.+?) foi /i)||[])[1]||""):"");
+  const lancarConta=async it=>{
+    const conta=contaDe(it); if(!conta){alert("Escolha a conta.");return;}
+    setBusy(it.key);
+    try{ onUpdate(await api({action:"classificarNotificacaoConta",key:it.key,conta,categoria:catDe(it)})); }catch(e){alert(e.message);}
+    setBusy("");
+  };
+  const vincularPlano=async(it,cand)=>{
+    if(!confirm("Executar \""+cand.nome+"\" com o valor e a data da notificação?\n\n"+fmt(it.valor)+" em "+dd(it.data)+(Math.abs(cand.valor-it.valor)>0.005?"\n(previsto: "+fmt(cand.valor)+" em "+dd(cand.data)+")":"")+"\n\nNada novo é criado.")) return;
+    setBusy(it.key);
+    try{ onUpdate(await api({action:"vincularNotificacaoPlano",key:it.key,row:cand.row})); }catch(e){alert(e.message);}
+    setBusy("");
+  };
+  // Sugere lançamentos PROGRAMADOS do plano (fixa, receita, transferência) parecidos
+  // com a notificação: nome parecido, valor próximo e data próxima.
+  const candidatosPlano=it=>{
+    if(!(it.valor>0)) return [];
+    const entrada=it.tipo==="TRANSF_RECEBIDA";
+    const est=nrm(estabDe(it)||String(it.texto||"").replace(/R\$\s*[\d.,]+/g," "));
+    const palavras=est.split(" ").filter(w=>w.length>=4&&!["pagamento","realizado","sucesso","boleto","para","compra","debito","seguro","seguros"].includes(w));
+    return (data.fluxo||[]).filter(f=>f.status==="PROGRAMADO"&&f.categoria!=="DCP_PROVISAO"
+      &&String(f.tipo||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z]/g,"").indexOf("CARTAO")!==0
+      &&(entrada?f.valor>0:f.valor<0)).map(f=>{
+      const nome=nomeExibicao(f,data);
+      const nn=nrm(nome+" "+f.descricao);
+      const nm=palavras.some(w=>nn.includes(w))||nn.split(" ").filter(w=>w.length>=4).some(w=>est.includes(w));
+      const v=Math.abs(f.valor), vexato=Math.abs(v-it.valor)<=Math.max(0.5,it.valor*0.02), vperto=Math.abs(v-it.valor)<=Math.max(1,it.valor*0.15);
+      const dias=Math.abs((new Date(String(f.data).slice(0,10)+"T12:00:00")-new Date(it.data+"T12:00:00"))/864e5)||0;
+      const score=(nm?3:0)+(vexato?3:vperto?1:0)+(dias<=3?1:0);
+      return {row:f.row,nome,valor:v,data:String(f.data).slice(0,10),score,dias,nm,vexato};
+    }).filter(x=>(x.nm||x.vexato)&&x.dias<=45).sort((a,b)=>b.score-a.score||a.dias-b.dias).slice(0,4);
+  };
   const lancar=async it=>{
     const cartao=cartaoDe(it); if(!cartao){alert("Escolha o cartão.");return;}
     setBusy(it.key);
@@ -7411,9 +7448,9 @@ function CardNotificacoes({data,onUpdate}){
       <div onClick={()=>setCfg(null)} style={{marginTop:8,fontWeight:800,color:C.accent,cursor:"pointer"}}>Fechar</div></div>}
     {itens.map(it=><div key={it.key} style={{background:C.bg,borderRadius:16,padding:12,marginBottom:8}}>
       <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
-        <div style={{minWidth:0}}><div style={{fontSize:14,fontWeight:800,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.tipo==="CREDITO"?(it.estab||"Compra"):it.tipo==="TRANSF_RECEBIDA"?"Recebido de "+(it.estab||"?"):it.tipo==="BOLETO"?"Boleto":(it.titulo||"Notificação")}</div>
-          <div style={{fontSize:11,color:C.textSub}}>{dd(it.data)}{it.tipo==="CREDITO"?" · crédito "+(it.escopo==="PJ"?"PJ":(it.final?"final "+it.final:"PF")):""}</div>
-          {it.tipo!=="CREDITO"&&<div style={{fontSize:12,color:C.textSub,marginTop:4,lineHeight:1.35}}>{(it.texto||"(sem texto)").slice(0,200)}</div>}</div>
+        <div style={{minWidth:0}}><div style={{fontSize:14,fontWeight:800,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.tipo==="CREDITO"?(it.estab||"Compra"):it.tipo==="DEBITO"?(it.estab||"Débito"):it.tipo==="TRANSF_RECEBIDA"?"Recebido de "+(it.estab||"?"):it.tipo==="BOLETO"?"Boleto"+(estabDe(it)?" · "+estabDe(it):""):(it.titulo||"Notificação")}</div>
+          <div style={{fontSize:11,color:C.textSub}}>{dd(it.data)}{it.tipo==="CREDITO"?" · crédito "+(it.escopo==="PJ"?"PJ":(it.final?"final "+it.final:"PF")):it.tipo==="DEBITO"?" · débito "+(it.escopo==="PJ"?"PJ":"PF"):""}</div>
+          {it.tipo!=="CREDITO"&&it.tipo!=="DEBITO"&&<div style={{fontSize:12,color:C.textSub,marginTop:4,lineHeight:1.35}}>{(it.texto||"(sem texto)").slice(0,200)}</div>}</div>
         <div style={{fontSize:16,fontWeight:800,whiteSpace:"nowrap",color:it.tipo==="TRANSF_RECEBIDA"?C.green:C.text}}>{it.valor?fmt(it.valor):""}</div></div>
       {it.tipo==="CREDITO"?<div>
         {!nt.mapa[chaveDe(it)]&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
@@ -7431,7 +7468,22 @@ function CardNotificacoes({data,onUpdate}){
           <button disabled={busy===it.key} onClick={()=>lancar(it)} style={{flex:1,minHeight:48,borderRadius:14,border:0,background:C.accent,color:"#fff",fontWeight:800,fontSize:15,fontFamily:"inherit"}}>{busy===it.key?"...":"Lançar"}</button>
           <button disabled={busy===it.key} onClick={()=>ignorar(it)} style={{minHeight:48,padding:"0 16px",borderRadius:14,border:"1px solid "+C.border,background:"#fff",fontWeight:700,fontSize:14,fontFamily:"inherit"}}>Ignorar</button></div>
       </div>:<div style={{marginTop:8}}>
-        <button disabled={busy===it.key} onClick={()=>ignorar(it)} style={{minHeight:44,padding:"0 16px",borderRadius:14,border:"1px solid "+C.border,background:"#fff",fontWeight:700,fontSize:14,fontFamily:"inherit"}}>Já vi</button></div>}
+        {(()=>{ const cp=(it.tipo==="DEBITO"||it.tipo==="BOLETO"||it.tipo==="TRANSF_RECEBIDA")?candidatosPlano(it):[]; if(!cp.length) return null;
+          return <div style={{background:"#fff",border:"1px solid "+C.border,borderRadius:14,padding:10,marginBottom:8}}>
+            <div style={{fontSize:12,fontWeight:700,color:C.textSub,marginBottom:6}}>Já está no plano? Toque para executar com o valor e a data da notificação:</div>
+            {cp.map(c=><button key={c.row} disabled={busy===it.key} onClick={()=>vincularPlano(it,c)} style={{display:"flex",justifyContent:"space-between",gap:8,width:"100%",minHeight:44,alignItems:"center",padding:"0 10px",marginBottom:4,borderRadius:12,border:"1px solid "+C.border,background:C.bg,fontFamily:"inherit",fontSize:13,fontWeight:700,textAlign:"left"}}>
+              <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.nome}</span><span style={{whiteSpace:"nowrap",color:C.textSub,fontWeight:600}}>{fmt(c.valor)} · {dd(c.data)}</span></button>)}
+          </div>; })()}
+        {ehSaidaConta(it)?<div>
+          {!contaMapa[it.escopo==="PJ"?"PJ":"PF"]&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+            {contasN.map(c=><Pil key={c.id} on={contaDe(it)===c.id} onClick={()=>setK(it.key,{conta:c.id})}>{c.nome}</Pil>)}</div>}
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {CATS_N.map(c=><Pil key={c} on={catDe(it)===c} onClick={()=>setK(it.key,{cat:c})}>{c==="DESPESA FIXA"?"Fixa":c==="EXTRAORDINARIA"?"Extra":"DCP"}</Pil>)}</div>
+          <div style={{display:"flex",gap:8,marginTop:8}}>
+            <button disabled={busy===it.key} onClick={()=>lancarConta(it)} style={{flex:1,minHeight:48,borderRadius:14,border:0,background:C.accent,color:"#fff",fontWeight:800,fontSize:15,fontFamily:"inherit"}}>{busy===it.key?"...":"Lançar na conta"}</button>
+            <button disabled={busy===it.key} onClick={()=>ignorar(it)} style={{minHeight:48,padding:"0 16px",borderRadius:14,border:"1px solid "+C.border,background:"#fff",fontWeight:700,fontSize:14,fontFamily:"inherit"}}>Ignorar</button></div>
+        </div>:
+        <button disabled={busy===it.key} onClick={()=>ignorar(it)} style={{minHeight:44,padding:"0 16px",borderRadius:14,border:"1px solid "+C.border,background:"#fff",fontWeight:700,fontSize:14,fontFamily:"inherit"}}>Já vi</button>}</div>}
     </div>)}
   </Card>;
 }
@@ -9561,7 +9613,7 @@ const _MANUAL_CURTO=`COMO O TESOURARIA FUNCIONA (use para explicar e orientar; n
 • Notificações do Nubank chegam na fila "A CLASSIFICAR" no Dashboard; a pessoa toca para lançar ou casar com um previsto.
 • Salvar uma edição não executa o item; para executar vencidos usar "Executar vencidos" no topo do Plano.
 • Quando a pessoa pedir algo que exige tocar no app (executar, travar, destravar), explique os passos curtos em vez de inventar uma ação; use as ações JSON abaixo só para o que elas cobrem (ex.: "baixa" com valorReal na linha da fatura faz o pagamento parcial).`;
-try{fetch("manual_tesouraria.txt?v=20261102c").then(r=>r.ok?r.text():null).then(t=>{if(t&&t.length>2000)_MANUAL_TXT="MANUAL DO TESOURARIA:\n"+t;}).catch(()=>{});}catch(e){}
+try{fetch("manual_tesouraria.txt?v=20261103a").then(r=>r.ok?r.text():null).then(t=>{if(t&&t.length>2000)_MANUAL_TXT="MANUAL DO TESOURARIA:\n"+t;}).catch(()=>{});}catch(e){}
 function buildPrompt(data){
   const hj=hoje(),fluxo=data.fluxo||[],cfg=data.config||{};
   const ex=fluxo.filter(r=>r.status==="EXECUTADO").sort((a,b)=>a.data>b.data?1:-1);
@@ -13943,8 +13995,11 @@ function Tesouraria(){
   const [estouroDialogAberto,setEstouroDialogAberto]=useState(false);
   useEffect(()=>{
     if(!data) return; // ainda carregando a primeira vez
+    // [03/11] Só o Dashboard mostra esse aviso: nas outras telas não gasta tempo do
+    // servidor (era ~5-10 s depois de TODA ação). Ao voltar ao Dashboard, roda de novo.
+    if(tab!=="dashboard") return;
     const t=setTimeout(()=>{
-      api({action:"verificarEstouroProjetado"}).then(r=>{
+      api({action:"verificarEstouroProjetado",_bg:true}).then(r=>{
         setEstouro(r);
         if(r&&r.temProblema){
           const assinatura=r.piorData+"|"+Math.round((r.piorSaldo||0)*100);
@@ -13958,7 +14013,7 @@ function Tesouraria(){
       }).catch(()=>{});
     },1500);
     return ()=>clearTimeout(t);
-  },[data]);
+  },[data,tab]);
   function dispensarEstouroDialog(){
     if(estouro&&estouro.temProblema){
       const assinatura=estouro.piorData+"|"+Math.round((estouro.piorSaldo||0)*100);
@@ -14025,7 +14080,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261102.2310 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261103.1650 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14151,7 +14206,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261102.2310
+      // HTML v3.20261103.1650
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
