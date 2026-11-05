@@ -1,4 +1,4 @@
-// VERSAO: v3.20261105.0240
+// VERSAO: v3.20261105.1030
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -194,6 +194,7 @@ function dispatch(p) {
     case "corrigirDataParcelasCartao":     return corrigirDataParcelasCartao(ss, p);
     case "resetarAcctId":     return resetarAcctId(ss, p);
     case "salvarEnvelope":       return salvarEnvelope(ss, p);
+    case "aplicarEnvelopesLote": return aplicarEnvelopesLote(ss, p);
     case "apagarEnvelope":       return apagarEnvelope(ss, p);
     case "salvarCofre":          return salvarCofre(ss, p);
     case "apagarCofre":          return apagarCofre(ss, p);
@@ -427,7 +428,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261105.0240",
+    scriptVersion: "v3.20261105.1030",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -5590,6 +5591,109 @@ function apagarEnvelope(ss, p) {
   itens = itens.filter(function(e) { return e.id !== id; });
   _setConfig(shCfg, "ENVELOPES_JSON", JSON.stringify(itens));
   return getData(ss);
+}
+
+/**
+ * [NOVO 05/11, pedido do Marcus] Aplica envelopes em LOTE nas despesas fixas.
+ * p.envelopes = [{nome, teto}]  -> cria (mensal, ancora dia 1) se nao existir
+ *                                  pelo nome; se existir, so muda o teto
+ *                                  quando vier atualizarTeto:true.
+ * p.itens     = [{descricao, envelope}] (envelope = NOME) -> grava
+ *               ENVELOPE_PADRAO (col M) e a marca obs.envelope em TODAS as
+ *               linhas com essa descricao (FLUXO ou aba do cartao), inclusive
+ *               historico -- marcar envelope nunca reescreve fato financeiro.
+ * Uma leitura e uma escrita por aba (nada de 35 chamadas de editarRecorrencia).
+ * So roda quando o front manda (botao Aplicar); nunca por conta propria.
+ */
+function aplicarEnvelopesLote(ss, p) {
+  const shCfg = ss.getSheetByName("CONFIG");
+  const shRec = findSheet(ss, "RECORRENCIAS");
+  const shFluxo = ss.getSheetByName("FLUXO");
+  if (!shCfg || !shRec) throw new Error("Aba CONFIG ou RECORRENCIAS nao encontrada.");
+  const norm = function(s) { return _semAcento(String(s || "")).toUpperCase().trim(); };
+
+  // 1) Envelopes: cria os que faltam / ajusta teto
+  const cfg = readConfig(ss);
+  let envs = [];
+  try { envs = cfg.ENVELOPES_JSON ? JSON.parse(cfg.ENVELOPES_JSON) : []; } catch (e) { envs = []; }
+  const idPorNome = {};
+  envs.forEach(function(e) { idPorNome[norm(e.nome)] = e.id; });
+  let criados = 0, tetosAtualizados = 0;
+  (p.envelopes || []).forEach(function(n) {
+    const nome = String(n.nome || "").trim();
+    const teto = Number(n.teto);
+    if (!nome || isNaN(teto) || teto <= 0) return;
+    const k = norm(nome);
+    if (idPorNome[k]) {
+      if (n.atualizarTeto) {
+        envs.forEach(function(e) { if (e.id === idPorNome[k]) { e.teto = teto; tetosAtualizados++; } });
+      }
+      return;
+    }
+    const id = "env_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
+    envs.push({ id: id, nome: nome, teto: teto, dataIni: _hojeISOBRT().slice(0, 8) + "01", periodicidade: "mensal", ancoraDia: 1, ativo: "S" });
+    idPorNome[k] = id;
+    criados++;
+  });
+  _setConfig(shCfg, "ENVELOPES_JSON", JSON.stringify(envs));
+
+  // 2) Cadastro de recorrencias (col M) + mapa descricao -> destino/envelope
+  const last = shRec.getLastRow();
+  if (last < 4) throw new Error("Aba RECORRENCIAS vazia.");
+  if (!shRec.getRange(3, 13).getValue()) shRec.getRange(3, 13).setValue("ENVELOPE_PADRAO");
+  const recRows = shRec.getRange(4, 1, last - 3, 10).getValues();
+  const alvos = []; // {desc, envId, destino}
+  const naoAchou = [];
+  (p.itens || []).forEach(function(it) {
+    const desc = String(it.descricao || "").toUpperCase();
+    const envId = idPorNome[norm(it.envelope)];
+    if (!desc || !envId) { naoAchou.push(it.descricao); return; }
+    const idx = _acharLinhaRecorrenciaPorNome(recRows, desc);
+    if (idx === -1) { naoAchou.push(it.descricao); return; }
+    shRec.getRange(idx + 4, 13).setValue(envId);
+    alvos.push({ desc: desc, envId: envId, destino: String(recRows[idx][9] || "FLUXO").toUpperCase().replace(/[^A-Z0-9_.\-]/g, "") });
+  });
+
+  // 3) Marca obs.envelope nas linhas ja geradas (uma escrita por aba)
+  const marcar = function(sh, startRow, nCols, colDesc, colObs, destinoAlvo) {
+    const lastS = sh.getLastRow();
+    if (lastS < startRow) return 0;
+    const lista = alvos.filter(function(a) { return destinoAlvo === "FLUXO" ? (a.destino === "FLUXO" || !_ehAbaCartao(ss, a.destino)) : a.destino === destinoAlvo; });
+    if (!lista.length) return 0;
+    const rng = sh.getRange(startRow, 1, lastS - startRow + 1, nCols);
+    const vals = rng.getValues();
+    const outObs = [];
+    let mudou = 0;
+    vals.forEach(function(r) {
+      const d2 = String(r[colDesc]).toUpperCase();
+      let cel = r[colObs];
+      for (var i = 0; i < lista.length; i++) {
+        const a = lista[i];
+        if (destinoAlvo === "FLUXO" ? (d2 === a.desc || d2.indexOf(a.desc + " ") === 0) : d2 === a.desc) {
+          let o = {};
+          try { o = JSON.parse(String(cel || "{}")); } catch (e) { if (cel) o = { origem: String(cel) }; }
+          if (o.envelope !== a.envId) { o.envelope = a.envId; cel = JSON.stringify(o); mudou++; }
+          break;
+        }
+      }
+      outObs.push([cel]);
+    });
+    if (mudou) sh.getRange(startRow, colObs + 1, outObs.length, 1).setValues(outObs);
+    return mudou;
+  };
+  let linhasMarcadas = 0;
+  if (shFluxo) linhasMarcadas += marcar(shFluxo, FLUXO_START, 9, 1, 8, "FLUXO");
+  const destinosCartao = {};
+  alvos.forEach(function(a) { if (a.destino !== "FLUXO" && _ehAbaCartao(ss, a.destino)) destinosCartao[a.destino] = true; });
+  Object.keys(destinosCartao).forEach(function(dest) {
+    const shC = findSheet(ss, dest);
+    if (shC) linhasMarcadas += marcar(shC, 4, 9, 1, 8, dest);
+  });
+
+  SpreadsheetApp.flush();
+  const resp = getData(ss);
+  resp._resumoEnvelopesLote = { criados: criados, tetosAtualizados: tetosAtualizados, itens: alvos.length, linhasMarcadas: linhasMarcadas, naoAchou: naoAchou };
+  return resp;
 }
 
 // == COFRES (poupanca vinculada a envelope) - ETAPA 1 =======================

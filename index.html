@@ -10411,6 +10411,81 @@ function SecaoRecorrencias({titulo,totalEquiv,resumo,pctTotal,itemExtra,modoNovo
   </div>;
 }
 
+// [NOVO 05/11, pedido do Marcus] Sugere envelope para as despesas fixas que ainda nao tem, mostra o que muda
+// e so grava quando toca em "Aplicar" (uma chamada so, aplicarEnvelopesLote).
+const SUGESTAO_ENVELOPES=[
+  {env:"Moradia",palavras:["ALUGUEL","CONDOMINIO","CELESC","CLARO","FAXINA"]},
+  {env:"Filhas",palavras:["PENSAO","MESADA"]},
+  {env:"Saude",palavras:["BENEVIX","MEDICAMENTOS","PSICOLOGA"]},
+  {env:"Seguros",palavras:["OMINT","LIBERTY","YELUM"]},
+  {env:"Carro",palavras:["STELLANTIS","PEGEOUT","PEUGEOT"]},
+  {env:"Assinaturas",palavras:["SPOTIFY","AMAZON PRIME","IMOVISION","YOUTUBE","GLOBOPLAY","FOLHA","MELIMAIS","NETFLIX","AUDIBLE"]},
+  {env:"Bem-estar",palavras:["ADHERING","ACADEMIA","DUE FIT"]},
+  {env:"Impostos PJ",palavras:["INSS","IRRF","CSLL","IRPJ"]},
+  {env:"Custos PJ",palavras:["CONTADOR","WORKSPACE","CLAUDE","CHATGPT","JUSBRASIL","SERASA"]},
+  {env:"Outros",palavras:["ANGELA PRUST"]}
+];
+function SugerirEnvelopes({itens,envCadastro,mensalEquiv,onUpdate,onFechar}){
+  const [load,setLoad]=useState(false);
+  const [ajustaTeto,setAjustaTeto]=useState(true);
+  const [msg,setMsg]=useState("");
+  const sa=s=>String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toUpperCase();
+  const achaEnv=nome=>envCadastro.find(e=>sa(e.nome).indexOf(sa(nome))===0)||null;
+  const alvoDe=r=>{const d=sa(r.desc);for(const g of SUGESTAO_ENVELOPES){if(g.palavras.some(p=>d.indexOf(p)>=0))return g.env;}return null;};
+  const ativos=itens.filter(r=>String(r.ativo||"S").toUpperCase()!=="N"&&r.valor<0&&String(r.tipo||"").toUpperCase().indexOf("EMPREST")<0);
+  const novos=ativos.filter(r=>!r.envelopePadrao&&alvoDe(r));
+  const semSugestao=ativos.filter(r=>!r.envelopePadrao&&!alvoDe(r));
+  // grupos: nome final -> {existente, itens novos, total (novos + ja nesse envelope)}
+  const grupos={};
+  novos.forEach(r=>{
+    const nomeBase=alvoDe(r);const ex=achaEnv(nomeBase);const nome=ex?ex.nome:nomeBase;
+    if(!grupos[nome])grupos[nome]={nome,ex,novos:[],jaTem:[]};
+    grupos[nome].novos.push(r);
+  });
+  Object.values(grupos).forEach(g=>{if(g.ex)g.jaTem=ativos.filter(r=>r.envelopePadrao===g.ex.id);
+    g.total=[...g.novos,...g.jaTem].reduce((t,r)=>t+mensalEquiv(r),0);
+    g.tetoNovo=Math.ceil(Math.abs(g.total));});
+  const lista=Object.values(grupos).sort((a,b)=>a.total-b.total);
+  async function aplicar(){
+    setLoad(true);setMsg("");
+    try{
+      const payload={action:"aplicarEnvelopesLote",
+        envelopes:lista.map(g=>({nome:g.nome,teto:g.ex?(ajustaTeto?Math.max(g.tetoNovo,Number(g.ex.teto)||0):Number(g.ex.teto)):g.tetoNovo,atualizarTeto:!!(g.ex&&ajustaTeto&&g.tetoNovo>(Number(g.ex.teto)||0))})),
+        itens:novos.map(r=>({descricao:r.desc,envelope:(lista.find(g=>g.novos.indexOf(r)>=0)||{}).nome}))};
+      const d=await api(payload);
+      if(d){onUpdate(d);const rs=d._resumoEnvelopesLote||{};setMsg("Pronto: "+rs.itens+" despesas organizadas, "+rs.criados+" envelopes criados.");setTimeout(onFechar,1800);}
+    }catch(e){alert(e.message);}
+    setLoad(false);
+  }
+  if(!novos.length) return <div style={{margin:"6px 16px 10px",padding:16,background:C.surface,border:"1px solid "+C.border,borderRadius:16}}>
+    <div style={{fontSize:14,fontWeight:800,color:C.text}}>Nada para sugerir</div>
+    <div style={{fontSize:12,color:C.textSub,marginTop:4}}>Todas as despesas já têm envelope{semSugestao.length?" (ou não reconheci: "+semSugestao.map(r=>r.desc.trim()).join(", ")+")":""}.</div>
+    <button onClick={onFechar} style={{marginTop:10,padding:"10px 16px",borderRadius:10,border:"1px solid "+C.border,background:"#fff",fontFamily:"inherit",fontWeight:700,cursor:"pointer"}}>Fechar</button>
+  </div>;
+  return <div style={{margin:"6px 16px 10px",padding:"16px 14px",background:C.surface,border:"1px solid "+C.border,borderRadius:16}}>
+    <div style={{fontSize:16,fontWeight:800,color:C.text}}>Sugestão de envelopes</div>
+    <div style={{fontSize:12,color:C.textSub,marginTop:2,marginBottom:10}}>{novos.length} despesas sem envelope. Nada é gravado até você tocar em Aplicar.</div>
+    {lista.map(g=><div key={g.nome} style={{borderTop:"1px solid "+C.border,padding:"10px 0"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
+        <div style={{fontSize:14,fontWeight:800,color:C.text}}>{g.nome}{!g.ex&&<span style={{marginLeft:6,fontSize:10,fontWeight:800,color:C.accent}}>NOVO</span>}</div>
+        <div style={{fontSize:13,fontWeight:800,fontVariantNumeric:"tabular-nums"}}>{fmt(g.total)}/mês</div>
+      </div>
+      <div style={{fontSize:11,color:C.textMuted,marginTop:2}}>
+        {g.ex?(g.tetoNovo>(Number(g.ex.teto)||0)?(ajustaTeto?"Teto sobe de "+fmt(Number(g.ex.teto)||0)+" para "+fmt(g.tetoNovo):"Teto atual "+fmt(Number(g.ex.teto)||0)+" fica abaixo do total"):"Teto atual "+fmt(Number(g.ex.teto)||0)+" cobre o total"):"Teto do novo envelope: "+fmt(g.tetoNovo)}
+      </div>
+      <div style={{marginTop:6,display:"flex",flexWrap:"wrap",gap:5}}>
+        {g.novos.map(r=><span key={r.desc+r.destino} style={{fontSize:11,padding:"3px 8px",borderRadius:12,background:C.bg,color:C.text}}>{r.desc.trim()} · {fmt(mensalEquiv(r))}</span>)}
+      </div>
+    </div>)}
+    {semSugestao.length>0&&<div style={{fontSize:11,color:C.textMuted,borderTop:"1px solid "+C.border,paddingTop:8}}>Sem sugestão (ficam como estão): {semSugestao.map(r=>r.desc.trim()).join(", ")}</div>}
+    <label style={{display:"flex",alignItems:"center",gap:8,margin:"10px 0",fontSize:12,color:C.textSub}}><input type="checkbox" checked={ajustaTeto} onChange={e=>setAjustaTeto(e.target.checked)}/>Subir o teto dos envelopes que já existem quando o total passar dele</label>
+    {msg&&<div style={{fontSize:13,fontWeight:700,color:C.green,marginBottom:8}}>{msg}</div>}
+    <div style={{display:"flex",gap:8}}>
+      <button disabled={load} onClick={aplicar} style={{flex:1,minHeight:48,borderRadius:12,border:"none",background:C.accent,color:"#fff",fontSize:15,fontWeight:800,fontFamily:"inherit",cursor:"pointer"}}>{load?"Aplicando…":"Aplicar"}</button>
+      <button disabled={load} onClick={onFechar} style={{minHeight:48,padding:"0 16px",borderRadius:12,border:"1px solid "+C.border,background:"#fff",fontSize:14,fontWeight:700,fontFamily:"inherit",cursor:"pointer"}}>Cancelar</button>
+    </div>
+  </div>;
+}
 function Recorrencias({data,onUpdate}){
   const [edit,setEdit]=useState(null);
   const [val,setVal]=useState("");
@@ -10435,6 +10510,7 @@ function Recorrencias({data,onUpdate}){
   const [showForm,setShowForm]=useState(false);
   const [loadTolerancia,setLoadTolerancia]=useState(false);
   const [verTodas,setVerTodas]=useState(false);
+  const [sugEnv,setSugEnv]=useState(false);
   const [visao,setVisao]=useState("envelope"); // [NOVO 18/10] "tipo" (como sempre foi) | "envelope" (agrupado por envelope, soma dos itens fixos)
   // [NOVO 03/10, pedido do Marcus] Recorrência desativada some da lista --
   // sem acesso de volta a ela, não tem como abrir o "Apagar esta
@@ -10970,6 +11046,10 @@ function Recorrencias({data,onUpdate}){
       {[["envelope","Por envelope"],["venc","Por vencimento"],["freq","Por frequência"]].map(([k,l])=><button key={k} onClick={()=>setVisao(k)}
         style={{padding:"6px 14px",borderRadius:20,border:"1px solid "+(visao===k?C.accent:C.border),background:visao===k?C.accent:C.surface,color:visao===k?"#fff":C.textSub,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>)}
     </div>
+    {visao==="envelope"&&semEnvQtd>0&&!sugEnv&&<div style={{padding:"4px 16px"}}>
+      <button onClick={()=>setSugEnv(true)} style={{width:"100%",minHeight:48,borderRadius:12,border:"1px dashed "+C.accent,background:"#fff",color:C.accent,fontSize:14,fontWeight:800,fontFamily:"inherit",cursor:"pointer"}}>Sugerir envelopes para {semEnvQtd} despesas</button>
+    </div>}
+    {visao==="envelope"&&sugEnv&&<SugerirEnvelopes itens={items} envCadastro={envCadastro} mensalEquiv={mensalEquiv} onUpdate={onUpdate} onFechar={()=>setSugEnv(false)}/>}
     {(visao==="envelope"||visao==="venc")&&debitosTodos.length>0&&<div style={{margin:"6px 16px 10px",padding:"16px 18px",background:C.dark,borderRadius:20,color:"#fff"}}>
       <div style={{fontSize:10,fontWeight:800,letterSpacing:".1em",opacity:.7}}>DESPESAS FIXAS POR MÊS</div>
       <div style={{fontSize:30,fontWeight:800,marginTop:4,fontVariantNumeric:"tabular-nums"}}>{fmt(totalGeralEnv)}</div>
@@ -14080,7 +14160,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261103.1650 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261105.1030 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14206,7 +14286,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261103.1650
+      // HTML v3.20261105.1030
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
