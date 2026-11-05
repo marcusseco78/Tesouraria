@@ -10740,7 +10740,7 @@ function Recorrencias({data,onUpdate}){
         item={...itemOrig,desc:nomeNovo};
       }
       let ultimoResultado=null;
-      const destinoAntigo=String(item.destino||"FLUXO").toUpperCase().replace(/[^A-Z0-9_]/g,"");
+      const destinoAntigo=String(item.destino||"FLUXO").toUpperCase().replace(/[^A-Z0-9_.\-]/g,""); // [CORRIGIDO 05/11] mesma limpeza do destinoEdit (mantem ponto e hifen); antes todo cartao com ID novo "mudava de destino" a cada Salvar e regerava tudo (154 s)
       if(destinoEdit!==destinoAntigo){
         ultimoResultado=await api({action:"editarRecorrencia",descricao:item.desc,campo:"DESTINO",valor:destinoEdit,resumo:""});
         // [SIMPLIFICADO 03/10, pedido do Marcus: "trocar de conta... tudo
@@ -10814,7 +10814,7 @@ function Recorrencias({data,onUpdate}){
         item={...itemOrig,desc:nomeNovo};
       }
       await api({action:"apagarFuturosRecorrencia",descricao:item.desc,aPartirDe:corte||"",manterEditados:!!manter});
-      const destinoAntigo=String(item.destino||"FLUXO").toUpperCase().replace(/[^A-Z0-9_]/g,"");
+      const destinoAntigo=String(item.destino||"FLUXO").toUpperCase().replace(/[^A-Z0-9_.\-]/g,"");
       if(destinoEdit!==destinoAntigo)
         await api({action:"editarRecorrencia",descricao:item.desc,campo:"DESTINO",valor:destinoEdit,resumo:"",semCascata:true});
       const rPersist=await _persistirCamposRecorrencia(item,true);
@@ -14161,7 +14161,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261105.1620 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261105.1740 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14287,7 +14287,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261105.1620
+      // HTML v3.20261105.1740
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
