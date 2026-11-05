@@ -1,4 +1,4 @@
-// VERSAO: v3.20261105.1030
+// VERSAO: v3.20261105.1620
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -428,7 +428,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261105.1030",
+    scriptVersion: "v3.20261105.1620",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -11957,12 +11957,16 @@ function renomearRecorrencia(ss, p) {
   if (shFluxo) {
     const lastF = shFluxo.getLastRow();
     if (lastF >= FLUXO_START) {
+      // [CORRIGIDO 05/11] Uma escrita so na coluna (antes: setValue por linha,
+      // travava na Academia com muitas ocorrencias).
       const fRows = shFluxo.getRange(FLUXO_START, 1, lastF - FLUXO_START + 1, 7).getValues();
-      fRows.forEach(function (r, i) {
-        if (!r[0] || String(r[6]) !== "PROGRAMADO") return;
-        if (_normAliasDesc(String(r[1] || "")) !== antigoNorm) return;
-        shFluxo.getRange(FLUXO_START + i, 2).setValue(novoUp);
+      var colF = [], mudouF = 0;
+      fRows.forEach(function (r) {
+        var v = r[1];
+        if (r[0] && String(r[6]) === "PROGRAMADO" && _normAliasDesc(String(r[1] || "")) === antigoNorm) { v = novoUp; mudouF++; }
+        colF.push([v]);
       });
+      if (mudouF) shFluxo.getRange(FLUXO_START, 2, colF.length, 1).setValues(colF);
     }
   }
   _lerCartoes(ss).forEach(function (c) {
@@ -11970,11 +11974,13 @@ function renomearRecorrencia(ss, p) {
     if (!shC) return;
     const lastC = shC.getLastRow();
     if (lastC < 4) return;
-    shC.getRange(4, 1, lastC - 3, 8).getValues().forEach(function (r, i) {
-      if (!r[0] || String(r[7]) !== "PENDENTE") return;
-      if (_normAliasDesc(String(r[1] || "")) !== antigoNorm) return;
-      shC.getRange(4 + i, 2).setValue(novoUp);
+    var colC = [], mudouC = 0;
+    shC.getRange(4, 1, lastC - 3, 8).getValues().forEach(function (r) {
+      var v = r[1];
+      if (r[0] && String(r[7]) === "PENDENTE" && _normAliasDesc(String(r[1] || "")) === antigoNorm) { v = novoUp; mudouC++; }
+      colC.push([v]);
     });
+    if (mudouC) shC.getRange(4, 2, colC.length, 1).setValues(colC);
   });
   SpreadsheetApp.flush();
   return getData(ss);

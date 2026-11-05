@@ -10414,6 +10414,7 @@ function SecaoRecorrencias({titulo,totalEquiv,resumo,pctTotal,itemExtra,modoNovo
 // [NOVO 05/11, pedido do Marcus] Sugere envelope para as despesas fixas que ainda nao tem, mostra o que muda
 // e so grava quando toca em "Aplicar" (uma chamada so, aplicarEnvelopesLote).
 const SUGESTAO_ENVELOPES=[
+  {env:"Doacoes",palavras:["ANGELA PRUST","DOACAO","ARVRO"]},
   {env:"Moradia",palavras:["ALUGUEL","CONDOMINIO","CELESC","CLARO","FAXINA"]},
   {env:"Filhas",palavras:["PENSAO","MESADA"]},
   {env:"Saude",palavras:["BENEVIX","MEDICAMENTOS","PSICOLOGA"]},
@@ -10423,7 +10424,7 @@ const SUGESTAO_ENVELOPES=[
   {env:"Bem-estar",palavras:["ADHERING","ACADEMIA","DUE FIT"]},
   {env:"Impostos PJ",palavras:["INSS","IRRF","CSLL","IRPJ"]},
   {env:"Custos PJ",palavras:["CONTADOR","WORKSPACE","CLAUDE","CHATGPT","JUSBRASIL","SERASA"]},
-  {env:"Outros",palavras:["ANGELA PRUST"]}
+  {env:"Outros",palavras:[]}
 ];
 function SugerirEnvelopes({itens,envCadastro,mensalEquiv,onUpdate,onFechar}){
   const [load,setLoad]=useState(false);
@@ -14160,7 +14161,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261105.1030 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261105.1620 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14286,7 +14287,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261105.1030
+      // HTML v3.20261105.1620
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
