@@ -1,4 +1,4 @@
-// VERSAO: v3.20261106.0700
+// VERSAO: v3.20261106.1830
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -429,7 +429,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261106.0700",
+    scriptVersion: "v3.20261106.1830",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -13468,11 +13468,20 @@ function _parseNotificacao(titulo, texto) {
 }
 function _notifChaveCartao(item) { return item.escopo === "PJ" ? "PJ" : (item.final || "PF"); }
 
+// [NOVO 06/11] "Voce tem um novo boleto" / "Novo boleto emitido para seu CNPJ": so aviso de cobranca, nao e saida de dinheiro.
+function _ehAvisoBoletoEmitido(titulo, texto) {
+  var s = (String(titulo || "") + " " + String(texto || "")).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (/pagamento de boleto|boleto pago|voce pagou/.test(s)) return false;
+  return /novo boleto|boleto emitido|emitiu um novo boleto/.test(s);
+}
+
 function registrarNotificacao(ss, p) {
   if (!p.token || String(p.token) !== _notifToken()) throw new Error("token invalido");
   var titulo = String(p.titulo || ""), texto = String(p.texto || "");
   if (!titulo && !texto) throw new Error("notificacao vazia");
   if (!/nubank|nu pagamentos|compra|transfer|boleto|pix/i.test(titulo + " " + texto)) return { ignorada: true };
+  // [NOVO 06/11] Aviso de boleto EMITIDO/recebido para pagar (ainda nao e pagamento): nao entra na fila.
+  if (_ehAvisoBoletoEmitido(titulo, texto)) return { ignorada: true, motivo: "boleto emitido" };
   var sh = _garantirAbaNotif(ss);
   // hora ORIGINAL da notificacao (nao muda quando o Android republica apos reiniciar)
   var tsMs = Number(p.ts);
@@ -13508,6 +13517,7 @@ function _lerNotificacoesPendentes(ss) {
   var itens = [];
   rows.forEach(function(r, i) {
     if (String(r[10]) !== "PENDENTE") return;
+    if (_ehAvisoBoletoEmitido(String(r[2]), String(r[3]))) return; // [06/11] avisos antigos de boleto emitido somem da fila
     var tipo = String(r[4]), estab = String(r[6]), escopo = String(r[8]), fin = String(r[7]);
     // [03/11] Notificacao gravada antes da regra do debito: relê o tipo pelo texto.
     if (tipo === "CREDITO") {
