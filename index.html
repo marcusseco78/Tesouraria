@@ -10487,6 +10487,59 @@ function SugerirEnvelopes({itens,envCadastro,mensalEquiv,onUpdate,onFechar}){
     </div>
   </div>;
 }
+// [NOVO 06/11, pedido do Marcus] Padronizar nomes: "QUEM RECEBE (O QUE E)", tudo maiusculo e sem acento.
+// Mostra atual -> novo (editavel), so grava no Aplicar (uma chamada: renomearRecorrenciasLote).
+const PADRAO_NOMES={
+  "PENSAO FILHAS (CARLA)":"CARLA (PENSAO FILHAS)","CONDOMINIO (ARBORIS)":"ARBORIS (CONDOMINIO)","CELESC":"CELESC (LUZ)",
+  "BENEVIX (PLANO DE SAUDE)":"BENEVIX (PLANO DE SAUDE)","OMINT (SEGURO DE VIDA)":"OMINT (SEGURO DE VIDA)",
+  "ALUGUEL":"ZELT (ALUGUEL)","ALUGUEL (PJBANK)":"ZELT (ALUGUEL)","ADHERING (CLUBE)":"ADHERING (CLUBE)",
+  "CONTADOR":"CAPITAL CONTADORES (CONTADOR)","MESADA MARIA FERNANDA":"MARIA FERNANDA (MESADA)","MESADA MANUELA":"MANUELA (MESADA)",
+  "FAXINA (ROSE) - QUARTA":"ROSE (FAXINA - QUARTA)","FAXINA (ROSE) SABADO - SABADO":"ROSE (FAXINA - SABADO)","ROSE (FAXINA) - TERCA":"ROSE (FAXINA - TERCA)","ROSE (FAXINA) - SABADO":"ROSE (FAXINA - SABADO)",
+  "PSICOLOGA TERESA - SEGUNDA":"TERESA (PSICOLOGA - SEGUNDA)","PSICOLOGA - TERCA":"TERESA (PSICOLOGA - TERCA)",
+  "STELLANTIS PEGEOUT 2008":"STELLANTIS (PEUGEOT 2008)","LIBERTY SEGUROS":"LIBERTY (SEGURO DE VIDA)","MEDICAMENTOS":"PANVEL (MEDICAMENTOS)",
+  "DOACAO *YOUTUBE":"AVIOES E MUSICAS (DOACAO)","ARVRO YOUTUBE":"ARVRO (DOACAO)","DOACAO - ANGELA PRUST":"ANGELA PRUST (DOACAO)","ANGELA PRUST - DOACAO":"ANGELA PRUST (DOACAO)",
+  "WORKSPACE INTENSIVA":"GOOGLE (WORKSPACE)","CLAUDE (ANTHROPIC)":"ANTHROPIC (CLAUDE)","CHATGPT":"OPENAI (CHATGPT)","YOUTUBE PREMIUM":"GOOGLE (YOUTUBE PREMIUM)",
+  "ANDRE SEMANAL - SEGUNDA":"ANDRE (SEMANAL - SEGUNDA)","ANDRE FACULDADE":"ANDRE (FACULDADE)","ANDRE MORADIA":"ANDRE (MORADIA)","ANDRE MEDICACOES":"ANDRE (MEDICACOES)","ANDRE PSICOLOGO":"ANDRE (PSICOLOGO)"
+};
+function PadronizarNomes({itens,onUpdate,onFechar}){
+  const sa=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/\s+/g," ").trim();
+  const ativos=itens.filter(r=>String(r.ativo||"S").toUpperCase()!=="N"&&String(r.tipo||"").toUpperCase().indexOf("RECEITA")<0&&String(r.tipo||"").toUpperCase().indexOf("EMPREST")<0);
+  const props=ativos.map(r=>{const atual=String(r.desc||"").trim();const sug=PADRAO_NOMES[sa(atual)];return sug&&sug!==sa(atual)?{atual,novo:sug}:null;}).filter(Boolean);
+  const [vals,setVals]=useState(()=>Object.fromEntries(props.map(p=>[p.atual,p.novo])));
+  const [off,setOff]=useState({});
+  const [load,setLoad]=useState(false);
+  const [msg,setMsg]=useState("");
+  const [recus,setRecus]=useState([]);
+  const escolhidos=props.filter(p=>!off[p.atual]&&sa(vals[p.atual])&&sa(vals[p.atual])!==sa(p.atual));
+  async function aplicar(){
+    setLoad(true);setMsg("");setRecus([]);
+    try{
+      const d=await api({action:"renomearRecorrenciasLote",itens:escolhidos.map(p=>({descricao:p.atual,novoNome:sa(vals[p.atual])}))});
+      if(d){onUpdate(d);const rs=d._resumoRenomearLote||{};setMsg("Pronto: "+rs.renomeados+" nomes padronizados.");setRecus(rs.recusados||[]);if(!(rs.recusados||[]).length)setTimeout(onFechar,1800);}
+    }catch(e){alert(e.message);}
+    setLoad(false);
+  }
+  const box={margin:"6px 16px 10px",padding:"16px 14px",background:C.surface,border:"1px solid "+C.border,borderRadius:16};
+  if(!props.length) return <div style={box}><div style={{fontSize:14,fontWeight:800,color:C.text}}>Nada para padronizar</div>
+    <button onClick={onFechar} style={{marginTop:10,padding:"10px 16px",borderRadius:10,border:"1px solid "+C.border,background:"#fff",fontFamily:"inherit",fontWeight:700,cursor:"pointer"}}>Fechar</button></div>;
+  return <div style={box}>
+    <div style={{fontSize:16,fontWeight:800,color:C.text}}>Padronizar nomes</div>
+    <div style={{fontSize:12,color:C.textSub,marginTop:2,marginBottom:10}}>Formato QUEM RECEBE (O QUE É). Muda só os lançamentos futuros; o histórico mantém o nome antigo. Nada é gravado até tocar em Aplicar.</div>
+    {props.map(p=><div key={p.atual} style={{borderTop:"1px solid "+C.border,padding:"10px 0",opacity:off[p.atual]?0.45:1}}>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <input type="checkbox" checked={!off[p.atual]} onChange={e=>setOff({...off,[p.atual]:!e.target.checked})} style={{width:20,height:20}}/>
+        <div style={{fontSize:12,color:C.textMuted,flex:1,textDecoration:"line-through"}}>{p.atual}</div>
+      </div>
+      <input value={vals[p.atual]||""} onChange={e=>setVals({...vals,[p.atual]:e.target.value.toUpperCase()})} style={{width:"100%",boxSizing:"border-box",marginTop:6,minHeight:44,fontSize:16,fontWeight:700,padding:"0 12px",borderRadius:10,border:"1px solid "+C.border,fontFamily:"inherit"}}/>
+    </div>)}
+    {msg&&<div style={{fontSize:13,fontWeight:700,color:C.green,margin:"8px 0"}}>{msg}</div>}
+    {recus.length>0&&<div style={{fontSize:12,color:C.red,margin:"6px 0"}}>Não renomeei: {recus.map(r=>r.descricao+" ("+r.motivo+")").join("; ")}</div>}
+    <div style={{display:"flex",gap:8,marginTop:10}}>
+      <button disabled={load||!escolhidos.length} onClick={aplicar} style={{flex:1,minHeight:48,borderRadius:12,border:"none",background:C.accent,color:"#fff",fontSize:15,fontWeight:800,fontFamily:"inherit",cursor:"pointer",opacity:escolhidos.length?1:0.5}}>{load?"Aplicando…":"Aplicar "+escolhidos.length}</button>
+      <button disabled={load} onClick={onFechar} style={{minHeight:48,padding:"0 16px",borderRadius:12,border:"1px solid "+C.border,background:"#fff",fontSize:14,fontWeight:700,fontFamily:"inherit",cursor:"pointer"}}>Fechar</button>
+    </div>
+  </div>;
+}
 function Recorrencias({data,onUpdate}){
   const [edit,setEdit]=useState(null);
   const [val,setVal]=useState("");
@@ -10512,6 +10565,7 @@ function Recorrencias({data,onUpdate}){
   const [loadTolerancia,setLoadTolerancia]=useState(false);
   const [verTodas,setVerTodas]=useState(false);
   const [sugEnv,setSugEnv]=useState(false);
+  const [padNomes,setPadNomes]=useState(false);
   const [visao,setVisao]=useState("envelope"); // [NOVO 18/10] "tipo" (como sempre foi) | "envelope" (agrupado por envelope, soma dos itens fixos)
   // [NOVO 03/10, pedido do Marcus] Recorrência desativada some da lista --
   // sem acesso de volta a ela, não tem como abrir o "Apagar esta
@@ -11050,6 +11104,10 @@ function Recorrencias({data,onUpdate}){
     {visao==="envelope"&&semEnvQtd>0&&!sugEnv&&<div style={{padding:"4px 16px"}}>
       <button onClick={()=>setSugEnv(true)} style={{width:"100%",minHeight:48,borderRadius:12,border:"1px dashed "+C.accent,background:"#fff",color:C.accent,fontSize:14,fontWeight:800,fontFamily:"inherit",cursor:"pointer"}}>Sugerir envelopes para {semEnvQtd} despesas</button>
     </div>}
+    {visao==="envelope"&&!padNomes&&<div style={{padding:"4px 16px"}}>
+      <button onClick={()=>setPadNomes(true)} style={{width:"100%",minHeight:48,borderRadius:12,border:"1px dashed "+C.accent,background:"#fff",color:C.accent,fontSize:14,fontWeight:800,fontFamily:"inherit",cursor:"pointer"}}>Padronizar nomes</button>
+    </div>}
+    {visao==="envelope"&&padNomes&&<PadronizarNomes itens={items} onUpdate={onUpdate} onFechar={()=>setPadNomes(false)}/>}
     {visao==="envelope"&&sugEnv&&<SugerirEnvelopes itens={items} envCadastro={envCadastro} mensalEquiv={mensalEquiv} onUpdate={onUpdate} onFechar={()=>setSugEnv(false)}/>}
     {(visao==="envelope"||visao==="venc")&&debitosTodos.length>0&&<div style={{margin:"6px 16px 10px",padding:"16px 18px",background:C.dark,borderRadius:20,color:"#fff"}}>
       <div style={{fontSize:10,fontWeight:800,letterSpacing:".1em",opacity:.7}}>DESPESAS FIXAS POR MÊS</div>
@@ -14161,7 +14219,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261105.1740 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261106.0330 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14287,7 +14345,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261105.1740
+      // HTML v3.20261106.0330
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();

@@ -1,4 +1,4 @@
-// VERSAO: v3.20261105.1620
+// VERSAO: v3.20261106.0330
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -195,6 +195,7 @@ function dispatch(p) {
     case "resetarAcctId":     return resetarAcctId(ss, p);
     case "salvarEnvelope":       return salvarEnvelope(ss, p);
     case "aplicarEnvelopesLote": return aplicarEnvelopesLote(ss, p);
+    case "renomearRecorrenciasLote": return renomearRecorrenciasLote(ss, p);
     case "apagarEnvelope":       return apagarEnvelope(ss, p);
     case "salvarCofre":          return salvarCofre(ss, p);
     case "apagarCofre":          return apagarCofre(ss, p);
@@ -428,7 +429,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261105.1620",
+    scriptVersion: "v3.20261106.0330",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -11984,6 +11985,74 @@ function renomearRecorrencia(ss, p) {
   });
   SpreadsheetApp.flush();
   return getData(ss);
+}
+
+/**
+ * [NOVO 06/11, pedido do Marcus] Padronizar nomes em LOTE.
+ * p.itens = [{descricao, novoNome}]. Mesma regra do renomearRecorrencia
+ * (muda cadastro + PROGRAMADO no Fluxo + PENDENTE nos cartoes; EXECUTADO/PAGO
+ * mantem o nome historico), mas com UMA leitura e UMA escrita por aba.
+ * Recusa nome vazio, nao achado ou ja usado por outra recorrencia ativa.
+ */
+function renomearRecorrenciasLote(ss, p) {
+  const shRec = findSheet(ss, "RECORRENCIAS");
+  if (!shRec) throw new Error("Aba RECORRENCIAS nao encontrada.");
+  const last = shRec.getLastRow();
+  if (last < 4) throw new Error("Aba RECORRENCIAS vazia.");
+  const rows = shRec.getRange(4, 1, last - 3, 10).getValues();
+  const colA = rows.map(function (r) { return [r[0]]; });
+  const usados = {}; // nomes (maiusculo) de recorrencias ATIVAS, atualizado conforme renomeia
+  rows.forEach(function (r) { if (String(r[6] || "").toUpperCase() !== "N") usados[String(r[0]).toUpperCase().trim()] = true; });
+  const mapa = {}; // _normAliasDesc(antigo) -> NOVO (maiusculo)
+  const recusados = [];
+  var renomeados = 0;
+  (p.itens || []).forEach(function (it) {
+    const antigo = String(it.descricao || "").toUpperCase();
+    const novoNome = String(it.novoNome || "").replace(/\s+/g, " ").trim();
+    const novoUp = novoNome.toUpperCase();
+    if (!novoNome) { recusados.push({ descricao: it.descricao, motivo: "nome vazio" }); return; }
+    const idx = _acharLinhaRecorrenciaPorNome(rows, antigo);
+    if (idx === -1) { recusados.push({ descricao: it.descricao, motivo: "nao encontrada" }); return; }
+    if (novoUp === String(rows[idx][0]).toUpperCase().trim()) return; // ja esta assim
+    if (usados[novoUp]) { recusados.push({ descricao: it.descricao, motivo: "ja existe outra com esse nome" }); return; }
+    const ehAtiva = String(rows[idx][6] || "").toUpperCase() !== "N";
+    if (ehAtiva) delete usados[String(rows[idx][0]).toUpperCase().trim()];
+    usados[novoUp] = true;
+    mapa[_normAliasDesc(antigo)] = novoUp;
+    rows[idx][0] = novoNome;
+    colA[idx][0] = novoNome;
+    renomeados++;
+  });
+  if (renomeados) shRec.getRange(4, 1, colA.length, 1).setValues(colA);
+
+  var linhas = 0;
+  const aplicar = function (sh, startRow, nCols, colStatus, statusAlvo) {
+    const lastS = sh.getLastRow();
+    if (lastS < startRow) return;
+    const vals = sh.getRange(startRow, 1, lastS - startRow + 1, nCols).getValues();
+    var col = [], mudou = 0;
+    vals.forEach(function (r) {
+      var v = r[1];
+      if (r[0] && String(r[colStatus]) === statusAlvo) {
+        const novo = mapa[_normAliasDesc(String(r[1] || ""))];
+        if (novo) { v = novo; mudou++; }
+      }
+      col.push([v]);
+    });
+    if (mudou) { sh.getRange(startRow, 2, col.length, 1).setValues(col); linhas += mudou; }
+  };
+  if (renomeados) {
+    const shFluxo = ss.getSheetByName("FLUXO");
+    if (shFluxo) aplicar(shFluxo, FLUXO_START, 7, 6, "PROGRAMADO");
+    _lerCartoes(ss).forEach(function (c) {
+      const shC = findSheet(ss, _abaCartaoItens(c.id));
+      if (shC) aplicar(shC, 4, 8, 7, "PENDENTE");
+    });
+  }
+  SpreadsheetApp.flush();
+  const resp = getData(ss);
+  resp._resumoRenomearLote = { renomeados: renomeados, linhas: linhas, recusados: recusados };
+  return resp;
 }
 
 // ---------------------------------------------------------------------------
