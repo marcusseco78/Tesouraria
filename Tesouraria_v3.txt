@@ -1,4 +1,4 @@
-// VERSAO: v3.20261106.0330
+// VERSAO: v3.20261106.0700
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -429,7 +429,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261106.0330",
+    scriptVersion: "v3.20261106.0700",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -12011,7 +12011,14 @@ function renomearRecorrenciasLote(ss, p) {
     const novoNome = String(it.novoNome || "").replace(/\s+/g, " ").trim();
     const novoUp = novoNome.toUpperCase();
     if (!novoNome) { recusados.push({ descricao: it.descricao, motivo: "nome vazio" }); return; }
-    const idx = _acharLinhaRecorrenciaPorNome(rows, antigo);
+    // [CORRIGIDO 06/11] Casa pelo nome SEM espaco nas pontas (o cadastro "ALUGUEL "
+    // tem espaco sobrando e nao era achado); prefere a ativa.
+    var idx = -1;
+    const antigoT = antigo.trim();
+    for (var q = 0; q < rows.length; q++) {
+      if (String(rows[q][0]).toUpperCase().trim() !== antigoT) continue;
+      if (idx === -1 || (String(rows[idx][6] || "").toUpperCase() === "N" && String(rows[q][6] || "").toUpperCase() !== "N")) idx = q;
+    }
     if (idx === -1) { recusados.push({ descricao: it.descricao, motivo: "nao encontrada" }); return; }
     if (novoUp === String(rows[idx][0]).toUpperCase().trim()) return; // ja esta assim
     if (usados[novoUp]) { recusados.push({ descricao: it.descricao, motivo: "ja existe outra com esse nome" }); return; }
