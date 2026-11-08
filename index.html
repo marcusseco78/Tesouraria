@@ -1553,25 +1553,53 @@ function Chart({pts,zoomX}){
 }
 
 // ── BARRA DCP ─────────────────────────────────────────────────────────────────
-function BarraDCP({semanas,base,grande}){
-  const n=Math.max(semanas.length,1),teto=base*n;
-  // Preenchimento continuo: soma o gasto de todas as semanas (fechadas +
-  // aberta ao vivo) -- a barra avanca sem parar por semana, so a regua
-  // (marcada em multiplos de "base", fixa) mostra onde cada semana deveria
-  // ter ficado se nada tivesse sido compensado.
-  const real=semanas.reduce((s,w)=>s+w.gasto,0);
+// [NOVO 07/11, desenho aprovado pelo Marcus] Barra do DCP proporcional ao dinheiro:
+// - tamanho da barra = tamanho do ciclo (n x meta da 1a semana: 5.000 normal, 4 x minimo vital se o ciclo ja nasceu apertado);
+// - semana fechada ocupa o que gastou; aberta e futuras dividem o resto, nunca abaixo do minimo vital (empurram o fim da barra);
+// - preenchimento continuo: azul no limite, vermelho se o ciclo nao fecha dentro dele; passou do limite = hachura vermelha;
+// - previsto ainda nao gasto alem do limite = hachura cinza; sempre mostra as 4 semanas.
+function _calcBarraDCP(semanas,base,piso){
+  const n=Math.max(semanas.length,1),MIN=piso>0?piso:530;
+  const B=n*(semanas.length?semanas[0].meta:base);
+  const iAb=semanas.findIndex(w=>w.status==="PROGRAMADO");
+  const W=semanas.map((w,i)=>({n:"S"+(i+1),g:w.gasto,st:w.status==="EXECUTADO"?"fech":i===iAb?"aberta":"fut",w:0,ini:0,fim:0}));
+  let usado=0;W.forEach(w=>{if(w.st==="fech"){w.w=w.g;usado+=w.g;}});
+  const livres=W.filter(w=>w.st!=="fech");
+  if(livres.length){
+    const base2=Math.max(Math.max(B-usado,0)/livres.length,MIN);
+    livres.forEach(w=>{w.w=(w.st==="aberta"&&w.g>base2)?w.g:base2;});
+    const ab=W.find(w=>w.st==="aberta");
+    if(ab&&ab.g>base2){const fut=W.filter(w=>w.st==="fut");if(fut.length){const r2=Math.max(B-usado-ab.w,0)/fut.length;fut.forEach(w=>{w.w=Math.max(r2,MIN);});}}
+  }
+  let acc=0;W.forEach(w=>{w.ini=acc;acc+=w.w;w.fim=acc;});
+  const G=W.reduce((s,w)=>s+w.g,0);
+  const proj=W.reduce((s,w)=>s+(w.st==="fut"?w.w:Math.max(w.g,w.st==="aberta"?w.w:0)),0);
+  return {W,G,B,estoura:proj>B+0.005};
+}
+function BarraDCP({semanas,base,grande,piso}){
+  const c=_calcBarraDCP(semanas,base,piso);
+  const {W,G,B}=c,teto=base*Math.max(semanas.length,1);
+  const real=G;
+  const fimSem=W.length?W[W.length-1].fim:B,dom=Math.max(B,G,fimSem)||1;
+  const pc=v=>(v/dom*100)+"%";
+  const GAP=3,alem=dom>B+0.005,altura=grande?14:10;
+  const cor=c.estoura?C.red:C.accent;
   const semAtualIdx=semanas.findIndex(w=>w.status==="PROGRAMADO");
-  const pct=Math.min(real/teto,1)*100,cor=pct>100?C.red:pct>80?C.orange:C.green;
+  const hach="repeating-linear-gradient(135deg,"+C.red+" 0 3px,transparent 3px 6px)";
+  const prev="repeating-linear-gradient(135deg,"+C.textMuted+"66 0 2px,transparent 2px 6px)";
+  const abs={position:"absolute",top:0,bottom:0};
   return <div>
-    <div style={{position:"relative",height:grande?14:10,borderRadius:99,background:C.borderLight,overflow:"hidden",marginBottom:6}}>
-      <div style={{position:"absolute",left:0,top:0,bottom:0,width:Math.min(pct,100)+"%",background:cor,borderRadius:99,transition:"width .5s"}}/>
-      {Array.from({length:n-1}).map((_,i)=><div key={i} style={{position:"absolute",top:0,bottom:0,left:((i+1)*100/n)+"%",width:2,background:"#fff",opacity:.7}}/>)}
+    <div style={{position:"relative",height:altura,marginBottom:6}}>
+      <div style={{...abs,left:0,width:pc(B),background:C.borderLight,borderRadius:99}}/>
+      <div style={{...abs,left:0,width:pc(Math.min(G,B)),background:cor,borderRadius:99,transition:"width .5s"}}/>
+      {alem&&<div style={{...abs,left:"calc("+pc(B)+" + "+GAP+"px)",width:"calc("+((dom-B)/dom*100)+"% - "+GAP+"px)",backgroundImage:prev,borderRadius:99}}/>}
+      {alem&&G>B&&<div style={{...abs,left:"calc("+pc(B)+" + "+GAP+"px)",width:"calc("+((G-B)/dom*100)+"% - "+GAP+"px)",backgroundImage:hach,backgroundColor:C.red+"29",borderRadius:99}}/>}
+      {W.map((w,i)=>i>0&&Math.abs(w.ini-B)>0.5?<div key={i} style={{...abs,left:pc(w.ini),width:2,marginLeft:-1,background:"#fff",opacity:.85}}/>:null)}
+      {alem&&<div style={{position:"absolute",top:-3,bottom:-3,left:"calc("+pc(B)+" + "+(GAP/2)+"px)",borderLeft:"2px dashed "+C.dark,opacity:.6}}/>}
     </div>
-    <div style={{display:"flex",marginBottom:6}}>
-      {semanas.map((w,s)=>{const ativa=s===semAtualIdx,estourou=w.gasto>=w.meta;return <div key={w.data} style={{flex:1,textAlign:"center"}}>
-        <div style={{fontSize:grande?12:9,fontWeight:ativa?800:500,color:estourou?C.red:ativa?C.accent:C.textMuted}}>{"S"+(s+1)+(ativa?" ◀":"")}</div>
-        <div style={{fontSize:grande?11:8,color:C.textMuted,marginTop:1}}>{fmt(w.gasto)}</div>
-      </div>;})}
+    <div style={{position:"relative",height:grande?18:14,marginBottom:6}}>
+      {W.map((w,s)=>{const ativa=s===semAtualIdx,estourou=semanas[s].gasto>=semanas[s].meta;
+        return <div key={s} style={{position:"absolute",left:pc((w.ini+w.fim)/2),transform:"translateX(-50%)",whiteSpace:"nowrap",fontSize:grande?12:9,fontWeight:ativa?800:600,color:estourou?C.red:ativa?C.accent:C.textMuted}}>{w.n+(ativa?" \u25C0":"")}</div>;})}
     </div>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
       <div><span style={{fontSize:grande?17:13,fontWeight:800,color:real>teto?C.red:C.text}}>{fmt(real)}</span>
@@ -1634,7 +1662,7 @@ function CardDCP({dcpResumo,grande}){
           </div>
         </div>;
       })()}
-      <BarraDCP semanas={dcpResumo.semanas} base={dcpResumo.base} grande={grande}/>
+      <BarraDCP semanas={dcpResumo.semanas} base={dcpResumo.base} piso={dcpResumo.piso} grande={grande}/>
     </Card>;
 }
 function Card({children,style}){return <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:20,padding:"18px 20px",boxShadow:"none",...style}}>{children}</div>;}
@@ -1694,7 +1722,7 @@ function CicloCard({fluxo,nome,atual,dcpResumo,basais,data}){
     </div>}
     {atual&&dcpResumo&&dcpResumo.semanas.length>0&&<div style={{borderTop:"1px solid "+C.border,paddingTop:10,marginBottom:10}}>
       <div style={{marginBottom:6}}><Label>Saldo p/ Despesas Cotidianas (DCP)</Label></div>
-      <BarraDCP semanas={dcpResumo.semanas} base={dcpResumo.base}/>
+      <BarraDCP semanas={dcpResumo.semanas} base={dcpResumo.base} piso={dcpResumo.piso}/>
     </div>}
     {(()=>{
       // [NOVO 18/10, pedido do Marcus] Listas de SAIDAS e de RECEITAS do ciclo, com pilulas por conta
@@ -14219,7 +14247,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261106.0700 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261107.2130 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14345,7 +14373,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261106.0700
+      // HTML v3.20261107.2130
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();

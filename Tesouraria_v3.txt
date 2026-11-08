@@ -1,4 +1,4 @@
-// VERSAO: v3.20261106.1830
+// VERSAO: v3.20261107.2130
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -429,7 +429,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261106.1830",
+    scriptVersion: "v3.20261107.2130",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -8426,6 +8426,7 @@ function _resumoDCPCicloAtual(ss) {
 
   return {
     base: est.base,
+    piso: _minimoVitalDCP(cfg),
     numSemanas: semanas.length,
     totalGasto: _round2(semanas.reduce(function(s, w) { return s + w.gasto; }, 0)),
     semanas: semanas,
