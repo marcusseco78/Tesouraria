@@ -7603,7 +7603,14 @@ function Orcamento({data}){
   </div>;
 }
 
-function Ferramentas({onIrPara}){
+function Ferramentas({onIrPara,onUpdate}){
+  const [repMsg,setRepMsg]=useState("");const [repLoad,setRepLoad]=useState(false);
+  async function reparar(){
+    setRepLoad(true);setRepMsg("");
+    try{const d=await api({action:"repararProjecoes"});if(d){onUpdate&&onUpdate(d);const r=d._reparo||{};setRepMsg(r.erros&&r.erros.length?"Terminou com erro: "+r.erros.join(" | "):"Pronto: projeções completas até o último ciclo.");}}
+    catch(e){setRepMsg("Erro: "+e.message);}
+    setRepLoad(false);
+  }
   // [NOVO 11/10, pedido do Marcus] Visual "Mais usadas no topo": 3 atalhos numa caixa
   // escura (como a da Plano) + o resto em grade compacta, em 4 grupos.
   const IC={cot:"M3 7h18v12H3zM3 7l2-3h14l2 3M16 13h2",fix:"M17 2l4 4-4 4M3 11V9a3 3 0 013-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 01-3 3H3",
@@ -7627,6 +7634,12 @@ function Ferramentas({onIrPara}){
           <div style={{fontSize:12,fontWeight:800,marginTop:8,lineHeight:1.25}}>{T[k].curto||T[k].t}</div>
         </div>)}
       </div>
+    </div>
+    <div style={{marginTop:14,padding:"12px 14px",background:C.surface,border:"1px solid "+C.border,borderRadius:16}}>
+      <div style={{fontSize:13,fontWeight:800,color:C.text}}>Completar projeções</div>
+      <div style={{fontSize:12,color:C.textSub,marginTop:2}}>Cria o que faltar de receitas, cartões e cotidianas até o último ciclo. Não apaga nada.</div>
+      <button disabled={repLoad} onClick={reparar} style={{marginTop:10,minHeight:44,padding:"0 16px",borderRadius:12,border:"none",background:C.accent,color:"#fff",fontFamily:"inherit",fontWeight:800,fontSize:14,cursor:"pointer",opacity:repLoad?.6:1}}>{repLoad?"Completando…":"Completar agora"}</button>
+      {repMsg&&<div style={{fontSize:12,fontWeight:700,color:C.text,marginTop:8}}>{repMsg}</div>}
     </div>
     {GRUPOS.map(([nome,ks])=>{
       const resto=ks.filter(k=>!TOPO.includes(k));
@@ -14247,7 +14260,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261107.2130 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261110.1200 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14302,7 +14315,7 @@ function Tesouraria(){
         tab==="fluxo"       ? <Fluxo data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara} estouro={estouro}/> :
         tab==="historico"   ? <Historico data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara}/> :
         tab==="timeline"    ? <Timeline data={data} onUpdate={setData} onIrPara={irPara}/> :
-        tab==="ferramentas" ? <Ferramentas onIrPara={t=>{navegar(t);}}/> :
+        tab==="ferramentas" ? <Ferramentas onIrPara={t=>{navegar(t);}} onUpdate={setData}/> :
         tab==="transferencias" ? <TransferenciaEspelhada data={data} onUpdate={setData}/> :
         tab==="recorr"      ? <Recorrencias data={data} onUpdate={setData}/> :
         tab==="cartoes"     ? <Cartoes data={data} onUpdate={setData} destaque={destaque} onIrPara={irPara} fila={fila}/> :
@@ -14373,7 +14386,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261107.2130
+      // HTML v3.20261110.1200
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();

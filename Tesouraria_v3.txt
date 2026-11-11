@@ -1,4 +1,4 @@
-// VERSAO: v3.20261107.2130
+// VERSAO: v3.20261110.1200
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -195,6 +195,7 @@ function dispatch(p) {
     case "resetarAcctId":     return resetarAcctId(ss, p);
     case "salvarEnvelope":       return salvarEnvelope(ss, p);
     case "aplicarEnvelopesLote": return aplicarEnvelopesLote(ss, p);
+    case "repararProjecoes": return repararProjecoes(ss, p);
     case "renomearRecorrenciasLote": return renomearRecorrenciasLote(ss, p);
     case "apagarEnvelope":       return apagarEnvelope(ss, p);
     case "salvarCofre":          return salvarCofre(ss, p);
@@ -429,7 +430,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261107.2130",
+    scriptVersion: "v3.20261110.1200",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -6727,6 +6728,27 @@ function corrigirCategoriaDomesticoUmaVez() {
   SpreadsheetApp.flush();
   Logger.log("Corrigidas " + corrigidas + " linha(s) de DOMESTICO/DOMÉSTICO -> categoria real (TIPO da linha).");
 }
+/**
+ * [NOVO 06/11] Completa as projecoes dos 12 ciclos (cartoes recorrentes, receitas e DCP) SEM virar o ciclo.
+ * Tudo idempotente (so cria o que falta). Cada etapa isolada; devolve a lista de erros pra tela mostrar.
+ */
+function repararProjecoes(ss, p) {
+  var erros = [], feito = {};
+  var shCfg = ss.getSheetByName("CONFIG");
+  try { _preencherRecorrentesCartao12Ciclos(ss, 12); feito.cartoes = true; }
+  catch (e1) { erros.push("cartoes: " + String(e1 && e1.message || e1).slice(0, 160)); }
+  try { feito.receitas = _gerarReceitasFontes(ss, RECEITA_HORIZONTE_MESES).itensAdicionados; }
+  catch (e2) { erros.push("receitas: " + String(e2 && e2.message || e2).slice(0, 160)); }
+  try { _gerarDCPTodosCiclos(ss, 12, null); feito.dcp = true; }
+  catch (e3) { erros.push("DCP: " + String(e3 && e3.message || e3).slice(0, 160)); }
+  try { _ajustarProvisoesDCP(ss); } catch (e4) { erros.push("ajusteDCP: " + String(e4 && e4.message || e4).slice(0, 160)); }
+  try { if (shCfg) _updateConfig(shCfg, "ULTIMA_VIRADA_ERROS", ""); } catch (e5) {}
+  SpreadsheetApp.flush();
+  var resp = getData(ss);
+  resp._reparo = { erros: erros, feito: feito };
+  return resp;
+}
+
 function viradaCiclo(ss) {
 
   const hoje     = new Date();
@@ -6952,7 +6974,12 @@ function viradaCiclo(ss) {
   // persistia "sugestoes fracas" (comparacao entre as proprias previsoes
   // futuras de recorrencias diferentes, sem dado real do banco -- so
   // ruido, ver funcao _preencherRecorrentesCartao12Ciclos). Removido.
-  var resultadoPreenchimento = _preencherRecorrentesCartao12Ciclos(ss, 12);
+  // [06/11] Cada etapa isolada: uma falha NAO pode mais derrubar as seguintes (16/10 parou aqui e
+  // deixou cartoes, receitas e DCP sem o ultimo ciclo). Erros ficam em CONFIG ULTIMA_VIRADA_ERROS.
+  var _errosVirada = [];
+  var resultadoPreenchimento = null;
+  try { resultadoPreenchimento = _preencherRecorrentesCartao12Ciclos(ss, 12); }
+  catch (eV4) { _errosVirada.push("passo4(cartoes): " + String(eV4 && eV4.message || eV4).slice(0, 160)); }
 
   // 4.6. Receitas estruturadas (HSA/HSI/HDWC) -- mesmo padrao idempotente do
   //      passo 4 acima, so que gerando ate RECEITA_HORIZONTE_MESES a frente
@@ -6960,7 +6987,8 @@ function viradaCiclo(ss) {
   //      alinha com a virada dia 16 -- meses corridos e o que faz sentido
   //      aqui). Roda a cada virada pra "empurrar" o horizonte sempre pra
   //      frente, igual o resto do sistema.
-  _gerarReceitasFontes(ss, RECEITA_HORIZONTE_MESES);
+  try { _gerarReceitasFontes(ss, RECEITA_HORIZONTE_MESES); }
+  catch (eV46) { _errosVirada.push("passo4.6(receitas): " + String(eV46 && eV46.message || eV46).slice(0, 160)); }
 
   // 4.5. DCP semanal -- gera/completa os lancamentos "DCP N" de toda segunda-
   //      feira nos 12 ciclos (idempotente, mesmo padrao do passo 4 acima).
@@ -6970,9 +6998,12 @@ function viradaCiclo(ss) {
   //      inteiro -- os outros 11 ciclos futuros continuam no DCP_VALOR_BASE
   //      padrao, sem mexer, ate a propria virada deles (decisao explicita
   //      do Marcus, 08/07: escolha roda so na abertura, nunca no meio).
-  var nivelEnvelope = _escolherNivelEnvelope(ss, fmtDateSimple(novoInicio), fmtDateSimple(novoFim));
-  _gerarDCPTodosCiclos(ss, 12, nivelEnvelope ? nivelEnvelope.valor : null);
-  _updateConfig(shCfg, "DCP_ULTIMO_NIVEL_ESCOLHIDO", nivelEnvelope ? JSON.stringify(nivelEnvelope) : "");
+  try {
+    var nivelEnvelope = _escolherNivelEnvelope(ss, fmtDateSimple(novoInicio), fmtDateSimple(novoFim));
+    _gerarDCPTodosCiclos(ss, 12, nivelEnvelope ? nivelEnvelope.valor : null);
+    _updateConfig(shCfg, "DCP_ULTIMO_NIVEL_ESCOLHIDO", nivelEnvelope ? JSON.stringify(nivelEnvelope) : "");
+  } catch (eV45) { _errosVirada.push("passo4.5(DCP): " + String(eV45 && eV45.message || eV45).slice(0, 160)); }
+  try { _updateConfig(shCfg, "ULTIMA_VIRADA_ERROS", _errosVirada.length ? fmtDateSimple(hoje) + " | " + _errosVirada.join(" || ") : ""); } catch (eVc) {}
 
   // 5. Sincronizar TODAS as linhas de fatura do FLUXO com os totais reais dos cartoes
   //    (cobre todos os 12 meses, nao so o vencimento recem-criado)
