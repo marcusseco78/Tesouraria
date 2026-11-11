@@ -7607,7 +7607,7 @@ function Ferramentas({onIrPara,onUpdate}){
   const [repMsg,setRepMsg]=useState("");const [repLoad,setRepLoad]=useState(false);
   async function reparar(){
     setRepLoad(true);setRepMsg("");
-    try{const d=await api({action:"repararProjecoes"});if(d){onUpdate&&onUpdate(d);const r=d._reparo||{};setRepMsg(r.erros&&r.erros.length?"Terminou com erro: "+r.erros.join(" | "):"Pronto: projeções completas até o último ciclo.");}}
+    try{const d=await api({action:"repararProjecoes"});if(d){const r=d._reparo||{};setRepMsg(r.erros&&r.erros.length?"Terminou com erro: "+r.erros.join(" | "):"Pronto: projeções completas até o último ciclo.");setRepLoad(false);setTimeout(()=>{onUpdate&&onUpdate(d);},50);}}
     catch(e){setRepMsg("Erro: "+e.message);}
     setRepLoad(false);
   }
@@ -14260,7 +14260,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261110.1200 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261110.2350 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14386,7 +14386,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261110.1200
+      // HTML v3.20261110.2350
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
