@@ -7528,7 +7528,7 @@ function calcBalancoCiclo(data,escopo){
   const contaIdDe=(f)=>{const x=String(f||"CONTA");if(contasAt.some(c=>c.id===x))return x;const u=x.toUpperCase();const tp=u==="CONTA PJ"||u==="PJ"?"PJ":u==="CONTA"||u==="PF"?"PF":null;const c=tp&&contasAt.find(k=>k.tipo===tp);return c?c.id:x;};
   const noEscopo=(f)=>!escopo||contaIdDe(f)===escopo;
   const contaDoCartao={};(data.cartoes||[]).forEach(c=>{contaDoCartao[c.id]=c.conta;});
-  const rec=[],fix=[],ext=[],car=[];
+  const rec=[],fix=[],ext=[],car=[];let foraTransf=0;
   (data.fluxo||[]).forEach(r=>{
     const d=String(r.data||"").slice(0,10);
     if(!d||d<jan.inicio||d>jan.fim||!noEscopo(r.forma)) return;
@@ -7536,7 +7536,11 @@ function calcBalancoCiclo(data,escopo){
     if(tipo.indexOf("CARTAO")===0||cat==="CARTAO") return;          // fatura: as compras entram abaixo
     if(cat==="DCP_PROVISAO"||tipo==="DCP_PROVISAO"||cat==="DCP"||tipo==="DCP") return; // DCP vem do resumo
     const it={desc:r.descricao,valor:v,data:d};
-    if(tipo.indexOf("TRANSFERENCIA")>=0||cat.indexOf("TRANSFERENCIA")>=0){ if(escopo) (v>0?rec:fix).push({...it,desc:"Entre contas: "+it.desc}); return; }
+    if(tipo.indexOf("TRANSFERENCIA")>=0||cat.indexOf("TRANSFERENCIA")>=0){
+      // So o LUCROS recebido/enviado e renda planejada da conta; emprestimo, ressarcimento etc. ficam de fora.
+      const ehLucros=String(r.descricao||"").toUpperCase().indexOf("LUCROS")>=0;
+      if(escopo){ if(ehLucros) (v>0?rec:fix).push({...it,desc:"Lucros: "+it.desc}); else foraTransf+=v; }
+      return; }
     if(v>0) rec.push(it);
     else if(cat==="EXTRAORDINARIA"||tipo==="EXTRAORDINARIA") ext.push(it);
     else fix.push(it);
@@ -7561,7 +7565,7 @@ function calcBalancoCiclo(data,escopo){
   const R=soma(rec),F=soma(fix),sobraFixa=_r2(R+F-dcpPlan);
   const E=soma(ext),V=temDCP?_r2(dcpPlan-dcpUsado):0,C2=soma(car);
   const total=_r2(sobraFixa+E+V+C2);
-  return {jan,rec,fix,ext,car,R,F,temDCP,dcpPlan,dcpUsado,sobraFixa,E,V,C:C2,total};
+  return {foraTransf:_r2(foraTransf),jan,rec,fix,ext,car,R,F,temDCP,dcpPlan,dcpUsado,sobraFixa,E,V,C:C2,total};
 }
 function CardBalancoCiclo({data}){
   const contasAt=useMemo(()=>(data.contas||[]).filter(c=>c.ativa!==false),[data.contas]);
@@ -7573,7 +7577,7 @@ function CardBalancoCiclo({data}){
   const inteiro=v=>(v<0?"− ":v>0?"+ ":"")+"R$ "+Math.round(Math.abs(v)).toLocaleString("pt-BR");
   const inteiroSS=v=>(v<0?"− ":"")+"R$ "+Math.round(Math.abs(v)).toLocaleString("pt-BR");
   const dm=d=>d.slice(8,10)+"/"+d.slice(5,7);
-  const pct=b.sobraFixa>0?Math.round(b.total/b.sobraFixa*100):null;
+  const pct=b.sobraFixa>0&&b.total>=0?Math.round(b.total/b.sobraFixa*100):null;
   const lista=l=>[...l].sort((x,y)=>Math.abs(y.valor)-Math.abs(x.valor)).slice(0,40);
   const linhas=[
     {k:"sobra",t:"Sobra fixa",s:"Receitas − fixas"+(b.temDCP?" − DCP planejado":""),v:b.sobraFixa,sinal:false,
@@ -7603,7 +7607,7 @@ function CardBalancoCiclo({data}){
       <div style={{fontSize:11,letterSpacing:".06em",fontWeight:800,color:"#A9B6DA"}}>BALANÇO PROJETADO<div style={{fontWeight:600,letterSpacing:0,marginTop:2}}>{b.total>=0?"fecha no azul":"fecha no vermelho"}{pct!=null?" · "+pct+"% da sobra fixa":""}</div></div>
       <div style={{fontSize:26,fontWeight:800,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap",color:b.total<0?"#FFB4AC":"#7FE0B5"}}>{inteiro(b.total)}</div>
     </div>
-    <div style={{fontSize:11,color:C.textMuted,marginTop:8,lineHeight:1.4}}>Toque numa linha para ver os lançamentos. Compras de cartão entram pela data da compra.{!escopo?" Transferências entre contas próprias ficam de fora.":""}</div>
+    <div style={{fontSize:11,color:C.textMuted,marginTop:8,lineHeight:1.4}}>Toque numa linha para ver os lançamentos. Compras de cartão entram pela data da compra.{!escopo?" Transferências entre contas próprias ficam de fora.":(b.foraTransf?" Fora da conta: "+inteiroSS(b.foraTransf)+" em transferências entre contas (empréstimo, ressarcimento).":"")}</div>
   </Card>;
 }
 function CardOrcamento({data,onAbrir}){
@@ -14350,7 +14354,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261111.2359 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261112.1640 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14476,7 +14480,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261111.2359
+      // HTML v3.20261112.1640
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
