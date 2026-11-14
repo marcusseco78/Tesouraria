@@ -1,4 +1,4 @@
-// VERSAO: v3.20261114.1930
+// VERSAO: v3.20261114.2010
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -430,7 +430,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261114.1930",
+    scriptVersion: "v3.20261114.2010",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -12298,7 +12298,9 @@ function regerarOcorrenciasRecorrencia(ss, p) {
   } catch (e) { o = {}; }
 
   const hojeStr = fmtDateSimple(new Date());
-  const corteISO = p.aPartirDe ? String(p.aPartirDe).slice(0, 10) : ""; // [NOVO 13/10]
+  // [CORRIGIDO 14/11, bug real: trocar 135->145 da faxina recriou PROGRAMADO em datas ja executadas]
+  // Sem corte informado, vale HOJE: o passado (executado ou atrasado) nunca e apagado nem regerado.
+  const corteISO = p.aPartirDe ? String(p.aPartirDe).slice(0, 10) : _hojeISOBRT(); // [NOVO 13/10]
   // semApagar=true: quem chamou ja apagou (apagarFuturosRecorrencia, mantendo os editados a mao); aqui so gera.
   const pularApagar = !!p.semApagar;
   var apagadosFluxo = 0, apagadosPorCartao = {};
@@ -12324,7 +12326,7 @@ function regerarOcorrenciasRecorrencia(ss, p) {
       // verdade (nunca EXECUTADO), entao e seguro apagar independente da
       // data -- e o proprio motivo de existir dessa funcao.
       if (_normAliasDesc(String(r[1] || "")) !== descNorm) return;
-      if (corteISO && _isoDeData(r[0]) < corteISO) return;
+      if (corteISO && _isoDeData(r[0]) < corteISO && _isoDeData(r[0]) >= "2000-01-01") return; // data quebrada (1970) continua sendo limpa
       var obsR = {};
       try { obsR = JSON.parse(r[8] || "{}"); } catch (e) {}
       if (obsR.extratoId) return; // ja conciliado, nunca apaga
