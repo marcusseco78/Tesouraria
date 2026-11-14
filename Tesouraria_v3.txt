@@ -1,4 +1,4 @@
-// VERSAO: v3.20261110.1200
+// VERSAO: v3.20261114.1930
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -430,7 +430,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261110.1200",
+    scriptVersion: "v3.20261114.1930",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -13520,7 +13520,8 @@ function registrarNotificacao(ss, p) {
   if (!tsMs) { var tsP = Date.parse(String(p.ts || "")); tsMs = tsP || Date.now(); }
   if (tsMs < 1e12) tsMs = tsMs * 1000; // veio em segundos
   // chave: texto + minuto (a mesma notificacao chegando 2x nao duplica)
-  var key = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, titulo + "|" + texto + "|" + Math.floor(tsMs / 120000)));
+  // [CORRIGIDO 14/11] prefixo "n": chave base64 que comecava com + - = virava formula (#ERROR!) e a notificacao nao era mais achada
+  var key = "n" + Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, titulo + "|" + texto + "|" + Math.floor(tsMs / 120000)));
   var last = sh.getLastRow();
   if (last >= 2) {
     var keys = sh.getRange(2, 1, last - 1, 1).getValues();
@@ -13536,7 +13537,20 @@ function _notifDataIso(v) {
   if (v instanceof Date) return Utilities.formatDate(v, "America/Sao_Paulo", "yyyy-MM-dd");
   return String(v).slice(0, 10);
 }
+function _curarChavesNotif(sh) {
+  // [NOVO 14/11] chaves antigas viradas em erro (#ERROR!) ganham chave nova e unica
+  var last = sh.getLastRow();
+  if (last < 2) return;
+  var rng = sh.getRange(2, 1, last - 1, 1), ks = rng.getValues(), mudou = false;
+  for (var i = 0; i < ks.length; i++) {
+    var k = String(ks[i][0]);
+    if (k.charAt(0) === "#") { ks[i][0] = "ne" + (i + 2) + "x" + new Date().getTime().toString(36); mudou = true; }
+  }
+  if (mudou) { rng.setNumberFormat("@"); rng.setValues(ks); SpreadsheetApp.flush(); }
+}
+
 function _lerNotificacoesPendentes(ss) {
+  try { _curarChavesNotif(_garantirAbaNotif(ss)); } catch (eCk) { Logger.log('curarChaves: ' + eCk); }
   var sh = ss.getSheetByName(NOTIF_ABA);
   if (!sh || sh.getLastRow() < 2) return { itens: [], mapa: {} };
   var rows = sh.getRange(2, 1, sh.getLastRow() - 1, 12).getValues();
