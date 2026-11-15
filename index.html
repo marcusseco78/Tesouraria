@@ -93,7 +93,7 @@ function _diasEntreISO(a,b){
   return Math.round((new Date(b+"T00:00:00")-new Date(a+"T00:00:00"))/86400000);
 }
 function fatorProjetado(tipoInvestimento,params,dias){
-  if(dias<=0) return 1;
+  if(dias<=0||tipoInvestimento==="sem_correcao") return 1;
   if(tipoInvestimento==="prefixado"){
     return Math.pow(1+(params.taxaAnual||0)/100,dias/365);
   }
@@ -113,7 +113,7 @@ function fatorProjetado(tipoInvestimento,params,dias){
 // diminui). sinalFinal = 1 pra Cofre (saldo positivo cresce) ou -1 pra
 // Divida (mostrada negativa -- crescer em magnitude piora o saldo exibido).
 function projetarLinhaFutura(saldoBase,tipoInvestimento,params,cicloInicio,eventosReais,sinalFinal){
-  if(tipoInvestimento==="renda_variavel"||!cicloInicio||!(saldoBase>0)) {
+  if(tipoInvestimento==="renda_variavel"||tipoInvestimento==="sem_correcao"||!cicloInicio||!(saldoBase>0)) {
     let acc=saldoBase;
     return (eventosReais||[]).map(e=>{acc+=e.deltaAbs;return {data:e.data,tipo:e.tipo,delta:e.deltaAbs*sinalFinal,desc:e.desc,saldoApos:acc*sinalFinal};});
   }
@@ -2684,12 +2684,12 @@ function CardDividaPosFixada({divida,onUpdate,data}){
   const [loadCDI,setLoadCDI]=useState(false);
   const [resultadoCDI,setResultadoCDI]=useState(null);
   const [ajustando,setAjustando]=useState(false);
-  const [editTaxa,setEditTaxa]=useState(false);const [percEdit,setPercEdit]=useState("");const [loadTaxa,setLoadTaxa]=useState(false);
+  const [editTaxa,setEditTaxa]=useState(false);const [percEdit,setPercEdit]=useState("");const [tipoEdit,setTipoEdit]=useState("cdi");const [loadTaxa,setLoadTaxa]=useState(false);
   async function salvarTaxa(){
-    const pc=parseFloat(String(percEdit).replace(",","."));
-    if(isNaN(pc)||pc<0){alert("Informe um percentual do CDI (0 = sem correção).");return;}
+    const pc=tipoEdit==="cdi"?parseFloat(String(percEdit).replace(",",".")):100;
+    if(isNaN(pc)||pc<0){alert("Informe o percentual do CDI.");return;}
     setLoadTaxa(true);
-    try{onUpdate&&onUpdate(await api({action:"salvarCofre",id:cofre.id,nome:cofre.nome,tipo_investimento:cofre.tipoInvestimento||"cdi",percentual_cdi:pc}));setEditTaxa(false);}catch(e){alert(e.message);}
+    try{onUpdate&&onUpdate(await api({action:"salvarCofre",id:cofre.id,nome:cofre.nome,tipo_investimento:tipoEdit,percentual_cdi:pc}));setEditTaxa(false);}catch(e){alert(e.message);}
     setLoadTaxa(false);
   }
   const [saldoReal,setSaldoReal]=useState("");
@@ -4207,9 +4207,10 @@ function _detalheTaxaCofre(cofre){
   if(t==="prefixado") return "Pré-fixada "+(cofre.taxaAnual||0)+"% a.a.";
   if(t==="ipca") return "IPCA+"+(cofre.spreadAnual||0)+"% a.a.";
   if(t==="renda_variavel") return "Carteira de ações";
+  if(t==="sem_correcao") return "Sem correção";
   return (cofre.percentualCdi==null?100:cofre.percentualCdi)+"% do CDI";
 }
-const TIPOS_INVESTIMENTO_COFRE=[["cdi","CDI"],["prefixado","Pré-fixada"],["ipca","IPCA+"],["renda_variavel","Renda Var."]];
+const TIPOS_INVESTIMENTO_COFRE=[["cdi","CDI"],["prefixado","Pré-fixada"],["ipca","IPCA+"],["renda_variavel","Renda Var."],["sem_correcao","Sem correção"]];
 // [25/07] Pedido do Marcus: tipo de investimento tao evidente quanto as
 // pilulas de Categoria -- a do tipo do cofre "acesa" (cor cheia), as
 // outras 3 "apagadas" (cinza, translucidas). Nao e um seletor (o tipo
@@ -4417,16 +4418,16 @@ function CardCofre({cofre,onUpdate,data}){
     </div>}
 
     {!ehRV&&<>
-      <button onClick={atualizarRendimento} disabled={loadRendimento}
+      {cofre.tipoInvestimento!=="sem_correcao"&&<button onClick={atualizarRendimento} disabled={loadRendimento}
         style={{width:"100%",marginTop:6,background:"none",border:"1px solid "+C.teal,color:C.teal,borderRadius:6,padding:"5px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
         {loadRendimento?"Buscando no Banco Central…":"🔄 Atualizar rendimento agora"}
-      </button>
+      </button>}
       {resultadoRendimento&&<div style={{fontSize:10,color:resultadoRendimento.atualizado?C.textSub:C.textMuted,marginTop:4,fontStyle:resultadoRendimento.atualizado?"normal":"italic"}}>
         {resultadoRendimento.atualizado
           ?(resultadoRendimento.diasUteis!=null?`${resultadoRendimento.diasUteis} dia(s) útil(eis)`:resultadoRendimento.mesesFechados!=null?`${resultadoRendimento.mesesFechados} mês(es) fechado(s)`:`${resultadoRendimento.dias} dia(s)`)+`: +${fmt(resultadoRendimento.jurosAcumulado)} de rendimento`
           :resultadoRendimento.motivo}
       </div>}
-      <div style={{fontSize:9,color:C.textMuted,marginTop:4,fontStyle:"italic"}}>Também roda sozinho, automaticamente, na virada de ciclo (dia 16).</div>
+      {cofre.tipoInvestimento!=="sem_correcao"&&<div style={{fontSize:9,color:C.textMuted,marginTop:4,fontStyle:"italic"}}>Também roda sozinho, automaticamente, na virada de ciclo (dia 16).</div>}
 
       {!ajustando
         ?<button onClick={()=>{setSaldoReal(formatarValorInicial(cofre.saldo));setAjustando(true);}}
@@ -4448,16 +4449,19 @@ function CardCofre({cofre,onUpdate,data}){
             </button>
           </div>
         </div>}
-      {!ehRV&&(cofre.tipoInvestimento||"cdi")==="cdi"&&(!editTaxa
-        ?<button onClick={()=>{setPercEdit(String(cofre.percentualCdi==null?100:cofre.percentualCdi));setEditTaxa(true);}}
+      {!ehRV&&((cofre.tipoInvestimento||"cdi")==="cdi"||cofre.tipoInvestimento==="sem_correcao")&&(!editTaxa
+        ?<button onClick={()=>{setPercEdit(String(cofre.percentualCdi==null||cofre.percentualCdi===0?100:cofre.percentualCdi));setTipoEdit(cofre.tipoInvestimento==="sem_correcao"?"sem_correcao":"cdi");setEditTaxa(true);}}
           style={{width:"100%",marginTop:6,background:"none",border:"none",color:C.textMuted,fontSize:10,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>
-          ✏️ Mudar o % do CDI (0 = sem correção)
+          ✏️ Mudar a correção (CDI ou sem correção)
         </button>
         :<div style={{background:C.surface,borderRadius:8,padding:10,marginTop:6}}>
-          <div style={{fontSize:9,color:C.textMuted,marginBottom:6}}>% do CDI usado na correção. Use 0 para dinheiro que não rende (ex.: emprestado). Vale daqui para frente.</div>
+          <div style={{fontSize:9,color:C.textMuted,marginBottom:6}}>Escolha como este cofre é corrigido. "Sem correção" serve para dinheiro emprestado. Vale daqui para frente.</div>
+          <div style={{display:"flex",gap:6,marginBottom:6}}>
+            {[["cdi","CDI"],["sem_correcao","Sem correção"]].map(([id,l])=><button key={id} type="button" onClick={()=>setTipoEdit(id)} style={{flex:1,padding:"7px",borderRadius:8,border:"1px solid "+(tipoEdit===id?C.teal:C.border),background:tipoEdit===id?C.tealLight:C.surface,color:tipoEdit===id?C.teal:C.textSub,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>)}
+          </div>
           <div style={{display:"flex",gap:6}}>
-            <input type="text" inputMode="decimal" value={percEdit} onChange={e=>setPercEdit(e.target.value)}
-              style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
+            {tipoEdit==="cdi"?<input type="text" inputMode="decimal" value={percEdit} onChange={e=>setPercEdit(e.target.value)} placeholder="% do CDI"
+              style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>:<div style={{flex:1}}/>}
             <button onClick={salvarTaxa} disabled={loadTaxa} style={{background:C.teal,color:"#fff",border:"none",borderRadius:6,padding:"0 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>{loadTaxa?"…":"Salvar"}</button>
             <button onClick={()=>setEditTaxa(false)} style={{background:"none",color:C.textMuted,border:"1px solid "+C.border,borderRadius:6,padding:"0 10px",fontSize:12,cursor:"pointer"}}>X</button>
           </div>
@@ -4629,7 +4633,7 @@ function Cofres({data,onUpdate}){
       <div style={{marginBottom:8}}>
         <label style={{fontSize:10,fontWeight:700,color:C.textSub,textTransform:"uppercase"}}>Tipo de investimento</label>
         <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:4}}>
-          {[["cdi","Pós-fixado (CDI)"],["prefixado","Pré-fixada"],["ipca","IPCA+"],["renda_variavel","Renda Variável"]].map(([id,l])=>
+          {[["cdi","Pós-fixado (CDI)"],["prefixado","Pré-fixada"],["ipca","IPCA+"],["renda_variavel","Renda Variável"],["sem_correcao","Sem correção"]].map(([id,l])=>
             <button key={id} onClick={()=>setTipoInv(id)} type="button"
               style={{padding:"6px 9px",borderRadius:7,border:"1px solid "+(tipoInv===id?C.teal:C.border),
                 background:tipoInv===id?C.tealLight:C.surface,color:tipoInv===id?C.teal:C.textSub,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>)}
@@ -4651,6 +4655,9 @@ function Cofres({data,onUpdate}){
         <input type="number" step="0.1" value={spreadAnual} onChange={e=>setSpreadAnual(e.target.value)}
           style={{width:"100%",padding:"7px 9px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
         <div style={{fontSize:9,color:C.textMuted,marginTop:3}}>O IPCA fechado sai com atraso (~dia 10 do mês seguinte) — a correção fica sempre um pouco atrasada, é esperado.</div>
+      </div>}
+      {tipoInv==="sem_correcao"&&<div style={{marginBottom:10,fontSize:10,color:C.textMuted,background:C.borderLight,borderRadius:6,padding:8}}>
+        O saldo só muda com aporte e resgate. Serve para dinheiro emprestado, valores a receber sem correção etc.
       </div>}
       {tipoInv==="renda_variavel"&&<div style={{marginBottom:10,fontSize:10,color:C.textMuted,background:C.borderLight,borderRadius:6,padding:8}}>
         Sem taxa fixa aqui — cada aporte/resgate registra o papel (ticker), cotação e quantidade de ações. O saldo é a soma de cada papel × última cotação atualizada.
@@ -9353,7 +9360,7 @@ function valorCofresProjetadoNaData(cofres,dataISO,cfg){
   const hj=hoje();
   const dias=_diasEntreISO(hj,dataISO);
   return (cofres||[]).reduce((soma,c)=>{
-    if(c.tipoInvestimento==="renda_variavel"||dias<=0) return soma+c.saldo;
+    if(c.tipoInvestimento==="renda_variavel"||c.tipoInvestimento==="sem_correcao"||dias<=0) return soma+c.saldo;
     const taxas={percentualCdi:c.percentualCdi,taxaAnual:c.taxaAnual,spreadAnual:c.spreadAnual,
       ultimaTaxaCdiDiaria:cfg.ULTIMA_TAXA_CDI_DIARIA!=null?Number(cfg.ULTIMA_TAXA_CDI_DIARIA):null,
       ultimaTaxaIpcaMensal:cfg.ULTIMA_TAXA_IPCA_MENSAL!=null?Number(cfg.ULTIMA_TAXA_IPCA_MENSAL):null};
@@ -14399,7 +14406,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261115.0900 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261115.0930 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14525,7 +14532,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261115.0900
+      // HTML v3.20261115.0930
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();

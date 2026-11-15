@@ -1,4 +1,4 @@
-// VERSAO: v3.20261115.0900
+// VERSAO: v3.20261115.0930
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -430,7 +430,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261115.0900",
+    scriptVersion: "v3.20261115.0930",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -5813,7 +5813,7 @@ function salvarCofre(ss, p) {
   // [25/07] Tipo de investimento -- "cdi" e o padrao (retrocompativel com
   // todo cofre criado antes de hoje, que nunca grava esse campo).
   const tipoInvestimento = String(p.tipo_investimento || "cdi");
-  const tiposValidos = ["cdi", "prefixado", "ipca", "renda_variavel"];
+  const tiposValidos = ["cdi", "prefixado", "ipca", "renda_variavel", "sem_correcao"];
   if (tiposValidos.indexOf(tipoInvestimento) < 0) throw new Error("Tipo de investimento invalido: " + tipoInvestimento);
   // [14/11] 0% e valido (cofre sem correcao, ex.: dinheiro emprestado): so cai em 100 quando nao vier valor
   const percentualCdi = (p.percentual_cdi === undefined || p.percentual_cdi === null || p.percentual_cdi === "" || isNaN(Number(p.percentual_cdi))) ? 100 : Number(p.percentual_cdi);
@@ -5845,7 +5845,9 @@ function salvarCofre(ss, p) {
       if (c.id === id) {
         achou = true;
         const tipoAntigo = c.tipoInvestimento || "cdi";
-        const tipoFinal = tipoAntigo; // tipo nunca muda depois de criado
+        // tipo nunca muda depois de criado, exceto entre CDI e "sem correcao" (nao ha mecanismo diferente por baixo)
+        const novoTipo = String(p.tipo_investimento || tipoAntigo);
+        const tipoFinal = ((tipoAntigo === "cdi" || tipoAntigo === "sem_correcao") && (novoTipo === "cdi" || novoTipo === "sem_correcao")) ? novoTipo : tipoAntigo;
         // [NOVO 01/08] Fase 4 -- conta e editavel a qualquer momento (so
         // exibicao/organizacao, nao recalcula nada), preserva a atual se
         // nao vier no payload.
@@ -5906,6 +5908,7 @@ function _atualizarRendimentoCofre(ss, shCfg, cofre) {
   if (tipo === "renda_variavel") {
     return { nome: cofre.nome, atualizado: false, motivo: "Renda Variavel nao tem formula automatica -- use '🔄 Atualizar carteira'." };
   }
+  if (tipo === "sem_correcao") return { nome: cofre.nome, atualizado: false, motivo: "Cofre sem correcao: o saldo so muda com aporte e resgate." };
   if (tipo === "prefixado") return _corrigirCofrePrefixado(ss, shCfg, cofre);
   if (tipo === "ipca") return _corrigirCofreIpca(ss, shCfg, cofre);
   return _corrigirCofreCdi(ss, shCfg, cofre);
