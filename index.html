@@ -7561,11 +7561,16 @@ function calcBalancoCiclo(data,escopo){
   const provs=(data.fluxo||[]).filter(r=>r.categoria==="DCP_PROVISAO");
   const temDCP=dr.numSemanas>0&&(!escopo||provs.some(r=>contaIdDe(r.forma)===escopo));
   const dcpPlan=temDCP?_r2(dr.numSemanas*dr.base):0,dcpUsado=temDCP?_r2(dr.totalGasto):0;
+  // [14/11, regra do Marcus] O DCP e compensado entre semanas: vale o acumulado. Excesso = gasto total
+  // - base x semanas ja iniciadas (so as ja comecadas; negativo = economia, devolve poupanca).
+  const semIni=temDCP?(dr.semanas||[]).filter(w=>String(w.data||"").slice(0,10)<=hoje()).length:0;
+  const dcpPlanIni=temDCP?_r2(dr.base*semIni):0;
+  const dcpExcesso=temDCP?_r2(dcpUsado-dcpPlanIni):0;
   const soma=l=>_r2(l.reduce((s,x)=>s+x.valor,0));
   const R=soma(rec),F=soma(fix),sobraFixa=_r2(R+F-dcpPlan);
-  const E=soma(ext),V=temDCP?_r2(dcpPlan-dcpUsado):0,C2=soma(car);
+  const E=soma(ext),V=temDCP?_r2(-dcpExcesso):0,C2=soma(car);
   const total=_r2(sobraFixa+E+V+C2);
-  return {foraTransf:_r2(foraTransf),jan,rec,fix,ext,car,R,F,temDCP,dcpPlan,dcpUsado,sobraFixa,E,V,C:C2,total};
+  return {dcpExcesso,dcpPlanIni,foraTransf:_r2(foraTransf),jan,rec,fix,ext,car,R,F,temDCP,dcpPlan,dcpUsado,sobraFixa,E,V,C:C2,total};
 }
 function CardBalancoCiclo({data}){
   const contasAt=useMemo(()=>(data.contas||[]).filter(c=>c.ativa!==false),[data.contas]);
@@ -7583,7 +7588,7 @@ function CardBalancoCiclo({data}){
     {k:"sobra",t:"Sobra fixa",s:"Receitas − fixas"+(b.temDCP?" − DCP planejado":""),v:b.sobraFixa,sinal:false,
       det:[["Receitas do ciclo",b.R],["Despesas fixas",b.F]].concat(b.temDCP?[["DCP planejado",-b.dcpPlan]]:[])},
     {k:"ext",t:"Extraordinárias",s:b.ext.length+" lançamento"+(b.ext.length===1?"":"s"),v:b.E,sinal:true,itens:lista(b.ext)},
-    ...(b.temDCP?[{k:"dcp",t:"Despesas semanais",s:"DCP: planejado − usado",v:b.V,sinal:true,det:[["Planejado",b.dcpPlan],["Usado",-b.dcpUsado]]}]:[]),
+    ...(b.temDCP?[{k:"dcp",t:"Despesas semanais",s:"DCP: acumulado do ciclo",v:b.V,sinal:true,det:[["Planejado até agora",b.dcpPlanIni],["Usado",-b.dcpUsado]]}]:[]),
     {k:"car",t:"Cartões",s:"Só o que não é fixa nem DCP",v:b.C,sinal:true,itens:lista(b.car)}];
   return <Card style={{padding:"16px 14px"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"0 2px 8px"}}>
@@ -7592,6 +7597,24 @@ function CardBalancoCiclo({data}){
       {contasAt.map(c=><Pil key={c.id} on={esc===c.id} onClick={()=>{setEsc(c.id);setAberta("");}}>{c.nome}</Pil>)}
       {contasAt.length>1&&<Pil on={esc==="__todas"} onClick={()=>{setEsc("__todas");setAberta("");}}>Juntas</Pil>}
     </div>
+    {b.sobraFixa>0&&(()=>{
+      const cD=Math.max(b.dcpExcesso,0),cE=-b.E,cC=-b.C,resta2=b.total;
+      const dom=Math.max(b.sobraFixa,cD+cE+cC)||1,p=v=>(v/dom*100)+"%",over=resta2<0;
+      const cores={d:"#E08A1E",e:"#7A5AC8",c:C.accent};
+      return <div style={{marginBottom:10}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
+          <div style={{fontSize:11,fontWeight:800,color:C.textMuted,letterSpacing:".06em"}}>CAPACIDADE DE POUPANÇA</div>
+          <div style={{fontSize:11,fontWeight:700,color:C.textMuted}}>consumido {inteiroSS(cD+cE+cC)} de {inteiroSS(b.sobraFixa)}</div></div>
+        <div style={{position:"relative",height:16,margin:"8px 0 6px"}}>
+          <div style={{position:"absolute",inset:0,borderRadius:99,overflow:"hidden",background:C.borderLight,display:"flex"}}>
+            <div style={{width:p(cD),background:cores.d}}/><div style={{width:p(cE),background:cores.e}}/><div style={{width:p(cC),background:cores.c}}/></div>
+          {over&&<div style={{position:"absolute",top:-3,bottom:-3,left:p(b.sobraFixa),width:2,marginLeft:-1,background:C.dark,borderRadius:2}}/>}
+        </div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:"4px 12px",fontSize:11,color:C.textSub,marginBottom:4}}>
+          <span><i style={{display:"inline-block",width:9,height:9,borderRadius:3,background:cores.d,marginRight:5}}/>DCP {b.dcpExcesso<0?"(economia) ":"(excesso) "}{inteiroSS(Math.abs(b.dcpExcesso))}</span>
+          <span><i style={{display:"inline-block",width:9,height:9,borderRadius:3,background:cores.e,marginRight:5}}/>Extra {inteiroSS(cE)}</span>
+          <span><i style={{display:"inline-block",width:9,height:9,borderRadius:3,background:cores.c,marginRight:5}}/>Cartões {inteiroSS(cC)}</span></div>
+      </div>;})()}
     {linhas.map((l,i)=><div key={l.k} style={{borderTop:i?"1px solid "+C.border:"none"}}>
       <div onClick={()=>setAberta(aberta===l.k?"":l.k)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,minHeight:52,cursor:"pointer"}}>
         <div style={{minWidth:0}}><div style={{fontSize:14,fontWeight:800,color:C.text}}>{l.t}</div><div style={{fontSize:11,fontWeight:600,color:C.textMuted}}>{l.s}</div></div>
@@ -14354,7 +14377,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261115.0030 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261115.0110 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14480,7 +14503,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261115.0030
+      // HTML v3.20261115.0110
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
