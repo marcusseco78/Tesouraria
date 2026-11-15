@@ -2684,6 +2684,14 @@ function CardDividaPosFixada({divida,onUpdate,data}){
   const [loadCDI,setLoadCDI]=useState(false);
   const [resultadoCDI,setResultadoCDI]=useState(null);
   const [ajustando,setAjustando]=useState(false);
+  const [editTaxa,setEditTaxa]=useState(false);const [percEdit,setPercEdit]=useState("");const [loadTaxa,setLoadTaxa]=useState(false);
+  async function salvarTaxa(){
+    const pc=parseFloat(String(percEdit).replace(",","."));
+    if(isNaN(pc)||pc<0){alert("Informe um percentual do CDI (0 = sem correção).");return;}
+    setLoadTaxa(true);
+    try{onUpdate&&onUpdate(await api({action:"salvarCofre",id:cofre.id,nome:cofre.nome,tipo_investimento:cofre.tipoInvestimento||"cdi",percentual_cdi:pc}));setEditTaxa(false);}catch(e){alert(e.message);}
+    setLoadTaxa(false);
+  }
   const [saldoReal,setSaldoReal]=useState("");
   const [loadAjuste,setLoadAjuste]=useState(false);
 
@@ -4199,7 +4207,7 @@ function _detalheTaxaCofre(cofre){
   if(t==="prefixado") return "Pré-fixada "+(cofre.taxaAnual||0)+"% a.a.";
   if(t==="ipca") return "IPCA+"+(cofre.spreadAnual||0)+"% a.a.";
   if(t==="renda_variavel") return "Carteira de ações";
-  return (cofre.percentualCdi||100)+"% do CDI";
+  return (cofre.percentualCdi==null?100:cofre.percentualCdi)+"% do CDI";
 }
 const TIPOS_INVESTIMENTO_COFRE=[["cdi","CDI"],["prefixado","Pré-fixada"],["ipca","IPCA+"],["renda_variavel","Renda Var."]];
 // [25/07] Pedido do Marcus: tipo de investimento tao evidente quanto as
@@ -4440,6 +4448,20 @@ function CardCofre({cofre,onUpdate,data}){
             </button>
           </div>
         </div>}
+      {!ehRV&&(cofre.tipoInvestimento||"cdi")==="cdi"&&(!editTaxa
+        ?<button onClick={()=>{setPercEdit(String(cofre.percentualCdi==null?100:cofre.percentualCdi));setEditTaxa(true);}}
+          style={{width:"100%",marginTop:6,background:"none",border:"none",color:C.textMuted,fontSize:10,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>
+          ✏️ Mudar o % do CDI (0 = sem correção)
+        </button>
+        :<div style={{background:C.surface,borderRadius:8,padding:10,marginTop:6}}>
+          <div style={{fontSize:9,color:C.textMuted,marginBottom:6}}>% do CDI usado na correção. Use 0 para dinheiro que não rende (ex.: emprestado). Vale daqui para frente.</div>
+          <div style={{display:"flex",gap:6}}>
+            <input type="text" inputMode="decimal" value={percEdit} onChange={e=>setPercEdit(e.target.value)}
+              style={{flex:1,padding:"6px 8px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"right",fontFamily:"inherit",boxSizing:"border-box"}}/>
+            <button onClick={salvarTaxa} disabled={loadTaxa} style={{background:C.teal,color:"#fff",border:"none",borderRadius:6,padding:"0 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>{loadTaxa?"…":"Salvar"}</button>
+            <button onClick={()=>setEditTaxa(false)} style={{background:"none",color:C.textMuted,border:"1px solid "+C.border,borderRadius:6,padding:"0 10px",fontSize:12,cursor:"pointer"}}>X</button>
+          </div>
+        </div>)}
     </>}
 
     {/* [25/07] Simplificado a pedido do Marcus: sem painel intermediario
@@ -4577,7 +4599,7 @@ function Cofres({data,onUpdate}){
     setLoad(true);
     try{
       const params={action:"salvarCofre",nome,tipo_investimento:tipoInv,conta:contaCofre};
-      if(tipoInv==="cdi") params.percentual_cdi=parseFloat(percCdi)||100;
+      if(tipoInv==="cdi"){const pc=parseFloat(String(percCdi).replace(",","."));params.percentual_cdi=isNaN(pc)?100:pc;}
       else if(tipoInv==="prefixado") params.taxa_anual=parseFloat(taxaAnual)||0;
       else if(tipoInv==="ipca") params.spread_anual=parseFloat(spreadAnual)||0;
       const r=await api(params);
@@ -14377,7 +14399,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261115.0110 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261115.0900 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14503,7 +14525,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261115.0110
+      // HTML v3.20261115.0900
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();

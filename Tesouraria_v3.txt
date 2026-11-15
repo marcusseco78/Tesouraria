@@ -1,4 +1,4 @@
-// VERSAO: v3.20261114.2010
+// VERSAO: v3.20261115.0900
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -430,7 +430,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261114.2010",
+    scriptVersion: "v3.20261115.0900",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -5815,7 +5815,8 @@ function salvarCofre(ss, p) {
   const tipoInvestimento = String(p.tipo_investimento || "cdi");
   const tiposValidos = ["cdi", "prefixado", "ipca", "renda_variavel"];
   if (tiposValidos.indexOf(tipoInvestimento) < 0) throw new Error("Tipo de investimento invalido: " + tipoInvestimento);
-  const percentualCdi = Number(p.percentual_cdi) || 100;
+  // [14/11] 0% e valido (cofre sem correcao, ex.: dinheiro emprestado): so cai em 100 quando nao vier valor
+  const percentualCdi = (p.percentual_cdi === undefined || p.percentual_cdi === null || p.percentual_cdi === "" || isNaN(Number(p.percentual_cdi))) ? 100 : Number(p.percentual_cdi);
   const taxaAnual = Number(p.taxa_anual) || 0;
   const spreadAnual = Number(p.spread_anual) || 0;
 
