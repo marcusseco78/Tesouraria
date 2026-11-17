@@ -1,4 +1,4 @@
-// VERSAO: v3.20261117.1700
+// VERSAO: v3.20261117.1830
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -175,6 +175,7 @@ function dispatch(p) {
     case "ignorarNotificacao": return ignorarNotificacao(ss, p);
     case "vincularNotificacao": return vincularNotificacao(ss, p);
     case "classificarNotificacaoConta": return classificarNotificacaoConta(ss, p);
+    case "classificarNotificacoesLote": return classificarNotificacoesLote(ss, p);
     case "vincularNotificacaoPlano": return vincularNotificacaoPlano(ss, p);
     case "tokenNotificacao": return { token: _notifToken() };
     case "adicionarAjusteFatura": return adicionarAjusteFatura(ss, p);
@@ -430,7 +431,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261117.1700",
+    scriptVersion: "v3.20261117.1830",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -13761,6 +13762,42 @@ function classificarNotificacaoConta(ss, p) {
   }
   loc.sh.getRange(loc.row, 11).setValue("LANCADA");
   return res;
+}
+
+// [NOVO 17/11, pedido do Marcus] Lanca VARIAS notificacoes de uma vez (caixas marcadas):
+// cada item e classificado sem recarregar a planilha; no fim refaz o total da fatura
+// e o DCP UMA vez e devolve o estado completo. Um item com erro nao derruba os outros:
+// volta a PENDENTE (as funcoes ja fazem isso) e entra em lote.erros.
+// p.itens = [{key, via:"cartao"|"conta", cartao, conta, categoria, envelopeId}]
+function classificarNotificacoesLote(ss, p) {
+  var itens = p.itens || [];
+  if (!itens.length) return getData(ss);
+  var feitos = 0, erros = [], cartoes = {};
+  _PULAR_RECARGA = true;
+  try {
+    for (var i = 0; i < itens.length; i++) {
+      var it = itens[i];
+      try {
+        if (it.via === "conta") {
+          classificarNotificacaoConta(ss, { key: it.key, conta: it.conta, categoria: it.categoria });
+        } else {
+          classificarNotificacao(ss, { key: it.key, cartao: it.cartao, categoria: it.categoria, envelopeId: it.envelopeId });
+          if (it.cartao) cartoes[String(it.cartao).toUpperCase()] = true;
+        }
+        feitos++;
+      } catch (e) {
+        erros.push({ key: it.key, erro: String(e && e.message || e) });
+      }
+    }
+  } finally {
+    _PULAR_RECARGA = false;
+  }
+  Object.keys(cartoes).forEach(function (c) { _restaurarSumifFatura(ss, c); });
+  SpreadsheetApp.flush();
+  _ajustarProvisoesDCP(ss);
+  var d = getData(ss);
+  d.lote = { feitos: feitos, erros: erros };
+  return d;
 }
 
 // [NOVO 03/11] A notificacao corresponde a um lancamento PROGRAMADO do plano
