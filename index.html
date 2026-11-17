@@ -8292,7 +8292,17 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
     try{
       const sinal=sinal0;
       // Um so "Salvar": grava nome de exibicao e nome no extrato se mudaram.
-      if(item.categoria!=="DCP_PROVISAO"){
+      // [17/11] Várias edições num só Salvar: só a ÚLTIMA recarrega a planilha (_lote nas demais).
+      const fila=[];
+      if(!execMode){
+        if(item.categoria!=="DCP_PROVISAO"){
+          if(apelidoInput!==apelidoOrig) fila.push({action:"editarApelidoItem",aba:"FLUXO",row:item.row,apelido:apelidoInput});
+          if(descInput.trim()&&descInput!==item.descricao) fila.push({action:"editar",aba:"FLUXO",row:item.row,campo:"DESCRICAO",valor:descInput});
+        }
+        if(dt!==item.data) fila.push({action:"editar",row:item.row,campo:"DATA",valor:dt});
+        if(String(Math.abs(item.valor))!==val) fila.push({action:"editar",row:item.row,campo:"VALOR",valor:String(numBR(val)*sinal)});
+        if(opc&&opc.agendar) fila.push({action:"agendarRestanteFatura",row:item.row,data:opc.agendar.data,valor:numBR(opc.agendar.valor)});
+      }else if(item.categoria!=="DCP_PROVISAO"){
         if(apelidoInput!==apelidoOrig) await api({action:"editarApelidoItem",aba:"FLUXO",row:item.row,apelido:apelidoInput});
         if(descInput.trim()&&descInput!==item.descricao) await api({action:"editar",aba:"FLUXO",row:item.row,campo:"DESCRICAO",valor:descInput});
       }
@@ -8305,9 +8315,10 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
         onUpdate(await api(payload));
       } else {
         let r=null;
-        if(dt!==item.data) r=await api({action:"editar",row:item.row,campo:"DATA",valor:dt});
-        if(String(Math.abs(item.valor))!==val) r=await api({action:"editar",row:item.row,campo:"VALOR",valor:String(numBR(val)*sinal)});
-        if(opc&&opc.agendar) r=await api({action:"agendarRestanteFatura",row:item.row,data:opc.agendar.data,valor:numBR(opc.agendar.valor)});
+        for(let i=0;i<fila.length;i++){
+          const ult=i===fila.length-1;
+          r=await api(ult?fila[i]:{...fila[i],_lote:true});
+        }
         onUpdate(r||await api({action:"getData"}));
       }
       onClose&&onClose();
@@ -14598,7 +14609,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261117.1830 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261117.2010 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14724,7 +14735,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261117.1830
+      // HTML v3.20261117.2010
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();

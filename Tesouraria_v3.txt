@@ -1,4 +1,4 @@
-// VERSAO: v3.20261117.1830
+// VERSAO: v3.20261117.2010
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -331,7 +331,7 @@ var _T_DISPATCH = 0;
 // lote da conciliacao), cada acao NAO recarrega a planilha nem reajusta o DCP --
 // isso roda UMA vez no fim, em finalizarLoteCartao. Vale so dentro de uma chamada.
 var _PULAR_RECARGA = false;
-var _ACOES_LOTE = ["vincularCompraCartao", "editarRecorrencia", "lancarCartao", "lancarRecorrencia", "editarCartaoItem"];
+var _ACOES_LOTE = ["vincularCompraCartao", "editarRecorrencia", "lancarCartao", "lancarRecorrencia", "editarCartaoItem", "editar", "editarApelidoItem"];
 function _pt(nome, fn) {
   var t = Date.now();
   try { return fn(); }
@@ -431,7 +431,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261117.1830",
+    scriptVersion: "v3.20261117.2010",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -4159,7 +4159,7 @@ function agendarDevolucaoEmprestimo(ss, p) {
   });
   _gravarIdsDevolucao(sh, parOrig, existentes.concat(novos));
   SpreadsheetApp.flush();
-  _ajustarProvisoesDCP(ss);
+  // (o ajuste do DCP roda dentro do getData -- nao repetir aqui)
   return getData(ss);
 }
 
@@ -4207,7 +4207,7 @@ function editarDevolucaoEmprestimo(ss, p) {
     });
   }
   SpreadsheetApp.flush();
-  _ajustarProvisoesDCP(ss);
+  // (o ajuste do DCP roda dentro do getData -- nao repetir aqui)
   return getData(ss);
 }
 
@@ -4305,7 +4305,7 @@ function criarLadoFaltantePar(ss, p) {
   sh.appendRow([dObj, descNovo, valorNovo, "TRANSFERENCIA", "TRANSFERENCIA", contaFaltante, statusLadoNovo, ciclo, JSON.stringify(obsNovo), "", ""]);
 
   SpreadsheetApp.flush();
-  _ajustarProvisoesDCP(ss);
+  // (o ajuste do DCP roda dentro do getData -- nao repetir aqui)
   return getData(ss);
 }
 
@@ -4381,7 +4381,7 @@ function lancar(ss, p) {
     "", ""
   ]);
   SpreadsheetApp.flush();
-  _ajustarProvisoesDCP(ss); // gasto DCP novo (qualquer status) ajusta a provisao da semana
+  // (o ajuste do DCP roda dentro do getData -- nao repetir aqui)
   return getData(ss);
 }
 
@@ -4670,7 +4670,7 @@ function baixa(ss, p) {
   SpreadsheetApp.flush();
   _efetivarParcelaPlano(ss, row, serieParcelaPlano); // [NOVO 28/09] parcela programada executada vira amortizacao
   if (p._lote) return null; // [NOVO 21/10] baixaLote faz o ajuste de DCP e a recarga UMA vez no fim
-  _ajustarProvisoesDCP(ss); // baixa pode mudar valor/data de gasto DCP
+  // (o ajuste do DCP roda dentro do getData -- nao repetir aqui)
   return getData(ss);
 }
 
@@ -5159,7 +5159,7 @@ function editar(ss, p) {
   }
 
   SpreadsheetApp.flush();
-  _ajustarProvisoesDCP(ss); // edicao pode mudar categoria/valor/data de gasto DCP
+  // (o ajuste do DCP roda dentro do getData -- nao repetir aqui)
   return getData(ss);
 }
 
@@ -5262,14 +5262,14 @@ function deletar(ss, p) {
       const linhas = [row, rowParOutro].sort(function (a, b) { return b - a; });
       linhas.forEach(function (r) { sh.deleteRow(r); });
       SpreadsheetApp.flush();
-      _ajustarProvisoesDCP(ss);
+  // (o ajuste do DCP roda dentro do getData -- nao repetir aqui)
       return getData(ss);
     }
   }
 
   sh.deleteRow(row);
   SpreadsheetApp.flush();
-  _ajustarProvisoesDCP(ss); // apagar gasto DCP devolve a verba da semana
+  // (o ajuste do DCP roda dentro do getData -- nao repetir aqui)
   return getData(ss);
 }
 
@@ -5384,7 +5384,7 @@ function editarCartaoItem(ss, p) {
 
   // Total da fatura no FLUXO precisa refletir a edicao imediatamente.
   _restaurarSumifFatura(ss, tipo);
-  _ajustarProvisoesDCP(ss); // item DCP editado ajusta a provisao da semana
+  // (o ajuste do DCP roda dentro do getData -- nao repetir aqui)
   return getData(ss);
 }
 
@@ -5424,7 +5424,7 @@ function deletarCartaoItem(ss, p) {
   SpreadsheetApp.flush();
 
   _restaurarSumifFatura(ss, tipo);
-  _ajustarProvisoesDCP(ss); // item DCP apagado devolve a verba da semana
+  // (o ajuste do DCP roda dentro do getData -- nao repetir aqui)
   return getData(ss);
 }
 
@@ -7965,7 +7965,7 @@ function marcarPrevistoCobrado(ss, p) {
   sh.getRange(row, COL_CARTAO.OBS).setValue(JSON.stringify(obs));
   SpreadsheetApp.flush();
   _restaurarSumifFatura(ss, tipo);
-  _ajustarProvisoesDCP(ss);
+  // (o ajuste do DCP roda dentro do getData -- nao repetir aqui)
   return getData(ss);
 }
 
@@ -8046,7 +8046,7 @@ function atualizarDCPBase(ss, p) {
   _setConfig(shCfg, "DCP_VALOR_BASE", novoValor);
 
   SpreadsheetApp.flush();
-  _ajustarProvisoesDCP(ss);
+  // (o ajuste do DCP roda dentro do getData -- nao repetir aqui)
   return getData(ss);
 }
 
@@ -8864,7 +8864,7 @@ function _fecharSemanaDCP(ss, p) {
   SpreadsheetApp.flush();
 
   // Carries mudaram -> valores das provisoes abertas mudam.
-  _ajustarProvisoesDCP(ss);
+  // (o ajuste do DCP roda dentro do getData -- nao repetir aqui)
   return getData(ss);
 }
 
@@ -8915,7 +8915,7 @@ function reabrirSemanaDCP(ss, p) {
   shFluxo.getRange(row, COL.STATUS).setValue("PROGRAMADO");
   shFluxo.getRange(row, COL.OBS).setValue(JSON.stringify(o2));
   SpreadsheetApp.flush();
-  _ajustarProvisoesDCP(ss);   // recalcula o valor da semana reaberta
+  // (o ajuste do DCP roda dentro do getData -- nao repetir aqui)
   return getData(ss);
 }
 
