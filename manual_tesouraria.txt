@@ -36,6 +36,7 @@ Regra para o assistente: só afirme o que está aqui ou nos números da mensagem
 5. CARTÃO DE CRÉDITO E FATURA
 - Cada cartão tem aba de compras (itens) e a fatura aparece no Fluxo como um lançamento (tipo "CARTAO <id>") com o total do período. Fatura PROGRAMADO = ainda aberta.
 - Período: fecha no dia de fechamento configurado (hoje dia 31) e vence no dia 7. A data da compra informada pelo banco decide em qual fatura ela cai (compra feita dia 30/10 mas lançada pelo banco em 01/11 cai na fatura seguinte).
+- Regra (17/11): compra parcelada NAO e DCP (DCP so a vista). Parcelada no cartao vira EXTRAORDINARIA; o app pergunta ao salvar e a conciliacao ja lanca assim. Parcelas antigas de compras DCP (ate junho) continuam contando so no mes da compra.
 - Compra parcelada: parcela 1 na data da compra; parcelas 2 em diante no primeiro dia do período de cada fatura. O app corrige data de parcelas 2+ (só PENDENTE e fatura não travada).
 - Compra do cartão pode ter a etiqueta DCP (conta no envelope semanal).
 - Pagar a fatura inteira: item da fatura > Executar (ou Executar agora, que usa a data de hoje).
