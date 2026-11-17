@@ -8300,7 +8300,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
           if(descInput.trim()&&descInput!==item.descricao) fila.push({action:"editar",aba:"FLUXO",row:item.row,campo:"DESCRICAO",valor:descInput});
         }
         if(dt!==item.data) fila.push({action:"editar",row:item.row,campo:"DATA",valor:dt});
-        if(String(Math.abs(item.valor))!==val) fila.push({action:"editar",row:item.row,campo:"VALOR",valor:String(numBR(val)*sinal)});
+        if(Math.round(Math.abs(item.valor)*100)!==Math.round(numBR(val)*100)) fila.push({action:"editar",row:item.row,campo:"VALOR",valor:String(numBR(val)*sinal)});
         if(opc&&opc.agendar) fila.push({action:"agendarRestanteFatura",row:item.row,data:opc.agendar.data,valor:numBR(opc.agendar.valor)});
       }else if(item.categoria!=="DCP_PROVISAO"){
         if(apelidoInput!==apelidoOrig) await api({action:"editarApelidoItem",aba:"FLUXO",row:item.row,apelido:apelidoInput});
@@ -14609,7 +14609,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261117.2010 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261117.2030 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14735,7 +14735,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261117.2010
+      // HTML v3.20261117.2030
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
