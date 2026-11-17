@@ -2998,7 +2998,7 @@ function EmprestimosPassivos({data,onUpdate}){
     const _sa=t=>String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase();
     const credito=(data.fluxo||[]).find(r=>{const o=_obsDe(r);return (o.origemEmprestimo&&_sa(o.origemEmprestimo)===_sa(baseUpper))||_sa(r.descricao)===_sa(baseUpper)+" - CREDITO RECEBIDO";});
     const dataCreditoISO=credito?credito.data:null;
-    const futuras=[]; // {data,valor} das parcelas ainda PROGRAMADO, pra projecao de ciclos
+    let atrasadas=0; const futuras=[]; // {data,valor} das parcelas ainda PROGRAMADO, pra projecao de ciclos
     if(parcelas.length){
       parcelas.forEach(r=>{
         const m=String(r.descricao).match(/\((\d+)\s*\/\s*(\d+)\)/);
@@ -3007,9 +3007,11 @@ function EmprestimosPassivos({data,onUpdate}){
         parcTotalReal=Number(m[2]);
         if(num===parcTotalReal) dataUltimaISO=r.data; // a propria linha da parcela final
         if(num===1) primeiraISO=r.data;
-        const jaPassou=r.status==="EXECUTADO"||r.data<=hj;
-        if(jaPassou&&num>parcAtualReal) parcAtualReal=num;
-        if(!jaPassou) futuras.push({data:r.data,valor:r.valor});
+        // [17/11] Parcela paga = EXECUTADA. PROGRAMADA com data vencida e atraso (nao conta como paga).
+        const paga=r.status==="EXECUTADO";
+        if(paga&&num>parcAtualReal) parcAtualReal=num;
+        if(!paga&&r.data<=hj) atrasadas++;
+        if(!paga&&r.data>hj) futuras.push({data:r.data,valor:r.valor});
       });
     } else {
       // Nenhuma parcela encontrada no Fluxo (recorrencia acabou de ser
@@ -3022,7 +3024,7 @@ function EmprestimosPassivos({data,onUpdate}){
       const dUlt=new Date(ano,mes-1+restantes,Math.min(Number(it.diaVenc)||1,28));
       dataUltimaISO=dUlt.getFullYear()+"-"+String(dUlt.getMonth()+1).padStart(2,"0")+"-"+String(dUlt.getDate()).padStart(2,"0");
     }
-    return {...it,parcAtualReal,parcTotalReal,restantes,dataUltimaISO,futuras,dataCreditoISO,primeiraISO};
+    return {...it,parcAtualReal,parcTotalReal,restantes,dataUltimaISO,futuras,dataCreditoISO,primeiraISO,atrasadas};
   }).sort((a,b)=>a.restantes-b.restantes); // menos parcelas faltando primeiro
 
   // Previsao pros proximos 2 ciclos: soma as parcelas (ja lancadas no Fluxo,
@@ -3111,7 +3113,7 @@ function EmprestimosPassivos({data,onUpdate}){
         <div onClick={()=>setEmpAberto(aberto?null:it.desc)} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 12px",minHeight:44,cursor:"pointer",background:aberto?C.dark:C.surface}}>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:13,fontWeight:700,color:aberto?"#FFFFFF":C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.desc}</div>
-            <div style={{fontSize:10,color:aberto?"#A9B6DA":C.textMuted,marginTop:1}}>{it.parcAtualReal}/{it.parcTotalReal} parcelas · faltam {it.restantes}</div>
+            <div style={{fontSize:10,color:aberto?"#A9B6DA":C.textMuted,marginTop:1}}>{it.parcAtualReal}/{it.parcTotalReal} parcelas · faltam {it.restantes}{it.atrasadas>0&&<b style={{color:aberto?"#FFB4AC":C.red}}> · {it.atrasadas} em atraso</b>}</div>
           </div>
           <span style={{fontWeight:800,fontSize:14,color:aberto?"#FFB4AC":C.dark,fontVariantNumeric:"tabular-nums",flexShrink:0}}>{fmt(it.valor)}</span>
           <span style={{fontSize:11,color:aberto?"#A9B6DA":C.textMuted}}>{aberto?"▲":"▼"}</span>
@@ -14611,7 +14613,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261117.2050 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261117.2110 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14737,7 +14739,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261117.2050
+      // HTML v3.20261117.2110
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
