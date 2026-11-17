@@ -1626,6 +1626,26 @@ function BarraDCP({semanas,base,grande,piso}){
 }
 
 // [26/10] Card do DCP (semana + ciclo + barra de consumo): usado no Dashboard e no topo da Plano.
+// [17/11, pedido do Marcus] Barra da semana: azul ate 75% da meta, vermelho de 75% em diante,
+// marca de 100% e, depois de estourar, o excesso em vermelho escuro (a barra cresce e a marca fica no limite).
+function BarraSemanaDCP({gasto,meta,grande}){
+  const g=Math.max(Number(gasto)||0,0),m=Math.max(Number(meta)||0,0.01);
+  const pct=g/m,estourou=g>m+0.005,dom=Math.max(g,m);
+  const cor=pct>=0.75?C.red:C.accent,altura=grande?16:12;
+  const p=v=>(v/dom*100)+"%";
+  return <div style={{marginBottom:12}}>
+    <div style={{position:"relative",height:altura,margin:"2px 0 6px"}}>
+      <div style={{position:"absolute",inset:0,borderRadius:99,overflow:"hidden",background:C.borderLight}}>
+        <div style={{position:"absolute",top:0,bottom:0,left:0,width:p(Math.min(g,m)),background:cor,transition:"width .4s"}}/>
+        {estourou&&<div style={{position:"absolute",top:0,bottom:0,left:p(m),width:((g-m)/dom*100)+"%",background:"#7F1D1D"}}/>}
+      </div>
+      <div style={{position:"absolute",top:-3,bottom:-3,left:p(m),width:2,marginLeft:-1,background:C.dark,borderRadius:2}}/>
+    </div>
+    <div style={{display:"flex",justifyContent:"space-between",fontSize:12,fontWeight:700,color:C.textSub,fontVariantNumeric:"tabular-nums"}}>
+      <span>{fmt(g)} de {fmt(m)} · {Math.round(pct*100)}%</span>
+      <span style={{color:estourou?C.red:C.textMuted}}>{estourou?"estourou "+fmt(g-m):"resta "+fmt(m-g)}</span></div>
+  </div>;
+}
 function CardDCP({dcpResumo,grande}){
   if(!dcpResumo||!dcpResumo.semanas||!dcpResumo.semanas.length) return null;
   return <Card style={grande?{padding:"20px 12px"}:undefined}>
@@ -1658,6 +1678,7 @@ function CardDCP({dcpResumo,grande}){
             {dispSemana!=null&&<Bloco label="Esta semana" valor={dispSemana}/>}
             <Bloco label="No ciclo (mês)" valor={dispMes}/>
           </div>
+          {semAtual&&semAtual.status==="PROGRAMADO"&&<BarraSemanaDCP gasto={semAtual.gasto} meta={semAtual.meta} grande={grande}/>}
           <div style={{marginBottom:12,fontSize:fs}}>
             <div style={{display:"flex",gap:4,padding:"0 4px 4px",fontSize:10,fontWeight:700,color:C.textMuted,textTransform:"uppercase",letterSpacing:".03em"}}>
               <span style={{flex:1}}>DCP (R$)</span><span style={col}>Disponib.</span><span style={col}>Usado</span><span style={col}>Resta</span></div>
@@ -8467,7 +8488,7 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
       Fechamento de semana DCP: a sobra/estouro é redistribuída automaticamente entre as próximas segundas e a linha fecha em R$ 0,00 no Histórico — o valor digitado acima é ignorado. Feche as semanas em ordem (a mais antiga primeiro).
       <label style={{display:"flex",alignItems:"center",gap:6,marginTop:7,paddingTop:7,borderTop:"1px dashed #FBBF24",cursor:"pointer",fontWeight:700}}>
         <input type="checkbox" checked={ignorarDeficitDCP} onChange={e=>setIgnorarDeficitDCP(e.target.checked)}/>
-        Ciclo atípico — não propagar essa sobra/estouro pro próximo ciclo (fica registrado como perdoado, pra auditoria)
+        Ciclo atípico — perdoar o estouro: nada vai para o próximo ciclo, e o que as semanas anteriores já tinham levado para lá volta ao padrão (fica registrado como perdoado)
       </label>
     </div>}
     {editando&&fc&&item.status!=="EXECUTADO"&&<div style={{background:"#fff",border:"1px dashed "+C.teal,borderRadius:6,padding:8,marginBottom:8}}>
@@ -14535,7 +14556,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261117.0040 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261117.1240 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14661,7 +14682,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261117.0040
+      // HTML v3.20261117.1240
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();

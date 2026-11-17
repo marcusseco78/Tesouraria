@@ -1,4 +1,4 @@
-// VERSAO: v3.20261115.0930
+// VERSAO: v3.20261117.1240
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -430,7 +430,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261115.0930",
+    scriptVersion: "v3.20261117.1240",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -8710,6 +8710,36 @@ function _fecharSemanaDCP(ss, p) {
   // no default {deltas:[],sobra:residuo<0} -- sobraFinal<=0 abaixo, o
   // estagio 2 nunca dispara pra sobra. Economia mantida, como sempre foi.
 
+  // [17/11, pedido do Marcus] "Ciclo atipico" tambem desfaz o que as semanas ANTERIORES deste ciclo ja
+  // tinham carregado para o proximo ciclo (fx.dl): as semanas de la voltam ao padrao (base sem carry).
+  // Os deltas desfeitos saem de fx.dl e ficam em fx.dlPerdoado (auditoria; reabrir nao desfaz duas vezes).
+  var carryAnteriorPerdoado = 0;
+  if (p.ignorarDeficit) {
+    var provPorData = {};
+    est.provisoes.forEach(function(pv) { provPorData[pv.data] = pv; });
+    est.provisoes.forEach(function(pe) {
+      if (pe.status !== "EXECUTADO" || pe.ciclo !== alvo.ciclo || pe.row === alvo.row) return;
+      var fxE = pe.obs && pe.obs.fx;
+      if (!fxE || !fxE.dl || !fxE.dl.length) return;
+      var mant = [], perd = [];
+      fxE.dl.forEach(function(e) {
+        var t = provPorData[e.d];
+        if (t && t.status === "PROGRAMADO" && t.ciclo !== alvo.ciclo) {
+          var ot = t.obs;
+          ot.c = _round2((Number(ot.c) || 0) - e.dc);
+          shFluxo.getRange(t.row, COL.OBS).setValue(JSON.stringify(ot));
+          perd.push(e);
+          carryAnteriorPerdoado = _round2(carryAnteriorPerdoado + e.dc);
+        } else mant.push(e);
+      });
+      if (perd.length) {
+        fxE.dl = mant;
+        fxE.dlPerdoado = (fxE.dlPerdoado || []).concat(perd);
+        shFluxo.getRange(pe.row, COL.OBS).setValue(JSON.stringify(pe.obs));
+      }
+    });
+  }
+
   var sobraFinal = _round2(resultado.sobra);
   var deficitIgnorado = 0;
 
@@ -8777,6 +8807,7 @@ function _fecharSemanaDCP(ss, p) {
   oAlvo.fx.dl = deltasAplicadosFx;
   if (sobraFinal > 0.005) oAlvo.fx.pisoNaoCoberto = sobraFinal;
   if (deficitIgnorado > 0.005) oAlvo.fx.deficitIgnorado = deficitIgnorado;
+  if (carryAnteriorPerdoado) oAlvo.fx.carryAnteriorPerdoado = carryAnteriorPerdoado;
   shFluxo.getRange(row, COL.STATUS).setValue("EXECUTADO");
   shFluxo.getRange(row, COL.VALOR).setValue(0);
   shFluxo.getRange(row, COL.OBS).setValue(JSON.stringify(oAlvo));
