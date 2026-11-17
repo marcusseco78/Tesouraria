@@ -1,4 +1,4 @@
-// VERSAO: v3.20261117.2030
+// VERSAO: v3.20261117.2050
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -431,7 +431,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261117.2030",
+    scriptVersion: "v3.20261117.2050",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -13778,7 +13778,9 @@ function classificarNotificacoesLote(ss, p) {
     for (var i = 0; i < itens.length; i++) {
       var it = itens[i];
       try {
-        if (it.via === "conta") {
+        if (it.via === "ignorar") {
+          ignorarNotificacao(ss, { key: it.key });
+        } else if (it.via === "conta") {
           classificarNotificacaoConta(ss, { key: it.key, conta: it.conta, categoria: it.categoria });
         } else {
           classificarNotificacao(ss, { key: it.key, cartao: it.cartao, categoria: it.categoria, envelopeId: it.envelopeId });

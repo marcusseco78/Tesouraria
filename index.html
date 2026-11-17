@@ -7515,13 +7515,15 @@ function CardNotificacoes({data,onUpdate}){
     const contaOk=v.conta||sel[it.key]?.conta||contaMapa[it.escopo==="PJ"?"PJ":"PF"];
     if(lancavel(it)&&(it.tipo==="CREDITO"?cartaoOk:contaOk)) setMarc(m=>({...m,[it.key]:true}));
   };
-  const marcadas=itens.filter(it=>marc[it.key]&&lancavel(it));
+  const ehInfo=it=>it.tipo!=="CREDITO"&&!ehSaidaConta(it); // so "Já vi"
+  const marcavel=it=>lancavel(it)||ehInfo(it);
+  const marcadas=itens.filter(it=>marc[it.key]&&marcavel(it));
   const lancarLote=async()=>{
-    const pend=marcadas.filter(it=>it.tipo==="CREDITO"?!cartaoDe(it):!contaDe(it));
+    const pend=marcadas.filter(it=>lancavel(it)&&(it.tipo==="CREDITO"?!cartaoDe(it):!contaDe(it)));
     if(pend.length){alert("Falta escolher o cartão/conta em "+pend.length+" marcada(s): "+pend.map(x=>x.estab||"compra").join(", ")+".");return;}
     setBusy("lote");
     try{
-      const r=await api({action:"classificarNotificacoesLote",itens:marcadas.map(it=>it.tipo==="CREDITO"
+      const r=await api({action:"classificarNotificacoesLote",itens:marcadas.map(it=>ehInfo(it)?{key:it.key,via:"ignorar"}:it.tipo==="CREDITO"
         ?{key:it.key,via:"cartao",cartao:cartaoDe(it),categoria:catDe(it)}
         :{key:it.key,via:"conta",conta:contaDe(it),categoria:catDe(it)})});
       onUpdate(r);
@@ -7614,7 +7616,7 @@ function CardNotificacoes({data,onUpdate}){
       <div onClick={()=>setCfg(null)} style={{marginTop:8,fontWeight:800,color:C.accent,cursor:"pointer"}}>Fechar</div></div>}
     {itens.map(it=><div key={it.key} style={{background:C.bg,borderRadius:16,padding:12,marginBottom:8}}>
       <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
-        {lancavel(it)&&<div onClick={()=>setMarc(m=>({...m,[it.key]:!m[it.key]}))} style={{width:44,height:44,margin:"-8px 0 -8px -8px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer"}}>
+        {marcavel(it)&&<div onClick={()=>setMarc(m=>({...m,[it.key]:!m[it.key]}))} style={{width:44,height:44,margin:"-8px 0 -8px -8px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer"}}>
           <div style={{width:24,height:24,borderRadius:7,border:"2px solid "+(marc[it.key]?C.accent:C.border),background:marc[it.key]?C.accent:"#fff",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:800}}>{marc[it.key]?"✓":""}</div></div>}
         <div style={{minWidth:0,flex:1}}><div style={{fontSize:14,fontWeight:800,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.tipo==="CREDITO"?(it.estab||"Compra"):it.tipo==="DEBITO"?(it.estab||"Débito"):it.tipo==="TRANSF_RECEBIDA"?"Recebido de "+(it.estab||"?"):it.tipo==="BOLETO"?"Boleto"+(estabDe(it)?" · "+estabDe(it):""):(it.titulo||"Notificação")}</div>
           <div style={{fontSize:11,color:C.textSub}}>{dd(it.data)}{it.tipo==="CREDITO"?" · crédito "+(it.escopo==="PJ"?"PJ":(it.final?"final "+it.final:"PF")):it.tipo==="DEBITO"?" · débito "+(it.escopo==="PJ"?"PJ":"PF"):""}</div>
@@ -7651,10 +7653,10 @@ function CardNotificacoes({data,onUpdate}){
             <button disabled={busy===it.key} onClick={()=>lancarConta(it)} style={{flex:1,minHeight:48,borderRadius:14,border:0,background:C.accent,color:"#fff",fontWeight:800,fontSize:15,fontFamily:"inherit"}}>{busy===it.key?"...":"Lançar na conta"}</button>
             <button disabled={busy===it.key} onClick={()=>ignorar(it)} style={{minHeight:48,padding:"0 16px",borderRadius:14,border:"1px solid "+C.border,background:"#fff",fontWeight:700,fontSize:14,fontFamily:"inherit"}}>Ignorar</button></div>
         </div>:
-        <button disabled={busy===it.key} onClick={()=>ignorar(it)} style={{minHeight:44,padding:"0 16px",borderRadius:14,border:"1px solid "+C.border,background:"#fff",fontWeight:700,fontSize:14,fontFamily:"inherit"}}>Já vi</button>}</div>}
+        <button disabled={busy===it.key} onClick={()=>setMarc(m=>({...m,[it.key]:!m[it.key]}))} style={{minHeight:44,padding:"0 16px",borderRadius:14,border:"1px solid "+(marc[it.key]?C.accent:C.border),background:marc[it.key]?C.accent:"#fff",color:marc[it.key]?"#fff":C.text,fontWeight:700,fontSize:14,fontFamily:"inherit"}}>{marc[it.key]?"Já vi ✓":"Já vi"}</button>}</div>}
     </div>)}
     {marcadas.length>0&&<div style={{position:"sticky",bottom:8,marginTop:6}}>
-      <button disabled={busy==="lote"} onClick={lancarLote} style={{width:"100%",minHeight:52,borderRadius:16,border:0,background:C.dark,color:"#fff",fontWeight:800,fontSize:16,fontFamily:"inherit",boxShadow:"0 6px 18px rgba(15,27,61,.35)"}}>{busy==="lote"?"Lançando...":"Lançar "+marcadas.length+" marcada"+(marcadas.length>1?"s":"")}</button></div>}
+      <button disabled={busy==="lote"} onClick={lancarLote} style={{width:"100%",minHeight:52,borderRadius:16,border:0,background:C.dark,color:"#fff",fontWeight:800,fontSize:16,fontFamily:"inherit",boxShadow:"0 6px 18px rgba(15,27,61,.35)"}}>{busy==="lote"?"Salvando...":(marcadas.some(ehInfo)?"Confirmar ":"Lançar ")+marcadas.length+" marcada"+(marcadas.length>1?"s":"")}</button></div>}
   </Card>;
 }
 
@@ -14609,7 +14611,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261117.2030 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261117.2050 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14735,7 +14737,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261117.2030
+      // HTML v3.20261117.2050
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
