@@ -1,4 +1,4 @@
-// VERSAO: v3.20261117.1240
+// VERSAO: v3.20261117.1700
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -430,7 +430,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261117.1240",
+    scriptVersion: "v3.20261117.1700",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -3087,6 +3087,13 @@ function _lerFontesReceita(ss) {
  * 3 copias em sincronia -- qualquer caminho novo que mude valor de receita
  * estruturada so precisa chamar esta funcao.
  */
+// [17/11, pedido do Marcus] Valor da transferencia vinculada = percentual do liquido MENOS um desconto fixo
+// por pagamento (ex.: despesa da PJ que a PJ paga e que sai da distribuicao de lucros). Nunca negativo.
+function _valorTransfVinculada(liquido, tv) {
+  var base = _round2(Number(liquido) * (Number(tv.percentual) / 100));
+  var desc = Math.max(0, Number(tv.descontoValor) || 0);
+  return Math.max(0, _round2(base - desc));
+}
 function _recalcularTransferenciaVinculada(ss, sh, chaveReceita, novoValorReceita) {
   var partesChave = String(chaveReceita || "").split(":");
   if (partesChave.length < 2) return;
@@ -3099,7 +3106,7 @@ function _recalcularTransferenciaVinculada(ss, sh, chaveReceita, novoValorReceit
   var modoRecalc = mapaModosRecalc[partesChave[0] + ":" + partesChave[1]];
   var tvRecalc = modoRecalc && modoRecalc.transfVinculada;
   if (!tvRecalc || !tvRecalc.ativo || !(Number(tvRecalc.percentual) > 0)) return;
-  var novoValorTransf = _round2(Number(novoValorReceita) * (Number(tvRecalc.percentual) / 100));
+  var novoValorTransf = _valorTransfVinculada(novoValorReceita, tvRecalc);
   var lastRecalc = sh.getLastRow();
   var todasRecalc = sh.getRange(FLUXO_START, 1, lastRecalc - FLUXO_START + 1, 9).getValues();
   for (var iRecalc = 0; iRecalc < todasRecalc.length; iRecalc++) {
@@ -3451,7 +3458,7 @@ function _gerarReceitasFontes(ss, mesesHorizonte, filtroNome) {
         // usada so pra idempotencia (nunca duplicar a mesma transferencia).
         var tvG = modo.transfVinculada;
         if (tvG && tvG.ativo && Number(tvG.percentual) > 0 && tvG.contaDestino && !transfExistentes[chave]) {
-          var valorTransf = _round2(valor * (Number(tvG.percentual) / 100));
+          var valorTransf = _valorTransfVinculada(valor, tvG);
           if (valorTransf > 0) {
             var contaOrigemT = String(f.conta || "CONTA").toUpperCase().trim();
             var contaDestinoT = String(tvG.contaDestino).toUpperCase().trim();
@@ -3614,7 +3621,9 @@ function salvarFontesReceita(ss, p) {
         if (tvAtivo && tvConta === String(f.conta || "CONTA").toUpperCase().trim()) {
           throw new Error("A conta de destino da transferencia vinculada nao pode ser a mesma que recebe a receita (\"" + (f.nome || "") + "\").");
         }
-        modo.transfVinculada = { ativo: tvAtivo, percentual: tvPerc, contaDestino: tvConta, intencao: tvIntencao };
+        var tvDescVal = Math.max(0, Number(tv.descontoValor) || 0);
+        var tvDescNome = String(tv.descontoNome || "").replace(/[^\x20-\x7E]/g, "").slice(0, 60);
+        modo.transfVinculada = { ativo: tvAtivo, percentual: tvPerc, contaDestino: tvConta, intencao: tvIntencao, descontoValor: tvDescVal, descontoNome: tvDescNome };
       } else {
         modo.transfVinculada = { ativo: false, percentual: 0, contaDestino: "", intencao: "LUCROS" };
       }
@@ -3624,12 +3633,52 @@ function salvarFontesReceita(ss, p) {
   _setConfig(shCfg, "FONTES_RECEITA_JSON", JSON.stringify(fontes));
   var r = _gerarReceitasFontes(ss, RECEITA_HORIZONTE_MESES);
   var rt = _sincronizarTransferenciasReceitas(ss, fontes);
+  _recalcularTransfsPorConfig(ss, fontes);
   SpreadsheetApp.flush();
 
   var data = getData(ss);
   data.receitasGeradas = r.itensAdicionados;
   data.transferenciasVinculadasGeradas = rt.itensAdicionados;
   return data;
+}
+
+/**
+ * [17/11] Depois de salvar as fontes: recalcula as transferencias vinculadas que ainda estao PROGRAMADAS
+ * (percentual ou desconto fixo mudaram). Nunca toca em EXECUTADO. Uma passada so pelo FLUXO.
+ */
+function _recalcularTransfsPorConfig(ss, fontes) {
+  var sh = ss.getSheetByName("FLUXO");
+  var last = sh.getLastRow();
+  if (last < FLUXO_START) return;
+  var tvPorModo = {};
+  (fontes || []).forEach(function (f) {
+    var nomeF = String(f.nome || "").toUpperCase().replace(/[^A-Z0-9_]/g, "");
+    (f.modos || []).forEach(function (m) {
+      var tv = m.transfVinculada;
+      if (m.id && tv && tv.ativo && Number(tv.percentual) > 0) tvPorModo[nomeF + ":" + m.id] = tv;
+    });
+  });
+  if (!Object.keys(tvPorModo).length) return;
+  var rows = sh.getRange(FLUXO_START, 1, last - FLUXO_START + 1, 9).getValues();
+  var valorReceita = {};
+  rows.forEach(function (r) {
+    if (String(r[3]) !== "RECEITA") return;
+    var mk = _lerMarcadorFonteReceita(r[8]);
+    if (mk && mk.chave) valorReceita[mk.chave] = Number(r[2]) || 0;
+  });
+  rows.forEach(function (r, i) {
+    if (String(r[6]) !== "PROGRAMADO" || String(r[3]) !== "TRANSFERENCIA") return;
+    var o = {};
+    try { o = JSON.parse(r[8] || "{}"); } catch (e) { return; }
+    if (!o.origemReceita) return;
+    var partes = String(o.origemReceita).split(":");
+    var tv = tvPorModo[partes[0] + ":" + partes[1]];
+    var vr = valorReceita[o.origemReceita];
+    if (!tv || !(vr > 0)) return;
+    var novo = _valorTransfVinculada(vr, tv);
+    var sinal = Number(r[2]) < 0 ? -1 : 1;
+    if (Math.abs(Math.abs(Number(r[2]) || 0) - novo) > 0.004) sh.getRange(FLUXO_START + i, COL.VALOR).setValue(novo * sinal);
+  });
 }
 
 /**
@@ -3687,7 +3736,7 @@ function _sincronizarTransferenciasReceitas(ss, fontes) {
     if (!tv || !tv.ativo || !(Number(tv.percentual) > 0) || !tv.contaDestino) return;
 
     var valorOrigem = Number(r[2]) || 0;
-    var valorTransf = _round2(valorOrigem * (Number(tv.percentual) / 100));
+    var valorTransf = _valorTransfVinculada(valorOrigem, tv);
     if (!(valorTransf > 0)) return;
     var contaOrigemT = String(info.conta || "CONTA").toUpperCase().trim();
     var contaDestinoT = String(tv.contaDestino).toUpperCase().trim();

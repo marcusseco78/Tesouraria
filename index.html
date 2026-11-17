@@ -3356,8 +3356,10 @@ function _comTipoPagto(m,t){
   return {...m,tipoValor:"VARIAVEL",calculada:false};
 }
 function _numCampo(v){ return typeof v==="string" ? (numBR(v)||0) : (Number(v)||0); }
-function _tvPadrao(){ return {ativo:false,percentual:0,contaDestino:"",intencao:"LUCROS"}; }
-function _tvCmp(tv){ const t=tv||_tvPadrao(); return {ativo:!!t.ativo,percentual:Number(t.percentual)||0,contaDestino:t.contaDestino||"",intencao:t.intencao||"LUCROS"}; }
+function _tvPadrao(){ return {ativo:false,percentual:0,contaDestino:"",intencao:"LUCROS",descontoValor:0,descontoNome:""}; }
+function _tvCmp(tv){ const t=tv||_tvPadrao(); return {ativo:!!t.ativo,percentual:Number(t.percentual)||0,contaDestino:t.contaDestino||"",intencao:t.intencao||"LUCROS",descontoValor:Number(t.descontoValor)||0,descontoNome:t.descontoNome||""}; }
+// [17/11] Valor repassado = percentual do liquido menos o desconto fixo por pagamento (nunca negativo).
+function _valorTransfTv(liquido,tv){ return Math.max(0,_r2(liquido*(Number(tv.percentual)||0)/100-(Number(tv.descontoValor)||0))); }
 // JSON com chaves em ordem fixa, so pra comparar "mudou ou nao".
 function _stable(o){
   if(Array.isArray(o)) return o.map(_stable);
@@ -3429,7 +3431,7 @@ function NoMove({tv,onChange,contas,contaFonte,valorBase}){
   const destinos=(contas||[]).filter(c=>c.id!==(contaFonte||"CONTA"));
   const pct=Number(t.percentual)||0;
   const resumo=t.ativo
-    ? (pct+"% → "+_nomeContaFR(contas,t.contaDestino||"")+(valorBase>0?" · "+fmt(_r2(valorBase*pct/100)):""))
+    ? (pct+"% → "+_nomeContaFR(contas,t.contaDestino||"")+((Number(t.descontoValor)||0)>0?" − "+fmt(Number(t.descontoValor)):"")+(valorBase>0?" · "+fmt(_valorTransfTv(valorBase,t)):""))
     : "Nada — o dinheiro fica na conta";
   function upd(c,v){ onChange({...t,[c]:v}); }
   return <NoCaminho icone="⇄" titulo="Depois move" resumo={resumo} rotuloAcao="Editar">
@@ -3448,6 +3450,17 @@ function NoMove({tv,onChange,contas,contaFonte,valorBase}){
           </div>
         </div>
       </div>
+      <div style={{display:"flex",gap:10,marginBottom:12}}>
+        <div style={{width:130,flexShrink:0}}>
+          <label style={_lblFR}>DESCONTO FIXO (R$)</label>
+          <input type="number" min="0" step="0.01" value={t.descontoValor||""} placeholder="0" onChange={e=>upd("descontoValor",Math.max(0,Number(e.target.value)||0))} style={{..._inpFR,textAlign:"right"}}/>
+        </div>
+        <div style={{flex:1}}>
+          <label style={_lblFR}>MOTIVO (OPCIONAL)</label>
+          <input type="text" maxLength={60} value={t.descontoNome||""} placeholder="ex.: Stellantis paga pela PJ" onChange={e=>upd("descontoNome",e.target.value)} style={_inpFR}/>
+        </div>
+      </div>
+      <div style={{fontSize:11,color:C.textMuted,marginBottom:12,lineHeight:1.4}}>Todo mês o valor repassado é {pct}% do líquido menos esse desconto (nunca fica negativo).</div>
       <label style={_lblFR}>FINALIDADE</label>
       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
         {intencoesPermitidas(tipoDaConta(contas,contaFonte||"CONTA"),tipoDaConta(contas,t.contaDestino)).map(o=>
@@ -3552,7 +3565,7 @@ function ModoEsporadico({modo,fonteNome,contas,conta,carregandoConta,onEscolherC
   const bruto=numBR(valor)||0;
   const liquido=_r2(bruto*(1-(Number(desc)||0)/100));
   const tvAtivo=tvL.ativo&&Number(tvL.percentual)>0&&tvL.contaDestino&&tvL.contaDestino!==(conta||"CONTA");
-  const valorTransf=tvAtivo?_r2(liquido*(Number(tvL.percentual)/100)):0;
+  const valorTransf=tvAtivo?_valorTransfTv(liquido,tvL):0;
   const futuro=dataL>hoje();
   const semId=!modo.id;
   async function lancar(){
@@ -7432,7 +7445,7 @@ function calcOrcamento(data,escopo){
       const tv=m.transfVinculada, pTv=(escopo&&tv&&tv.ativo&&Number(tv.percentual)>0&&tv.contaDestino&&_contaIdForma(contasAt,tv.contaDestino)!==contaF)?Number(tv.percentual)/100:0;
       const poe=(o)=>{
         if(pTv>0){
-          const parte=_r2(o.valor*pTv);
+          const parte=_valorTransfTv(o.valor,tv);
           receitas.push({...o,valor:_r2(o.valor-parte),conta:contaF});
           receitas.push({id:o.id+":lucros",nome:"Lucros de "+o.nome,sub:Math.round(pTv*100)+"% do líquido vai para esta conta",valor:parte,conta:_contaIdForma(contasAt,tv.contaDestino)});
         } else receitas.push({...o,conta:contaF});
@@ -14556,7 +14569,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261117.1240 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261117.1700 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14682,7 +14695,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261117.1240
+      // HTML v3.20261117.1700
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
