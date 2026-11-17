@@ -7598,7 +7598,9 @@ function calcBalancoCiclo(data,escopo){
   (data.fluxo||[]).forEach(r=>{
     const d=String(r.data||"").slice(0,10);
     if(!d||d<jan.inicio||d>jan.fim||!noEscopo(r.forma)) return;
-    const tipo=String(r.tipo||"").toUpperCase(),cat=String(r.categoria||"").toUpperCase(),v=Number(r.valor)||0;
+    // [16/11] Sem acento: o TIPO da fatura e "CARTÃO PF" e nao casava com "CARTAO" (a fatura entrava como despesa fixa).
+    const semAc=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase();
+    const tipo=semAc(r.tipo),cat=semAc(r.categoria),v=Number(r.valor)||0;
     if(tipo.indexOf("CARTAO")===0||cat==="CARTAO") return;          // fatura: as compras entram abaixo
     if(cat==="DCP_PROVISAO"||tipo==="DCP_PROVISAO"||cat==="DCP"||tipo==="DCP") return; // DCP vem do resumo
     const it={desc:r.descricao,valor:v,data:d};
@@ -14518,7 +14520,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261116.2330 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261116.2350 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14644,7 +14646,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261116.2330
+      // HTML v3.20261116.2350
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
