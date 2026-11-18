@@ -7520,6 +7520,19 @@ function CardNotificacoes({data,onUpdate}){
   const ehInfo=it=>it.tipo!=="CREDITO"&&!ehSaidaConta(it); // so "Já vi"
   const marcavel=it=>lancavel(it)||ehInfo(it);
   const marcadas=itens.filter(it=>marc[it.key]&&marcavel(it));
+  // [17/11] Ignorar todas as marcadas de uma vez (uma recarga so).
+  const ignorarLote=async()=>{
+    if(!confirm("Ignorar "+marcadas.length+" aviso"+(marcadas.length>1?"s":"")+" marcado"+(marcadas.length>1?"s":"")+"? Eles saem da fila e nada é lançado.")) return;
+    setBusy("lote");
+    try{
+      const r=await api({action:"classificarNotificacoesLote",itens:marcadas.map(it=>({key:it.key,via:"ignorar"}))});
+      onUpdate(r);
+      const er=(r.lote&&r.lote.erros)||[];
+      setMarc({});
+      if(er.length) alert(er.length+" não saíram da fila:\n\n"+er.map(e=>e.erro).join("\n"));
+    }catch(e){alert(e.message);}
+    setBusy("");
+  };
   const lancarLote=async()=>{
     const pend=marcadas.filter(it=>lancavel(it)&&(it.tipo==="CREDITO"?!cartaoDe(it):!contaDe(it)));
     if(pend.length){alert("Falta escolher o cartão/conta em "+pend.length+" marcada(s): "+pend.map(x=>x.estab||"compra").join(", ")+".");return;}
@@ -7661,8 +7674,9 @@ function CardNotificacoes({data,onUpdate}){
         </div>:
         <button disabled={busy===it.key} onClick={()=>setMarc(m=>({...m,[it.key]:!m[it.key]}))} style={{minHeight:44,padding:"0 16px",borderRadius:14,border:"1px solid "+(marc[it.key]?C.accent:C.border),background:marc[it.key]?C.accent:"#fff",color:marc[it.key]?"#fff":C.text,fontWeight:700,fontSize:14,fontFamily:"inherit"}}>{marc[it.key]?"Já vi ✓":"Já vi"}</button>}</div>}
     </div>)}
-    {marcadas.length>0&&<div style={{position:"sticky",bottom:8,marginTop:6}}>
-      <button disabled={busy==="lote"} onClick={lancarLote} style={{width:"100%",minHeight:52,borderRadius:16,border:0,background:C.dark,color:"#fff",fontWeight:800,fontSize:16,fontFamily:"inherit",boxShadow:"0 6px 18px rgba(15,27,61,.35)"}}>{busy==="lote"?"Salvando...":(marcadas.some(ehInfo)?"Confirmar ":"Lançar ")+marcadas.length+" marcada"+(marcadas.length>1?"s":"")}</button></div>}
+    {marcadas.length>0&&<div style={{position:"sticky",bottom:8,marginTop:6,display:"flex",gap:8}}>
+      <button disabled={busy==="lote"} onClick={lancarLote} style={{flex:2,minHeight:52,borderRadius:16,border:0,background:C.dark,color:"#fff",fontWeight:800,fontSize:16,fontFamily:"inherit",boxShadow:"0 6px 18px rgba(15,27,61,.35)"}}>{busy==="lote"?"Salvando...":(marcadas.some(ehInfo)?"Confirmar ":"Lançar ")+marcadas.length+" marcada"+(marcadas.length>1?"s":"")}</button>
+      <button disabled={busy==="lote"} onClick={ignorarLote} style={{flex:1,minHeight:52,borderRadius:16,border:"1px solid "+C.border,background:"#fff",color:C.text,fontWeight:800,fontSize:15,fontFamily:"inherit",boxShadow:"0 6px 18px rgba(15,27,61,.15)"}}>Ignorar {marcadas.length}</button></div>}
   </Card>;
 }
 
@@ -14617,7 +14631,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261117.2140 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261117.2155 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14743,7 +14757,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261117.2140
+      // HTML v3.20261117.2155
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
