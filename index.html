@@ -2714,6 +2714,7 @@ function FormAmortizarDivida({data,divida,onUpdate,onDone}){
 }
 
 function CardDividaPosFixada({divida,onUpdate,data}){
+  const [aberto,setAberto]=useState(false);
   const [loadCDI,setLoadCDI]=useState(false);
   const [resultadoCDI,setResultadoCDI]=useState(null);
   const [ajustando,setAjustando]=useState(false);
@@ -2800,12 +2801,16 @@ function CardDividaPosFixada({divida,onUpdate,data}){
     .map(it=>({data:String(it.data).slice(0,10),tipo:"Amortização programada",deltaAbs:-Math.abs(it.valor),desc:""})):[];
   const futuroDivida=projetarLinhaFutura(divida.saldoAtual,"cdi",taxasDivida,data.config?.CICLO_INICIO,eventosPlano,-1);
 
-  return <div style={{background:"#FEF3E2",border:"1px solid #F6D9A8",borderRadius:10,padding:10,marginBottom:8}}>
-    <div style={{fontSize:13,fontWeight:700,color:C.text}}>{divida.nome} <span style={{fontWeight:500,color:C.textMuted}}>· correção {divida.percentualCdi}% CDI</span></div>
-    <div style={{fontSize:15,fontWeight:800,color:C.accent,marginTop:4}}>{fmt(-divida.saldoAtual)}</div>
-    <div style={{fontSize:11,color:C.textMuted,marginTop:2,marginBottom:8}}>
-      Desde {fmtD(divida.dataAquisicao)} · já pago: {fmt(divida.montantePago)}{divida.observacao?" · "+divida.observacao:""}
+  return <div style={{border:"1px solid "+C.border,borderRadius:12,overflow:"hidden",marginBottom:8,background:C.surface}}>
+    <div onClick={()=>setAberto(v=>!v)} style={{cursor:"pointer",minHeight:44,padding:"12px 14px",background:aberto?C.dark:C.surface,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+      <div style={{minWidth:0}}>
+        <div style={{fontSize:14,fontWeight:800,color:aberto?"#fff":C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{divida.nome}</div>
+        <div style={{fontSize:11,color:aberto?"#A9B6DA":C.textMuted,marginTop:1}}>correção {divida.percentualCdi}% CDI · desde {fmtD(divida.dataAquisicao)}</div>
+      </div>
+      <div style={{fontSize:16,fontWeight:800,color:aberto?"#FFB4AC":C.dark,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{fmt(-divida.saldoAtual)}</div>
     </div>
+    {aberto&&<div style={{padding:"4px 14px 14px",background:C.bg}}>
+    <div style={{fontSize:11,color:C.textMuted,margin:"6px 0 8px"}}>Já pago: {fmt(divida.montantePago)}{divida.observacao?" · "+divida.observacao:""}</div>
     <button onClick={atualizar} disabled={loadCDI}
       style={{width:"100%",background:C.accent,color:"#fff",border:"none",borderRadius:6,padding:"7px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
       {loadCDI?"Buscando CDI no Banco Central…":"🔄 Atualizar com CDI real"}
@@ -2848,6 +2853,7 @@ function CardDividaPosFixada({divida,onUpdate,data}){
       style={{width:"100%",marginTop:10,background:"none",border:"none",color:C.textMuted,fontSize:10,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>
       🗑️ Apagar esta dívida e os lançamentos ligados a ela
     </button>
+    </div>}
   </div>;
 }
 function FormCriarEmprestimo({onSalvo,onClose,data}){
@@ -14271,6 +14277,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara,fila}){
 // Confirmados e Previstos). Mesmo estilo do painel ⋮ do Fluxo, mas mais
 // simples: só descrição, valor (com toggle de sinal) e apagar.
 function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEData,eNeg,setENeg,eCategoria,setECategoria,eAlias,setEAlias,eApelido,setEApelido,eLoad,motivo,onSalvar,onApagar,onApagarTodos,onCancelar,onUsarCSV,previewCSV,outrosItens,souConfirmado,onMesclar,data,abaCartao,onUpdate,onIrPara}){
+  const [editando,setEditando]=useState(false);
   const [mesclando,setMesclando]=useState(false);
   const [candidatoMescla,setCandidatoMescla]=useState(null);
   const candidatosMescla=useMemo(()=>
@@ -14324,6 +14331,20 @@ function PainelEdicaoItemCartao({r,eDesc,setEDesc,eValor,setEValor,eData,setEDat
     if(!o.diaTipo) return null;
     return {tipo:o.diaTipo,n:o.diaN};
   })();
+  if(!editando){
+    const linhaR=(t,v)=><div style={{display:"flex",justifyContent:"space-between",gap:12,fontSize:13,padding:"4px 0"}}><span style={{color:C.textSub}}>{t}</span><span style={{fontWeight:700,color:C.text,textAlign:"right",minWidth:0,overflow:"hidden",textOverflow:"ellipsis"}}>{v}</span></div>;
+    return <div style={{background:C.bg,padding:"12px 14px",borderBottom:"1px solid "+C.border}}>
+      {linhaR("Nome",(eApelido||eDesc||r[1]))}
+      {linhaR("Valor",fmt(r[2]))}
+      {linhaR("Data",fmtD(r[0]))}
+      {linhaR("Categoria",TITULO_CAT_UNIFICADO[r[5]]||r[5])}
+      {travada&&<div style={{fontSize:11,color:C.textMuted,marginTop:6}}>{travadaFatura?"🔒 Fatura travada: valor, data e apagar bloqueados.":"🔒 Confirmado pelo banco: valor, data e apagar bloqueados."}</div>}
+      <div style={{display:"flex",gap:8,marginTop:10}}>
+        <button onClick={()=>setEditando(true)} style={{flex:1,minHeight:44,borderRadius:12,border:"none",background:C.accent,color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>✎ Editar</button>
+        <button onClick={onCancelar} style={{flex:1,minHeight:44,borderRadius:12,border:"1px solid "+C.border,background:C.surface,color:C.text,fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Fechar</button>
+      </div>
+    </div>;
+  }
   return <div style={{background:C.bg,padding:"12px 14px",
     borderBottom:"1px solid "+C.border}}>
     {diaTipoInfoCartao&&<div style={{display:"flex",gap:4,marginBottom:8}}>
@@ -14666,7 +14687,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261118.0125 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261118.1530 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14792,7 +14813,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261118.0125
+      // HTML v3.20261118.1530
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
