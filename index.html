@@ -7479,7 +7479,7 @@ function calcOrcamento(data,escopo){
     else if(per){ f=per.meses.split(", ").length/12; sub=per.label.toLowerCase()+" ÷ "+Math.round(12/per.meses.split(", ").length); }
     if((Number(r[5])||0)>0) sub+=" · parcelado";
     const eq=_r2(Math.abs(valor)*f);
-    (valor<0?despesas:receitas).push({id:"rec:"+i+":"+r[0],nome:r[0],sub,valor:eq,recIdx:i,conta:_orcContaDaRec(data,contasAt,r)});
+    (valor<0?despesas:receitas).push({id:"rec:"+i+":"+r[0],nome:r[0],sub,valor:eq,recIdx:i,fator:f,sinal:valor<0?-1:1,valorOcorr:valor,conta:_orcContaDaRec(data,contasAt,r)});
   });
   const base=Number((data.config||{}).DCP_VALOR_BASE)||1250;
   const pv=(data.fluxo||[]).find(r=>r.categoria==="DCP_PROVISAO");
@@ -7893,7 +7893,7 @@ function CardOrcamento({data,onAbrir}){
     </div>
   </Card>;
 }
-function Orcamento({data}){
+function Orcamento({data,onUpdate}){
   const contasOrc=useMemo(()=>(data.contas||[]).filter(c=>c.ativa!==false),[data.contas]);
   const [escOrc,setEscOrc]=useState("__todas");
   const base=useMemo(()=>calcOrcamento(data,escOrc==="__todas"?null:escOrc),[data.fontesReceita,data.recorr,data.config,data.contas,data.cartoes,data.fluxo,escOrc]);
@@ -7906,6 +7906,35 @@ function Orcamento({data}){
   const setV=(id,txt)=>setSim(s=>({...s,[id]:{...(s[id]||{}),v:numBR(txt)||0}}));
   const alterna=id=>setSim(s=>({...s,[id]:{...(s[id]||{}),off:!(s[id]&&s[id].off)}}));
   const addExtra=(tipo,nome,valor)=>setExtras(e=>[...e,{k:Date.now()+"_"+e.length,tipo,nome,valor}]);
+  // Simular x Gravar: Gravar so liga depois de Simular e se nada mudou desde entao.
+  const [simKey,setSimKey]=useState(null);
+  const [gravando,setGravando]=useState(false);
+  const [msgG,setMsgG]=useState("");
+  const chaveAtual=JSON.stringify({sim,extras,escOrc});
+  const simulado=mudou&&simKey===chaveAtual;
+  // So recorrencias (despesas/receitas fixas) com valor mudado e nao desligadas sao gravaveis.
+  const gravaveis=[...base.receitas,...base.despesas].filter(it=>it.recIdx!=null&&it.fator>0&&sim[it.id]&&!sim[it.id].off&&sim[it.id].v!=null&&_r2(sim[it.id].v)!==_r2(it.valor)).map(it=>{
+    const novo=_r2(it.sinal*sim[it.id].v/it.fator);
+    return {it,novo};
+  });
+  const naoGravaveis=mudou?(extras.length+Object.keys(sim).filter(k=>(sim[k].off||sim[k].v!=null)&&!gravaveis.some(g=>g.it.id===k)).length):0;
+  async function gravar(){
+    if(!simulado||!gravaveis.length||gravando) return;
+    const txt=gravaveis.map(g=>g.it.nome+": "+fmt(Math.abs(g.it.valorOcorr))+" → "+fmt(Math.abs(g.novo))).join("\n");
+    if(!window.confirm("Gravar estes valores nas Despesas/Receitas Fixas?\n\n"+txt+"\n\nOs lançamentos futuros programados também são ajustados. O que já foi executado não muda.")) return;
+    setGravando(true);setMsgG("");
+    try{
+      let d=null;
+      for(let i=0;i<gravaveis.length;i++){
+        const g=gravaveis[i];
+        d=await api({action:"editarRecorrencia",descricao:g.it.nome,campo:"VALOR",valor:String(g.novo),resumo:"",_lote:i<gravaveis.length-1});
+      }
+      setSim({});setExtras([]);setSimKey(null);
+      setMsgG("Gravado: "+gravaveis.length+" item(ns).");
+      if(d&&!d.lote&&onUpdate) onUpdate(d);
+    }catch(e){ setMsgG("Erro ao gravar: "+e.message); }
+    setGravando(false);
+  }
   const linha=(it,tipo)=>{
     const s=sim[it.id]||{},off=!!s.off,mod=s.v!=null;
     return <div key={it.id} style={{display:"flex",alignItems:"center",gap:8,padding:mod?"10px 16px":"10px 0",margin:mod?"0 -16px":0,borderTop:"1px solid "+C.border,minHeight:44,opacity:off?.4:1,background:mod?"#FFF9E6":"transparent"}}>
@@ -7947,14 +7976,21 @@ function Orcamento({data}){
       {extras.filter(e=>e.tipo==="des").map(linhaExtra)}
       <button onClick={()=>addExtra("des","Despesa nova",0)} style={{width:"100%",marginTop:8,minHeight:44,borderRadius:12,border:"1px solid "+C.border,background:"#fff",color:C.accent,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>＋ Simular despesa nova</button>
     </Card>
-    <div style={{fontSize:11,color:C.textMuted,lineHeight:1.5,padding:"0 4px"}}>Plantões: escala semanal × 52/12, já com o desconto de cada fonte. Impostos e contas periódicas divididos pelos meses. DCP: base × 4,33 semanas. Por conta: a parte dos lucros que a PJ repassa entra como receita da conta que recebe. É só simulação: nada é gravado nas suas despesas e receitas.</div>
+    <div style={{fontSize:11,color:C.textMuted,lineHeight:1.5,padding:"0 4px"}}>Plantões: escala semanal × 52/12, já com o desconto de cada fonte. Impostos e contas periódicas divididos pelos meses. DCP: base × 4,33 semanas. Por conta: a parte dos lucros que a PJ repassa entra como receita da conta que recebe. Simular não grava nada. Depois de simular, Gravar muda o valor das despesas/receitas fixas alteradas.</div>
     <div style={{position:"fixed",left:0,right:0,bottom:0,zIndex:80,display:"flex",justifyContent:"center",pointerEvents:"none"}}>
       <div style={{pointerEvents:"auto",width:"100%",maxWidth:480,background:C.dark,color:"#fff",borderRadius:"20px 20px 0 0",padding:"12px 16px 16px",boxShadow:"0 -4px 16px rgba(15,23,42,.25)",boxSizing:"border-box"}}>
         <div style={{fontSize:12,color:"#A9B6DA",fontWeight:600}}>Receitas <b style={{color:"#fff"}}>{fmt(R)}</b> · Despesas <b style={{color:"#fff"}}>{fmt(D)}</b></div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8,marginTop:2}}>
           <span style={{fontSize:12,color:"#A9B6DA",fontWeight:600}}>{mudou?"Simulação · sobra ("+(S-S0>=0?"+":"")+fmt(S-S0)+")":"Sobra por mês"}</span>
           <span style={{fontSize:24,fontWeight:800,fontVariantNumeric:"tabular-nums",color:S<0?"#FFB4AC":"#7FE0B5"}}>{fmt(S)}</span></div>
-        {mudou&&<button onClick={()=>{setSim({});setExtras([]);}} style={{width:"100%",marginTop:10,minHeight:46,borderRadius:12,border:"none",background:"rgba(255,255,255,.14)",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Descartar simulação</button>}
+        {msgG&&<div style={{fontSize:12,fontWeight:700,color:"#A9B6DA",marginTop:8}}>{msgG}</div>}
+        {mudou&&<div style={{display:"flex",gap:8,marginTop:10}}>
+          <button onClick={()=>{setSim({});setExtras([]);setSimKey(null);setMsgG("");}} style={{flex:1,minHeight:48,borderRadius:12,border:"none",background:"rgba(255,255,255,.14)",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Descartar</button>
+          <button onClick={()=>{setSimKey(chaveAtual);setMsgG("");}} style={{flex:1,minHeight:48,borderRadius:12,border:"none",background:simulado?"rgba(255,255,255,.14)":"#fff",color:simulado?"#fff":C.dark,fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{simulado?"Simulado ✓":"Simular"}</button>
+          <button onClick={gravar} disabled={!simulado||!gravaveis.length||gravando} style={{flex:1,minHeight:48,borderRadius:12,border:"none",background:C.accent,color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",opacity:(simulado&&gravaveis.length&&!gravando)?1:.35}}>{gravando?"Gravando…":"Gravar"}</button>
+        </div>}
+        {mudou&&simulado&&naoGravaveis>0&&<div style={{fontSize:11,color:"#A9B6DA",marginTop:6}}>{naoGravaveis} item(ns) (plantões, DCP, extras ou desligados) são só simulação e não são gravados aqui.</div>}
+        {mudou&&simulado&&!gravaveis.length&&<div style={{fontSize:11,color:"#A9B6DA",marginTop:6}}>Nada gravável: só despesas/receitas fixas com valor alterado são gravadas.</div>}
       </div>
     </div>
   </div>;
@@ -14631,7 +14667,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261117.2155 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261117.2250 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14695,7 +14731,7 @@ function Tesouraria(){
         tab==="emprestimos" ? <EmprestimosPassivos data={data} onUpdate={setData}/> :
         tab==="parcelas"    ? <ComprasParceladas data={data}/> :
         tab==="receitas"    ? <FontesReceita data={data} onUpdate={setData}/> :
-        tab==="orcamento"   ? <Orcamento data={data}/> :
+        tab==="orcamento"   ? <Orcamento data={data} onUpdate={setData}/> :
         tab==="envelopes"   ? <EnvelopesCustom data={data} onUpdate={setData}/> :
         tab==="conciliacao" ? <ConciliacaoHub data={data} onUpdate={setData} onIrPara={irPara} fila={fila} setFila={setFila}/> :
         tab==="perfil"      ? <PerfilApelidos data={data} onUpdate={setData}/> :
@@ -14757,7 +14793,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261117.2155
+      // HTML v3.20261117.2250
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
