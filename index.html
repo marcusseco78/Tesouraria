@@ -7965,13 +7965,12 @@ function Orcamento({data,onUpdate}){
       <div style={{fontSize:12,color:"#A9B6DA",fontWeight:600,marginTop:2}}>{R>0?pct+"% da receita vira poupança ou investimento":"Sem receitas cadastradas"}</div>
     </div>
     <Card>
-      <div style={{display:"flex",justifyContent:"space-between",fontSize:12,fontWeight:800,marginBottom:2}}><span>RECEITAS FIXAS · mês típico</span><span style={{color:C.green}}>{fmt(R)}</span></div>
+      <div style={{fontSize:11,color:C.textMuted,marginBottom:6}}>Mês típico · toque no valor para simular outro.</div>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:12,fontWeight:800,marginBottom:2}}><span>ENTRADAS</span><span style={{color:C.green}}>{fmt(R)}</span></div>
       {base.receitas.map(it=>linha(it,"rec"))}
       {extras.filter(e=>e.tipo==="rec").map(linhaExtra)}
       <button onClick={()=>addExtra("rec","Receita extra",0)} style={{width:"100%",marginTop:8,minHeight:44,borderRadius:12,border:"1px solid "+C.border,background:"#fff",color:C.accent,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>＋ Simular receita extra</button>
-    </Card>
-    <Card>
-      <div style={{display:"flex",justifyContent:"space-between",fontSize:12,fontWeight:800,marginBottom:2}}><span>DESPESAS FIXAS · mês típico</span><span style={{color:C.red}}>{fmt(D)}</span></div>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:12,fontWeight:800,margin:"18px 0 2px"}}><span>SAÍDAS</span><span style={{color:C.dark}}>{fmt(D)}</span></div>
       {base.despesas.map(it=>linha(it,"des"))}
       {extras.filter(e=>e.tipo==="des").map(linhaExtra)}
       <button onClick={()=>addExtra("des","Despesa nova",0)} style={{width:"100%",marginTop:8,minHeight:44,borderRadius:12,border:"1px solid "+C.border,background:"#fff",color:C.accent,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>＋ Simular despesa nova</button>
@@ -14667,7 +14666,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261117.2250 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261117.2310 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14793,7 +14792,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261117.2250
+      // HTML v3.20261117.2310
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
