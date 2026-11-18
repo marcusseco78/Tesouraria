@@ -1,4 +1,4 @@
-// VERSAO: v3.20261117.2110
+// VERSAO: v3.20261117.2140
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -431,7 +431,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261117.2110",
+    scriptVersion: "v3.20261117.2140",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }

@@ -7555,15 +7555,19 @@ function CardNotificacoes({data,onUpdate}){
     const entrada=it.tipo==="TRANSF_RECEBIDA";
     const est=nrm(estabDe(it)||String(it.texto||"").replace(/R\$\s*[\d.,]+/g," "));
     const palavras=est.split(" ").filter(w=>w.length>=4&&!["pagamento","realizado","sucesso","boleto","para","compra","debito","seguro","seguros"].includes(w));
+    // [17/11] Apelido cadastrado da recorrencia (coluna ALIAS, ex.: ZELT;...PJBANK PAGAMENTOS) tambem casa com o texto do aviso.
+    const txtN=nrm(String(it.texto||"")+" "+estabDe(it));
+    const aliasDe=desc=>{const rc=(data.recorr||[]).find(r=>String(r[0]||"").trim().toUpperCase()===String(desc||"").trim().toUpperCase());return rc?String(rc[11]||"").split(";").map(x=>nrm(x.replace(/^.*? - /,""))).filter(x=>x.length>=5):[];};
     return (data.fluxo||[]).filter(f=>f.status==="PROGRAMADO"&&f.categoria!=="DCP_PROVISAO"
       &&String(f.tipo||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z]/g,"").indexOf("CARTAO")!==0
       &&(entrada?f.valor>0:f.valor<0)).map(f=>{
       const nome=nomeExibicao(f,data);
       const nn=nrm(nome+" "+f.descricao);
-      const nm=palavras.some(w=>nn.includes(w))||nn.split(" ").filter(w=>w.length>=4).some(w=>est.includes(w));
+      const porAlias=aliasDe(f.descricao).some(al=>txtN.includes(al));
+      const nm=porAlias||palavras.some(w=>nn.includes(w))||nn.split(" ").filter(w=>w.length>=4).some(w=>est.includes(w));
       const v=Math.abs(f.valor), vexato=Math.abs(v-it.valor)<=Math.max(0.5,it.valor*0.02), vperto=Math.abs(v-it.valor)<=Math.max(1,it.valor*0.15);
       const dias=Math.abs((new Date(String(f.data).slice(0,10)+"T12:00:00")-new Date(it.data+"T12:00:00"))/864e5)||0;
-      const score=(nm?3:0)+(vexato?3:vperto?1:0)+(dias<=3?1:0);
+      const score=(porAlias?6:0)+(nm?3:0)+(vexato?3:vperto?1:0)+(dias<=3?1:0);
       return {row:f.row,nome,valor:v,data:String(f.data).slice(0,10),score,dias,nm,vexato};
     }).filter(x=>(x.nm||x.vexato)&&x.dias<=45).sort((a,b)=>b.score-a.score||a.dias-b.dias).slice(0,4);
   };
@@ -14613,7 +14617,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261117.2110 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261117.2140 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14739,7 +14743,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261117.2110
+      // HTML v3.20261117.2140
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
