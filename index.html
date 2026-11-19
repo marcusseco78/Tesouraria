@@ -1647,6 +1647,7 @@ function BarraSemanaDCP({gasto,meta,grande}){
   </div>;
 }
 function CardDCP({dcpResumo,grande}){
+  const [verSem,setVerSem]=useState(false); // [19/11] tabela S1..S5 e grafico por semana atras de um botao
   if(!dcpResumo||!dcpResumo.semanas||!dcpResumo.semanas.length) return null;
   return <Card style={grande?{padding:"20px 12px"}:undefined}>
       <div style={{marginBottom:8}}><Label>{grande?"DCP · Despesas cotidianas":"Saldo p/ Despesas Cotidianas (DCP)"}</Label></div>
@@ -1679,7 +1680,8 @@ function CardDCP({dcpResumo,grande}){
             <Bloco label="No ciclo (mês)" valor={dispMes}/>
           </div>
           {semAtual&&semAtual.status==="PROGRAMADO"&&<BarraSemanaDCP gasto={semAtual.gasto} meta={semAtual.meta} grande={grande}/>}
-          <div style={{marginBottom:12,fontSize:fs}}>
+          <button onClick={()=>setVerSem(v=>!v)} style={{width:"100%",minHeight:44,marginBottom:verSem?8:0,borderRadius:12,border:"1px solid "+C.border,background:C.surface,color:C.accent,fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>{verSem?"Esconder semanas ▴":"Ver por semana ▾"}</button>
+          {verSem&&<div style={{marginBottom:12,fontSize:fs}}>
             <div style={{display:"flex",gap:4,padding:"0 4px 4px",fontSize:10,fontWeight:700,color:C.textMuted,textTransform:"uppercase",letterSpacing:".03em"}}>
               <span style={{flex:1}}>DCP (R$)</span><span style={col}>Disponib.</span><span style={col}>Usado</span><span style={col}>Resta</span></div>
             {dcpResumo.semanas.map((w,i)=>{
@@ -1691,10 +1693,10 @@ function CardDCP({dcpResumo,grande}){
                 <span style={{...col,fontWeight:600}}>{n2(w.gasto)}</span>
                 <span style={{...col,fontWeight:800,color:resta<0?C.red:C.green}}>{n2(resta)}</span>
               </div>;})}
-          </div>
+          </div>}
         </div>;
       })()}
-      <BarraDCP semanas={dcpResumo.semanas} base={dcpResumo.base} piso={dcpResumo.piso} grande={grande}/>
+      {verSem&&<BarraDCP semanas={dcpResumo.semanas} base={dcpResumo.base} piso={dcpResumo.piso} grande={grande}/>}
     </Card>;
 }
 function Card({children,style}){return <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:20,padding:"18px 20px",boxShadow:"none",...style}}>{children}</div>;}
@@ -7524,6 +7526,13 @@ function CardNotificacoes({data,onUpdate}){
     if(lancavel(it)&&(it.tipo==="CREDITO"?cartaoOk:contaOk)) setMarc(m=>({...m,[it.key]:true}));
   };
   const ehInfo=it=>it.tipo!=="CREDITO"&&!ehSaidaConta(it); // so "Já vi"
+  // [19/11] Escolher uma previsao pra casar so MARCA (fica destacada e a caixa liga); casa de verdade ao lancar (junto com as outras ou so esta).
+  const vincDe=it=>sel[it.key]?.vinc||null;
+  const escolherVinc=(it,vinc)=>{
+    const igual=vincDe(it)&&vincDe(it).tipo===vinc.tipo&&vincDe(it).row===vinc.row;
+    setK(it.key,{vinc:igual?null:vinc});
+    setMarc(m=>({...m,[it.key]:!igual}));
+  };
   const marcavel=it=>lancavel(it)||ehInfo(it);
   const marcadas=itens.filter(it=>marc[it.key]&&marcavel(it));
   // [17/11] Ignorar todas as marcadas de uma vez (uma recarga so).
@@ -7540,11 +7549,11 @@ function CardNotificacoes({data,onUpdate}){
     setBusy("");
   };
   const lancarLote=async()=>{
-    const pend=marcadas.filter(it=>lancavel(it)&&(it.tipo==="CREDITO"?!cartaoDe(it):!contaDe(it)));
+    const pend=marcadas.filter(it=>!vincDe(it)&&lancavel(it)&&(it.tipo==="CREDITO"?!cartaoDe(it):!contaDe(it)));
     if(pend.length){alert("Falta escolher o cartão/conta em "+pend.length+" marcada(s): "+pend.map(x=>x.estab||"compra").join(", ")+".");return;}
     setBusy("lote");
     try{
-      const r=await api({action:"classificarNotificacoesLote",itens:marcadas.map(it=>ehInfo(it)?{key:it.key,via:"ignorar"}:it.tipo==="CREDITO"
+      const r=await api({action:"classificarNotificacoesLote",itens:marcadas.map(it=>vincDe(it)?(vincDe(it).tipo==="cartao"?{key:it.key,via:"vincularCartao",cartao:cartaoDe(it),row:vincDe(it).row}:{key:it.key,via:"vincularPlano",row:vincDe(it).row}):ehInfo(it)?{key:it.key,via:"ignorar"}:it.tipo==="CREDITO"
         ?{key:it.key,via:"cartao",cartao:cartaoDe(it),categoria:catDe(it)}
         :{key:it.key,via:"conta",conta:contaDe(it),categoria:catDe(it)})});
       onUpdate(r);
@@ -7562,7 +7571,7 @@ function CardNotificacoes({data,onUpdate}){
     setBusy("");
   };
   const vincularPlano=async(it,cand)=>{
-    if(!confirm("Executar \""+cand.nome+"\" com o valor e a data da notificação?\n\n"+fmt(it.valor)+" em "+dd(it.data)+(Math.abs(cand.valor-it.valor)>0.005?"\n(previsto: "+fmt(cand.valor)+" em "+dd(cand.data)+")":"")+"\n\nNada novo é criado.")) return;
+    if(false&&!confirm("Executar \""+cand.nome+"\" com o valor e a data da notificação?\n\n"+fmt(it.valor)+" em "+dd(it.data)+(Math.abs(cand.valor-it.valor)>0.005?"\n(previsto: "+fmt(cand.valor)+" em "+dd(cand.data)+")":"")+"\n\nNada novo é criado.")) return;
     setBusy(it.key);
     try{ onUpdate(await api({action:"vincularNotificacaoPlano",key:it.key,row:cand.row})); }catch(e){alert(e.message);}
     setBusy("");
@@ -7622,7 +7631,7 @@ function CardNotificacoes({data,onUpdate}){
   };
   const vincular=async(it,cand)=>{
     const cartao=cartaoDe(it);
-    if(!confirm("Casar esta compra com \""+cand.desc+"\"?\n\nA compra prevista passa a valer "+fmt(it.valor)+" em "+dd(it.data)+". Nada novo é criado.")) return;
+    if(false&&!confirm("Casar esta compra com \""+cand.desc+"\"?\n\nA compra prevista passa a valer "+fmt(it.valor)+" em "+dd(it.data)+". Nada novo é criado.")) return;
     setBusy(it.key);
     try{ onUpdate(await api({action:"vincularNotificacao",key:it.key,cartao,row:cand.row})); }catch(e){alert(e.message);}
     setBusy("");
@@ -7652,21 +7661,21 @@ function CardNotificacoes({data,onUpdate}){
           {cartoes.map(c=><Pil key={c.id} on={cartaoDe(it)===c.id} onClick={()=>escolher(it,{cartao:c.id})}>{c.nome}</Pil>)}</div>}
         {(()=>{ if(!cartaoDe(it)||!(it.valor>0)) return null; const cd=candidatosDe(it), lista=todas[it.key]?cd.all:cd.top; if(!cd.all.length) return null;
           return <div style={{marginTop:8,background:"#fff",border:"1px solid "+C.border,borderRadius:14,padding:10}}>
-            <div style={{fontSize:12,fontWeight:700,color:C.textSub,marginBottom:6}}>{lista.length&&!todas[it.key]?"Já está cadastrada? Toque para casar:":"Casar com uma cadastrada:"}</div>
-            {lista.map(cd2=><button key={cd2.row} disabled={busy===it.key} onClick={()=>vincular(it,cd2)} style={{display:"flex",justifyContent:"space-between",gap:8,width:"100%",minHeight:44,alignItems:"center",padding:"0 10px",marginBottom:4,borderRadius:12,border:"1px solid "+C.border,background:C.bg,fontFamily:"inherit",fontSize:13,fontWeight:700,textAlign:"left"}}>
+            <div style={{fontSize:12,fontWeight:700,color:C.textSub,marginBottom:6}}>{lista.length&&!todas[it.key]?"Já está cadastrada? Toque para escolher:":"Casar com uma cadastrada:"}</div>
+            {lista.map(cd2=><button key={cd2.row} disabled={busy===it.key} onClick={()=>escolherVinc(it,{tipo:"cartao",row:cd2.row,nome:cd2.desc,valor:cd2.valor,data:cd2.data})} style={{...((vincDe(it)&&vincDe(it).tipo==="cartao"&&vincDe(it).row===cd2.row)?{border:"2px solid "+C.accent,background:C.accentLight}:{}),display:"flex",justifyContent:"space-between",gap:8,width:"100%",minHeight:44,alignItems:"center",padding:"0 10px",marginBottom:4,borderRadius:12,border:"1px solid "+C.border,background:C.bg,fontFamily:"inherit",fontSize:13,fontWeight:700,textAlign:"left"}}>
               <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cd2.desc}</span><span style={{whiteSpace:"nowrap",color:C.textSub,fontWeight:600}}>{fmt(cd2.valor)} · {dd(cd2.data)}</span></button>)}
             <div onClick={()=>setTodas(s=>({...s,[it.key]:!s[it.key]}))} style={{fontSize:12,fontWeight:800,color:C.accent,cursor:"pointer",padding:"6px 2px"}}>{todas[it.key]?"Ver só as parecidas":"Ver todas as previstas do cartão"}</div>
           </div>; })()}
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
           {CATS_N.map(c=><Pil key={c} on={catDe(it)===c} onClick={()=>escolher(it,{cat:c})}>{c==="DESPESA FIXA"?"Fixa":c==="EXTRAORDINARIA"?"Extra":"DCP"}</Pil>)}</div>
         <div style={{display:"flex",gap:8,marginTop:8}}>
-          <button disabled={busy===it.key} onClick={()=>lancar(it)} style={{flex:1,minHeight:48,borderRadius:14,border:0,background:C.accent,color:"#fff",fontWeight:800,fontSize:15,fontFamily:"inherit"}}>{busy===it.key?"...":"Lançar"}</button>
+          <button disabled={busy===it.key} onClick={()=>vincDe(it)?vincular(it,vincDe(it)):lancar(it)} style={{flex:1,minHeight:48,borderRadius:14,border:0,background:C.accent,color:"#fff",fontWeight:800,fontSize:15,fontFamily:"inherit"}}>{busy===it.key?"...":(vincDe(it)?"Casar e lançar":"Lançar")}</button>
           <button disabled={busy===it.key} onClick={()=>ignorar(it)} style={{minHeight:48,padding:"0 16px",borderRadius:14,border:"1px solid "+C.border,background:"#fff",fontWeight:700,fontSize:14,fontFamily:"inherit"}}>Ignorar</button></div>
       </div>:<div style={{marginTop:8}}>
         {(()=>{ const cp=(it.tipo==="DEBITO"||it.tipo==="BOLETO"||it.tipo==="TRANSF_RECEBIDA")?candidatosPlano(it):[]; if(!cp.length) return null;
           return <div style={{background:"#fff",border:"1px solid "+C.border,borderRadius:14,padding:10,marginBottom:8}}>
-            <div style={{fontSize:12,fontWeight:700,color:C.textSub,marginBottom:6}}>Já está no plano? Toque para executar com o valor e a data da notificação:</div>
-            {cp.map(c=><button key={c.row} disabled={busy===it.key} onClick={()=>vincularPlano(it,c)} style={{display:"flex",justifyContent:"space-between",gap:8,width:"100%",minHeight:44,alignItems:"center",padding:"0 10px",marginBottom:4,borderRadius:12,border:"1px solid "+C.border,background:C.bg,fontFamily:"inherit",fontSize:13,fontWeight:700,textAlign:"left"}}>
+            <div style={{fontSize:12,fontWeight:700,color:C.textSub,marginBottom:6}}>Já está no plano? Toque para escolher (executa com o valor e a data da notificação):</div>
+            {cp.map(c=><button key={c.row} disabled={busy===it.key} onClick={()=>escolherVinc(it,{tipo:"plano",row:c.row,nome:c.nome,valor:c.valor,data:c.data})} style={{...((vincDe(it)&&vincDe(it).tipo==="plano"&&vincDe(it).row===c.row)?{border:"2px solid "+C.accent,background:C.accentLight}:{}),display:"flex",justifyContent:"space-between",gap:8,width:"100%",minHeight:44,alignItems:"center",padding:"0 10px",marginBottom:4,borderRadius:12,border:"1px solid "+C.border,background:C.bg,fontFamily:"inherit",fontSize:13,fontWeight:700,textAlign:"left"}}>
               <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.nome}</span><span style={{whiteSpace:"nowrap",color:C.textSub,fontWeight:600}}>{fmt(c.valor)} · {dd(c.data)}</span></button>)}
           </div>; })()}
         {ehSaidaConta(it)?<div>
@@ -7675,10 +7684,10 @@ function CardNotificacoes({data,onUpdate}){
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             {CATS_N.map(c=><Pil key={c} on={catDe(it)===c} onClick={()=>escolher(it,{cat:c})}>{c==="DESPESA FIXA"?"Fixa":c==="EXTRAORDINARIA"?"Extra":"DCP"}</Pil>)}</div>
           <div style={{display:"flex",gap:8,marginTop:8}}>
-            <button disabled={busy===it.key} onClick={()=>lancarConta(it)} style={{flex:1,minHeight:48,borderRadius:14,border:0,background:C.accent,color:"#fff",fontWeight:800,fontSize:15,fontFamily:"inherit"}}>{busy===it.key?"...":"Lançar na conta"}</button>
+            <button disabled={busy===it.key} onClick={()=>vincDe(it)?vincularPlano(it,vincDe(it)):lancarConta(it)} style={{flex:1,minHeight:48,borderRadius:14,border:0,background:C.accent,color:"#fff",fontWeight:800,fontSize:15,fontFamily:"inherit"}}>{busy===it.key?"...":(vincDe(it)?"Executar no plano":"Lançar na conta")}</button>
             <button disabled={busy===it.key} onClick={()=>ignorar(it)} style={{minHeight:48,padding:"0 16px",borderRadius:14,border:"1px solid "+C.border,background:"#fff",fontWeight:700,fontSize:14,fontFamily:"inherit"}}>Ignorar</button></div>
         </div>:
-        <button disabled={busy===it.key} onClick={()=>setMarc(m=>({...m,[it.key]:!m[it.key]}))} style={{minHeight:44,padding:"0 16px",borderRadius:14,border:"1px solid "+(marc[it.key]?C.accent:C.border),background:marc[it.key]?C.accent:"#fff",color:marc[it.key]?"#fff":C.text,fontWeight:700,fontSize:14,fontFamily:"inherit"}}>{marc[it.key]?"Já vi ✓":"Já vi"}</button>}</div>}
+        <button disabled={busy===it.key} onClick={()=>setMarc(m=>({...m,[it.key]:!m[it.key]}))} style={{minHeight:44,padding:"0 16px",borderRadius:14,border:"1px solid "+(marc[it.key]?C.accent:C.border),background:marc[it.key]?C.accent:"#fff",color:marc[it.key]?"#fff":C.text,fontWeight:700,fontSize:14,fontFamily:"inherit"}}>{vincDe(it)?(marc[it.key]?"Executar no plano ✓":"Executar no plano"):(marc[it.key]?"Já vi ✓":"Já vi")}</button>}</div>}
     </div>)}
     {marcadas.length>0&&<div style={{position:"sticky",bottom:8,marginTop:6,display:"flex",gap:8}}>
       <button disabled={busy==="lote"} onClick={lancarLote} style={{flex:2,minHeight:52,borderRadius:16,border:0,background:C.dark,color:"#fff",fontWeight:800,fontSize:16,fontFamily:"inherit",boxShadow:"0 6px 18px rgba(15,27,61,.35)"}}>{busy==="lote"?"Salvando...":(marcadas.some(ehInfo)?"Confirmar ":"Lançar ")+marcadas.length+" marcada"+(marcadas.length>1?"s":"")}</button>
@@ -14699,7 +14708,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261119.0330 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261119.1245 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14825,7 +14834,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261119.0330
+      // HTML v3.20261119.1245
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();

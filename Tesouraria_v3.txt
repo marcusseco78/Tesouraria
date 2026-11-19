@@ -1,4 +1,4 @@
-// VERSAO: v3.20261119.0330
+// VERSAO: v3.20261119.1230
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -432,7 +432,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261119.0330",
+    scriptVersion: "v3.20261119.1230",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -13810,7 +13810,7 @@ function classificarNotificacaoConta(ss, p) {
 // cada item e classificado sem recarregar a planilha; no fim refaz o total da fatura
 // e o DCP UMA vez e devolve o estado completo. Um item com erro nao derruba os outros:
 // volta a PENDENTE (as funcoes ja fazem isso) e entra em lote.erros.
-// p.itens = [{key, via:"cartao"|"conta", cartao, conta, categoria, envelopeId}]
+// p.itens = [{key, via:"cartao"|"conta"|"ignorar"|"vincularPlano"|"vincularCartao", cartao, conta, categoria, envelopeId, row}]
 function classificarNotificacoesLote(ss, p) {
   var itens = p.itens || [];
   if (!itens.length) return getData(ss);
@@ -13824,6 +13824,11 @@ function classificarNotificacoesLote(ss, p) {
           ignorarNotificacao(ss, { key: it.key });
         } else if (it.via === "conta") {
           classificarNotificacaoConta(ss, { key: it.key, conta: it.conta, categoria: it.categoria });
+        } else if (it.via === "vincularPlano") {
+          vincularNotificacaoPlano(ss, { key: it.key, row: it.row });
+        } else if (it.via === "vincularCartao") {
+          vincularNotificacao(ss, { key: it.key, cartao: it.cartao, row: it.row });
+          if (it.cartao) cartoes[String(it.cartao).toUpperCase()] = true;
         } else {
           classificarNotificacao(ss, { key: it.key, cartao: it.cartao, categoria: it.categoria, envelopeId: it.envelopeId });
           if (it.cartao) cartoes[String(it.cartao).toUpperCase()] = true;
