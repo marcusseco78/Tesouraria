@@ -1914,6 +1914,7 @@ function AvisoEstouroDCP({estouro,onUpdate}){
 }
 
 function Dashboard({data,onUpdate,estouro,onIrPara}){
+  const [maisAberto,setMaisAberto]=useState(false); // [19/11] reserva de impostos, orcamento e grafico atras de "Mais"
   const fluxo=data.fluxo||[],cfg=data.config||{},hj=hoje();
   const dcpResumo=data.dcpResumo||{base:1250,numSemanas:0,totalGasto:0,semanas:[]};
   // Custo de vida dinamico: soma dos recorrentes DESPESA FIXA ativos (FLUXO
@@ -1987,6 +1988,8 @@ function Dashboard({data,onUpdate,estouro,onIrPara}){
     <CardNotificacoes data={data} onUpdate={onUpdate}/>
     <CardDCP dcpResumo={dcpResumo}/>
     <CardBalancoCiclo data={data}/>
+    <button onClick={()=>setMaisAberto(v=>!v)} style={{width:"100%",minHeight:48,borderRadius:16,border:"1px solid "+C.border,background:C.surface,color:C.accent,fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{maisAberto?"Mais ▴":"Mais: impostos, orçamento e saldo projetado ▾"}</button>
+    {maisAberto&&<>
     <CardReservaPJ data={data}/>
     <CardOrcamento data={data} onAbrir={()=>onIrPara&&onIrPara({tab:"orcamento"})}/>
     <Card style={{padding:"14px 12px 10px"}}>
@@ -2014,6 +2017,7 @@ function Dashboard({data,onUpdate,estouro,onIrPara}){
       </div>
       <Chart pts={chartPts} zoomX={zoomX}/>
     </Card>
+    </>}
     {ciclos.map((k,i)=><CicloCard key={k} fluxo={fluxo.filter(r=>r.data&&cicloKey(r.data)===k)} nome={cicloNomeDeKey(k)} atual={i===0} dcpResumo={dcpResumo} basais={basais} data={data}/>)}
     <div style={{height:8}}/>
   </div>;
@@ -7638,9 +7642,9 @@ function CardNotificacoes({data,onUpdate}){
   };
   const abrirCfg=async()=>{ try{ const r=await api({action:"tokenNotificacao"}); setCfg(r.token); }catch(e){alert(e.message);} };
   const dd=d=>String(d||"").slice(8,10)+"/"+String(d||"").slice(5,7);
-  const Pil=({on,children,...p})=><button {...p} style={{minHeight:44,padding:"0 14px",borderRadius:22,border:"1px solid "+(on?C.accent:C.border),background:on?C.accent:"#fff",color:on?"#fff":C.text,fontWeight:700,fontSize:13,fontFamily:"inherit"}}>{children}</button>;
+  const Pil=({on,children,...p})=><button {...p} style={{minHeight:36,padding:"0 12px",borderRadius:18,border:"1px solid "+(on?C.accent:C.border),background:on?C.accent:"#fff",color:on?"#fff":C.text,fontWeight:700,fontSize:13,fontFamily:"inherit"}}>{children}</button>;
   if(!itens.length&&!cfg) return <div style={{textAlign:"right",padding:"0 4px"}}><span onClick={abrirCfg} style={{fontSize:12,fontWeight:700,color:C.textSub,cursor:"pointer"}}>Notificações do celular ›</span></div>;
-  return <Card style={{padding:"16px 12px"}}>
+  return <Card style={{padding:"12px 10px"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,padding:"0 4px"}}>
       <Label>A classificar ({itens.length})</Label>
       <span onClick={abrirCfg} style={{fontSize:12,fontWeight:700,color:C.textSub,cursor:"pointer"}}>Configurar</span></div>
@@ -7648,34 +7652,34 @@ function CardNotificacoes({data,onUpdate}){
       <div style={{fontWeight:800,marginBottom:4}}>Senha da ponte (token)</div><div style={{fontFamily:"monospace"}}>{cfg}</div>
       <div style={{fontWeight:800,margin:"8px 0 4px"}}>Endereço</div><div style={{fontFamily:"monospace"}}>{getApiUrl()}</div>
       <div onClick={()=>setCfg(null)} style={{marginTop:8,fontWeight:800,color:C.accent,cursor:"pointer"}}>Fechar</div></div>}
-    {itens.map(it=><div key={it.key} style={{background:C.bg,borderRadius:16,padding:12,marginBottom:8}}>
+    {itens.map(it=><div key={it.key} style={{background:C.bg,borderRadius:14,padding:"8px 10px",marginBottom:6}}>
       <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
         {marcavel(it)&&<div onClick={()=>setMarc(m=>({...m,[it.key]:!m[it.key]}))} style={{width:44,height:44,margin:"-8px 0 -8px -8px",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer"}}>
           <div style={{width:24,height:24,borderRadius:7,border:"2px solid "+(marc[it.key]?C.accent:C.border),background:marc[it.key]?C.accent:"#fff",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:800}}>{marc[it.key]?"✓":""}</div></div>}
-        <div style={{minWidth:0,flex:1}}><div style={{fontSize:14,fontWeight:800,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.tipo==="CREDITO"?(it.estab||"Compra"):it.tipo==="DEBITO"?(it.estab||"Débito"):it.tipo==="TRANSF_RECEBIDA"?"Recebido de "+(it.estab||"?"):it.tipo==="BOLETO"?"Boleto"+(estabDe(it)?" · "+estabDe(it):""):(it.titulo||"Notificação")}</div>
+        <div style={{minWidth:0,flex:1}}><div style={{fontSize:13,fontWeight:800,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.tipo==="CREDITO"?(it.estab||"Compra"):it.tipo==="DEBITO"?(it.estab||"Débito"):it.tipo==="TRANSF_RECEBIDA"?"Recebido de "+(it.estab||"?"):it.tipo==="BOLETO"?"Boleto"+(estabDe(it)?" · "+estabDe(it):""):(it.titulo||"Notificação")}</div>
           <div style={{fontSize:11,color:C.textSub}}>{dd(it.data)}{it.tipo==="CREDITO"?" · crédito "+(it.escopo==="PJ"?"PJ":(it.final?"final "+it.final:"PF")):it.tipo==="DEBITO"?" · débito "+(it.escopo==="PJ"?"PJ":"PF"):""}</div>
           {it.tipo!=="CREDITO"&&it.tipo!=="DEBITO"&&<div style={{fontSize:12,color:C.textSub,marginTop:4,lineHeight:1.35}}>{(it.texto||"(sem texto)").slice(0,200)}</div>}</div>
-        <div style={{fontSize:16,fontWeight:800,whiteSpace:"nowrap",color:it.tipo==="TRANSF_RECEBIDA"?C.green:C.text}}>{it.valor?fmt(it.valor):""}</div></div>
+        <div style={{fontSize:14,fontWeight:800,whiteSpace:"nowrap",color:it.tipo==="TRANSF_RECEBIDA"?C.green:C.text}}>{it.valor?fmt(it.valor):""}</div></div>
       {it.tipo==="CREDITO"?<div>
         {!nt.mapa[chaveDe(it)]&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
           {cartoes.map(c=><Pil key={c.id} on={cartaoDe(it)===c.id} onClick={()=>escolher(it,{cartao:c.id})}>{c.nome}</Pil>)}</div>}
         {(()=>{ if(!cartaoDe(it)||!(it.valor>0)) return null; const cd=candidatosDe(it), lista=todas[it.key]?cd.all:cd.top; if(!cd.all.length) return null;
           return <div style={{marginTop:8,background:"#fff",border:"1px solid "+C.border,borderRadius:14,padding:10}}>
             <div style={{fontSize:12,fontWeight:700,color:C.textSub,marginBottom:6}}>{lista.length&&!todas[it.key]?"Já está cadastrada? Toque para escolher:":"Casar com uma cadastrada:"}</div>
-            {lista.map(cd2=><button key={cd2.row} disabled={busy===it.key} onClick={()=>escolherVinc(it,{tipo:"cartao",row:cd2.row,nome:cd2.desc,valor:cd2.valor,data:cd2.data})} style={{...((vincDe(it)&&vincDe(it).tipo==="cartao"&&vincDe(it).row===cd2.row)?{border:"2px solid "+C.accent,background:C.accentLight}:{}),display:"flex",justifyContent:"space-between",gap:8,width:"100%",minHeight:44,alignItems:"center",padding:"0 10px",marginBottom:4,borderRadius:12,border:"1px solid "+C.border,background:C.bg,fontFamily:"inherit",fontSize:13,fontWeight:700,textAlign:"left"}}>
+            {lista.map(cd2=><button key={cd2.row} disabled={busy===it.key} onClick={()=>escolherVinc(it,{tipo:"cartao",row:cd2.row,nome:cd2.desc,valor:cd2.valor,data:cd2.data})} style={{...((vincDe(it)&&vincDe(it).tipo==="cartao"&&vincDe(it).row===cd2.row)?{border:"2px solid "+C.accent,background:C.accentLight}:{}),display:"flex",justifyContent:"space-between",gap:8,width:"100%",minHeight:38,alignItems:"center",padding:"0 10px",marginBottom:3,borderRadius:12,border:"1px solid "+C.border,background:C.bg,fontFamily:"inherit",fontSize:13,fontWeight:700,textAlign:"left"}}>
               <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cd2.desc}</span><span style={{whiteSpace:"nowrap",color:C.textSub,fontWeight:600}}>{fmt(cd2.valor)} · {dd(cd2.data)}</span></button>)}
             <div onClick={()=>setTodas(s=>({...s,[it.key]:!s[it.key]}))} style={{fontSize:12,fontWeight:800,color:C.accent,cursor:"pointer",padding:"6px 2px"}}>{todas[it.key]?"Ver só as parecidas":"Ver todas as previstas do cartão"}</div>
           </div>; })()}
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
           {CATS_N.map(c=><Pil key={c} on={catDe(it)===c} onClick={()=>escolher(it,{cat:c})}>{c==="DESPESA FIXA"?"Fixa":c==="EXTRAORDINARIA"?"Extra":"DCP"}</Pil>)}</div>
         <div style={{display:"flex",gap:8,marginTop:8}}>
-          <button disabled={busy===it.key} onClick={()=>vincDe(it)?vincular(it,vincDe(it)):lancar(it)} style={{flex:1,minHeight:48,borderRadius:14,border:0,background:C.accent,color:"#fff",fontWeight:800,fontSize:15,fontFamily:"inherit"}}>{busy===it.key?"...":(vincDe(it)?"Casar e lançar":"Lançar")}</button>
-          <button disabled={busy===it.key} onClick={()=>ignorar(it)} style={{minHeight:48,padding:"0 16px",borderRadius:14,border:"1px solid "+C.border,background:"#fff",fontWeight:700,fontSize:14,fontFamily:"inherit"}}>Ignorar</button></div>
+          <button disabled={busy===it.key} onClick={()=>vincDe(it)?vincular(it,vincDe(it)):lancar(it)} style={{flex:1,minHeight:42,borderRadius:12,border:0,background:C.accent,color:"#fff",fontWeight:800,fontSize:14,fontFamily:"inherit"}}>{busy===it.key?"...":(vincDe(it)?"Casar e lançar":"Lançar")}</button>
+          <button disabled={busy===it.key} onClick={()=>ignorar(it)} style={{minHeight:42,padding:"0 14px",borderRadius:12,border:"1px solid "+C.border,background:"#fff",fontWeight:700,fontSize:13,fontFamily:"inherit"}}>Ignorar</button></div>
       </div>:<div style={{marginTop:8}}>
         {(()=>{ const cp=(it.tipo==="DEBITO"||it.tipo==="BOLETO"||it.tipo==="TRANSF_RECEBIDA")?candidatosPlano(it):[]; if(!cp.length) return null;
           return <div style={{background:"#fff",border:"1px solid "+C.border,borderRadius:14,padding:10,marginBottom:8}}>
             <div style={{fontSize:12,fontWeight:700,color:C.textSub,marginBottom:6}}>Já está no plano? Toque para escolher (executa com o valor e a data da notificação):</div>
-            {cp.map(c=><button key={c.row} disabled={busy===it.key} onClick={()=>escolherVinc(it,{tipo:"plano",row:c.row,nome:c.nome,valor:c.valor,data:c.data})} style={{...((vincDe(it)&&vincDe(it).tipo==="plano"&&vincDe(it).row===c.row)?{border:"2px solid "+C.accent,background:C.accentLight}:{}),display:"flex",justifyContent:"space-between",gap:8,width:"100%",minHeight:44,alignItems:"center",padding:"0 10px",marginBottom:4,borderRadius:12,border:"1px solid "+C.border,background:C.bg,fontFamily:"inherit",fontSize:13,fontWeight:700,textAlign:"left"}}>
+            {cp.map(c=><button key={c.row} disabled={busy===it.key} onClick={()=>escolherVinc(it,{tipo:"plano",row:c.row,nome:c.nome,valor:c.valor,data:c.data})} style={{...((vincDe(it)&&vincDe(it).tipo==="plano"&&vincDe(it).row===c.row)?{border:"2px solid "+C.accent,background:C.accentLight}:{}),display:"flex",justifyContent:"space-between",gap:8,width:"100%",minHeight:38,alignItems:"center",padding:"0 10px",marginBottom:3,borderRadius:12,border:"1px solid "+C.border,background:C.bg,fontFamily:"inherit",fontSize:13,fontWeight:700,textAlign:"left"}}>
               <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.nome}</span><span style={{whiteSpace:"nowrap",color:C.textSub,fontWeight:600}}>{fmt(c.valor)} · {dd(c.data)}</span></button>)}
           </div>; })()}
         {ehSaidaConta(it)?<div>
@@ -7684,10 +7688,10 @@ function CardNotificacoes({data,onUpdate}){
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             {CATS_N.map(c=><Pil key={c} on={catDe(it)===c} onClick={()=>escolher(it,{cat:c})}>{c==="DESPESA FIXA"?"Fixa":c==="EXTRAORDINARIA"?"Extra":"DCP"}</Pil>)}</div>
           <div style={{display:"flex",gap:8,marginTop:8}}>
-            <button disabled={busy===it.key} onClick={()=>vincDe(it)?vincularPlano(it,vincDe(it)):lancarConta(it)} style={{flex:1,minHeight:48,borderRadius:14,border:0,background:C.accent,color:"#fff",fontWeight:800,fontSize:15,fontFamily:"inherit"}}>{busy===it.key?"...":(vincDe(it)?"Executar no plano":"Lançar na conta")}</button>
-            <button disabled={busy===it.key} onClick={()=>ignorar(it)} style={{minHeight:48,padding:"0 16px",borderRadius:14,border:"1px solid "+C.border,background:"#fff",fontWeight:700,fontSize:14,fontFamily:"inherit"}}>Ignorar</button></div>
+            <button disabled={busy===it.key} onClick={()=>vincDe(it)?vincularPlano(it,vincDe(it)):lancarConta(it)} style={{flex:1,minHeight:42,borderRadius:12,border:0,background:C.accent,color:"#fff",fontWeight:800,fontSize:14,fontFamily:"inherit"}}>{busy===it.key?"...":(vincDe(it)?"Executar no plano":"Lançar na conta")}</button>
+            <button disabled={busy===it.key} onClick={()=>ignorar(it)} style={{minHeight:42,padding:"0 14px",borderRadius:12,border:"1px solid "+C.border,background:"#fff",fontWeight:700,fontSize:13,fontFamily:"inherit"}}>Ignorar</button></div>
         </div>:
-        <button disabled={busy===it.key} onClick={()=>setMarc(m=>({...m,[it.key]:!m[it.key]}))} style={{minHeight:44,padding:"0 16px",borderRadius:14,border:"1px solid "+(marc[it.key]?C.accent:C.border),background:marc[it.key]?C.accent:"#fff",color:marc[it.key]?"#fff":C.text,fontWeight:700,fontSize:14,fontFamily:"inherit"}}>{vincDe(it)?(marc[it.key]?"Executar no plano ✓":"Executar no plano"):(marc[it.key]?"Já vi ✓":"Já vi")}</button>}</div>}
+        <button disabled={busy===it.key} onClick={()=>setMarc(m=>({...m,[it.key]:!m[it.key]}))} style={{minHeight:40,padding:"0 14px",borderRadius:12,border:"1px solid "+(marc[it.key]?C.accent:C.border),background:marc[it.key]?C.accent:"#fff",color:marc[it.key]?"#fff":C.text,fontWeight:700,fontSize:14,fontFamily:"inherit"}}>{vincDe(it)?(marc[it.key]?"Executar no plano ✓":"Executar no plano"):(marc[it.key]?"Já vi ✓":"Já vi")}</button>}</div>}
     </div>)}
     {marcadas.length>0&&<div style={{position:"sticky",bottom:8,marginTop:6,display:"flex",gap:8}}>
       <button disabled={busy==="lote"} onClick={lancarLote} style={{flex:2,minHeight:52,borderRadius:16,border:0,background:C.dark,color:"#fff",fontWeight:800,fontSize:16,fontFamily:"inherit",boxShadow:"0 6px 18px rgba(15,27,61,.35)"}}>{busy==="lote"?"Salvando...":(marcadas.some(ehInfo)?"Confirmar ":"Lançar ")+marcadas.length+" marcada"+(marcadas.length>1?"s":"")}</button>
@@ -14708,7 +14712,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261119.1245 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261119.1330 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14834,7 +14838,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261119.1245
+      // HTML v3.20261119.1330
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
