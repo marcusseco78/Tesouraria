@@ -1,4 +1,4 @@
-// VERSAO: v3.20261117.2155
+// VERSAO: v3.20261119.0330
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -160,6 +160,7 @@ function dispatch(p) {
     case "agendarDevolucaoEmprestimo": return agendarDevolucaoEmprestimo(ss, p);
     case "editarDevolucaoEmprestimo": return editarDevolucaoEmprestimo(ss, p);
     case "baixa":        return baixa(ss, p);
+    case "voltarParaProgramado": return voltarParaProgramado(ss, p);
     case "baixaLote":    return baixaLote(ss, p);
     case "editar":       return editar(ss, p);
     case "mesclarFaturaComSeguinte": return mesclarFaturaComSeguinte(ss, p);
@@ -431,7 +432,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261117.2155",
+    scriptVersion: "v3.20261119.0330",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -4671,6 +4672,47 @@ function baixa(ss, p) {
   _efetivarParcelaPlano(ss, row, serieParcelaPlano); // [NOVO 28/09] parcela programada executada vira amortizacao
   if (p._lote) return null; // [NOVO 21/10] baixaLote faz o ajuste de DCP e a recarga UMA vez no fim
   // (o ajuste do DCP roda dentro do getData -- nao repetir aqui)
+  return getData(ss);
+}
+
+/**
+ * [NOVO 19/11, pedido do Marcus] Desfaz uma execucao feita por engano: a linha
+ * EXECUTADO volta a PROGRAMADO, mantendo valor e data que estao nela (ele edita
+ * depois, se quiser). Recusa os casos em que voltar quebraria outra coisa:
+ * fatura de cartao, semana DCP (ha reabrirSemanaDCP), parcela de plano/evento de
+ * divida e linha ja conciliada com o extrato (desconciliar antes). Transferencia
+ * espelhada: volta os dois lados juntos.
+ */
+function voltarParaProgramado(ss, p) {
+  var sh = ss.getSheetByName("FLUXO");
+  var row = Number(p.row);
+  if (!row || row < FLUXO_START) throw new Error("Linha invalida.");
+  var v = sh.getRange(row, 1, 1, 9).getValues()[0];
+  if (String(v[COL.STATUS - 1]) !== "EXECUTADO") throw new Error("Esse lancamento ja esta programado.");
+  if (String(v[COL.CAT - 1]).toUpperCase() === "DCP_PROVISAO") throw new Error("Semana DCP: use Reabrir esta semana.");
+  if (_ehTipoFaturaCartao(String(v[COL.TIPO - 1]))) throw new Error("Fatura de cartao nao volta para programado: o restante e os creditos ja foram calculados.");
+  var rawObs = String(v[COL.OBS - 1] || "");
+  var obs = {};
+  try { obs = JSON.parse(rawObs || "{}"); } catch (e) { obs = {}; }
+  if (obs.extratoId) throw new Error("Esse lancamento ja foi conciliado com o extrato. Desfaca a conciliacao antes.");
+  if (obs.planoId || obs.dividaPosFixada || obs.eventoId) throw new Error("Parcela de divida pos-fixada: apague ou ajuste pela tela da divida.");
+  var rows = [row];
+  if (obs.parId) {
+    var last = sh.getLastRow();
+    var todas = sh.getRange(FLUXO_START, 1, last - FLUXO_START + 1, 9).getValues();
+    for (var i = 0; i < todas.length; i++) {
+      var r2 = FLUXO_START + i;
+      if (r2 === row) continue;
+      var o2 = {};
+      try { o2 = JSON.parse(todas[i][8] || "{}"); } catch (e) {}
+      if (o2.parId !== obs.parId) continue;
+      if (o2.extratoId) throw new Error("O outro lado dessa transferencia ja foi conciliado com o extrato. Desfaca a conciliacao antes.");
+      if (String(todas[i][6]) === "EXECUTADO") rows.push(r2);
+      break;
+    }
+  }
+  rows.forEach(function(r) { sh.getRange(r, COL.STATUS).setValue("PROGRAMADO"); });
+  SpreadsheetApp.flush();
   return getData(ss);
 }
 

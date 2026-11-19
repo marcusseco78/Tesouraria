@@ -8436,6 +8436,14 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
     catch(e){ alert(e.message); }
     setLoad(false);
   }
+  const podeVoltarProg=item.status==="EXECUTADO"&&item.categoria!=="DCP_PROVISAO"&&!ehFatura;
+  async function voltarProg(){
+    if(!confirm('Voltar "'+(item.descricao||"este lançamento")+'" ('+fmtD(item.data)+') para PROGRAMADO?\n\nO valor e a data atuais ficam como estão; depois você edita se precisar. O saldo passa a tratá-lo como ainda não realizado.')) return;
+    setLoad(true);
+    try{ onUpdate(await api({action:"voltarParaProgramado",row:item.row})); onClose&&onClose(); }
+    catch(e){ alert(e.message); }
+    setLoad(false);
+  }
   const podeExecutarHoje=ehFatura&&item.status==="PROGRAMADO"&&!execMode&&item.categoria!=="DCP_PROVISAO"&&item.data>hj;
   async function executarHoje(){
     if(!confirm('Este lançamento está programado para '+fmtD(item.data)+'.\n\nExecutar agora grava a data de execução como HOJE ('+fmtD(hj)+').\n\nProsseguir?')) return;
@@ -8635,6 +8643,10 @@ function PainelEdicaoItem({item,data,onUpdate,onClose,onIrPara,antecipar}){
         {loadPlantoes?"…":"Recalcular"}
       </button>
     </div>}
+    {podeVoltarProg&&<button onClick={voltarProg} disabled={!!load}
+      style={{width:"100%",marginBottom:8,background:C.surface,color:"#B45309",border:"1px solid #B45309",borderRadius:12,minHeight:44,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+      ↩ Voltar para programado
+    </button>}
     {podeReabrirDCP&&<button onClick={reabrirDCP} disabled={!!load}
       style={{width:"100%",marginBottom:8,background:C.surface,color:"#B45309",border:"1px solid #B45309",borderRadius:12,minHeight:44,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
       ↩ Reabrir esta semana DCP (desfaz o fechamento)
@@ -14687,7 +14699,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261118.1530 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261119.0330 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14813,7 +14825,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261118.1530
+      // HTML v3.20261119.0330
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
