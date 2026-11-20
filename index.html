@@ -7534,7 +7534,9 @@ function CardNotificacoes({data,onUpdate}){
   const vincDe=it=>sel[it.key]?.vinc||null;
   const escolherVinc=(it,vinc)=>{
     const igual=vincDe(it)&&vincDe(it).tipo===vinc.tipo&&vincDe(it).row===vinc.row;
-    setK(it.key,{vinc:igual?null:vinc});
+    const cu=String(vinc.cat||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase();
+    const catV=cu.indexOf("FIXA")>=0?"DESPESA FIXA":cu.indexOf("EXTRA")>=0?"EXTRAORDINARIA":cu.indexOf("DCP")>=0?"DCP":null; // [20/11] a categoria da previsao escolhida vira a selecionada
+    setK(it.key,igual?{vinc:null}:{vinc,...(catV?{cat:catV}:{})});
     setMarc(m=>({...m,[it.key]:!igual}));
   };
   const marcavel=it=>lancavel(it)||ehInfo(it);
@@ -7600,7 +7602,7 @@ function CardNotificacoes({data,onUpdate}){
       const v=Math.abs(f.valor), vexato=Math.abs(v-it.valor)<=Math.max(0.5,it.valor*0.02), vperto=Math.abs(v-it.valor)<=Math.max(1,it.valor*0.15);
       const dias=Math.abs((new Date(String(f.data).slice(0,10)+"T12:00:00")-new Date(it.data+"T12:00:00"))/864e5)||0;
       const score=(porAlias?6:0)+(nm?3:0)+(vexato?3:vperto?1:0)+(dias<=3?1:0);
-      return {row:f.row,nome,valor:v,data:String(f.data).slice(0,10),score,dias,nm,vexato};
+      return {row:f.row,nome,valor:v,data:String(f.data).slice(0,10),cat:String(f.categoria||""),score,dias,nm,vexato};
     }).filter(x=>(x.nm||x.vexato)&&x.dias<=45).sort((a,b)=>b.score-a.score||a.dias-b.dias).slice(0,4);
   };
   const lancar=async it=>{
@@ -7616,7 +7618,7 @@ function CardNotificacoes({data,onUpdate}){
   };
   const [todas,setTodas]=useState({});
   const [abertas,setAbertas]=useState({}); // [19/11] linha compacta; toca pra abrir as opcoes
-  const subDe=it=>{ const cl=c=>c==="DESPESA FIXA"?"Fixa":c==="EXTRAORDINARIA"?"Extra":"DCP"; const v=vincDe(it); return dd(it.data)+(it.tipo==="CREDITO"?" · crédito "+(it.escopo==="PJ"?"PJ":(it.final?it.final:"PF")):it.tipo==="DEBITO"?" · débito "+(it.escopo==="PJ"?"PJ":"PF"):"")+(v?" · casa com "+v.nome:((it.tipo==="CREDITO"||ehSaidaConta(it))?" · "+cl(catDe(it)):"")); };
+  const subDe=it=>{ const cl=c=>c==="DESPESA FIXA"?"Fixa":c==="EXTRAORDINARIA"?"Extra":"DCP"; const v=vincDe(it); return dd(it.data)+(it.tipo==="CREDITO"?" · crédito "+(it.escopo==="PJ"?"PJ":(it.final?it.final:"PF")):it.tipo==="DEBITO"?" · débito "+(it.escopo==="PJ"?"PJ":"PF"):"")+(v?" · casa com "+v.nome+((it.tipo==="CREDITO"||ehSaidaConta(it))?" · "+cl(catDe(it)):""):((it.tipo==="CREDITO"||ehSaidaConta(it))?" · "+cl(catDe(it)):"")); };
   const nrm=t=>String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9 ]+/g," ").replace(/\s+/g," ").trim();
   const candidatosDe=it=>{
     const cartao=cartaoDe(it); if(!cartao) return {top:[],all:[]};
@@ -7631,7 +7633,7 @@ function CardNotificacoes({data,onUpdate}){
       const nm=palavras.some(w=>nome.includes(w))||nome.split(" ").filter(w=>w.length>=4).some(w=>est.includes(w));
       const v=Math.abs(Number(r[2])||0), vm=Math.abs(v-it.valor)<=Math.max(1,it.valor*0.15);
       const dias=Math.abs((new Date(String(r[0]).slice(0,10)+"T12:00:00")-new Date(it.data+"T12:00:00"))/864e5)||0;
-      return {row:_linhaCartao(r),desc:String(r[1]),valor:v,data:String(r[0]).slice(0,10),score:(nm?2:0)+(vm?1:0),dias};
+      return {row:_linhaCartao(r),desc:String(r[1]),valor:v,data:String(r[0]).slice(0,10),cat:String(r[5]||""),score:(nm?2:0)+(vm?1:0),dias};
     }).sort((x,y)=>y.score-x.score||x.dias-y.dias);
     return {top:base.filter(x=>x.score>0&&x.dias<=45).slice(0,4),all:base.slice(0,40)};
   };
@@ -7669,7 +7671,7 @@ function CardNotificacoes({data,onUpdate}){
         {(()=>{ if(!cartaoDe(it)||!(it.valor>0)) return null; const cd=candidatosDe(it), lista=todas[it.key]?cd.all:cd.top; if(!cd.all.length) return null;
           return <div style={{marginTop:8,background:"#fff",border:"1px solid "+C.border,borderRadius:14,padding:10}}>
             <div style={{fontSize:12,fontWeight:700,color:C.textSub,marginBottom:6}}>{lista.length&&!todas[it.key]?"Já está cadastrada? Toque para escolher:":"Casar com uma cadastrada:"}</div>
-            {lista.map(cd2=><button key={cd2.row} disabled={busy===it.key} onClick={()=>escolherVinc(it,{tipo:"cartao",row:cd2.row,nome:cd2.desc,valor:cd2.valor,data:cd2.data})} style={{...((vincDe(it)&&vincDe(it).tipo==="cartao"&&vincDe(it).row===cd2.row)?{border:"2px solid "+C.accent,background:C.accentLight}:{}),display:"flex",justifyContent:"space-between",gap:8,width:"100%",minHeight:38,alignItems:"center",padding:"0 10px",marginBottom:3,borderRadius:12,border:"1px solid "+C.border,background:C.bg,fontFamily:"inherit",fontSize:13,fontWeight:700,textAlign:"left"}}>
+            {lista.map(cd2=><button key={cd2.row} disabled={busy===it.key} onClick={()=>escolherVinc(it,{tipo:"cartao",row:cd2.row,nome:cd2.desc,valor:cd2.valor,data:cd2.data,cat:cd2.cat})} style={{display:"flex",justifyContent:"space-between",gap:8,width:"100%",minHeight:38,alignItems:"center",padding:"0 10px",marginBottom:3,borderRadius:12,border:"1px solid "+C.border,background:C.bg,fontFamily:"inherit",fontSize:13,fontWeight:700,textAlign:"left",...((vincDe(it)&&vincDe(it).tipo==="cartao"&&vincDe(it).row===cd2.row)?{border:"2px solid "+C.accent,background:C.accentLight}:{})}}>
               <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cd2.desc}</span><span style={{whiteSpace:"nowrap",color:C.textSub,fontWeight:600}}>{fmt(cd2.valor)} · {dd(cd2.data)}</span></button>)}
             <div onClick={()=>setTodas(s=>({...s,[it.key]:!s[it.key]}))} style={{fontSize:12,fontWeight:800,color:C.accent,cursor:"pointer",padding:"6px 2px"}}>{todas[it.key]?"Ver só as parecidas":"Ver todas as previstas do cartão"}</div>
           </div>; })()}
@@ -7682,7 +7684,7 @@ function CardNotificacoes({data,onUpdate}){
         {(()=>{ const cp=(it.tipo==="DEBITO"||it.tipo==="BOLETO"||it.tipo==="TRANSF_RECEBIDA")?candidatosPlano(it):[]; if(!cp.length) return null;
           return <div style={{background:"#fff",border:"1px solid "+C.border,borderRadius:14,padding:10,marginBottom:8}}>
             <div style={{fontSize:12,fontWeight:700,color:C.textSub,marginBottom:6}}>Já está no plano? Toque para escolher (executa com o valor e a data da notificação):</div>
-            {cp.map(c=><button key={c.row} disabled={busy===it.key} onClick={()=>escolherVinc(it,{tipo:"plano",row:c.row,nome:c.nome,valor:c.valor,data:c.data})} style={{...((vincDe(it)&&vincDe(it).tipo==="plano"&&vincDe(it).row===c.row)?{border:"2px solid "+C.accent,background:C.accentLight}:{}),display:"flex",justifyContent:"space-between",gap:8,width:"100%",minHeight:38,alignItems:"center",padding:"0 10px",marginBottom:3,borderRadius:12,border:"1px solid "+C.border,background:C.bg,fontFamily:"inherit",fontSize:13,fontWeight:700,textAlign:"left"}}>
+            {cp.map(c=><button key={c.row} disabled={busy===it.key} onClick={()=>escolherVinc(it,{tipo:"plano",row:c.row,nome:c.nome,valor:c.valor,data:c.data,cat:c.cat})} style={{display:"flex",justifyContent:"space-between",gap:8,width:"100%",minHeight:38,alignItems:"center",padding:"0 10px",marginBottom:3,borderRadius:12,border:"1px solid "+C.border,background:C.bg,fontFamily:"inherit",fontSize:13,fontWeight:700,textAlign:"left",...((vincDe(it)&&vincDe(it).tipo==="plano"&&vincDe(it).row===c.row)?{border:"2px solid "+C.accent,background:C.accentLight}:{})}}>
               <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.nome}</span><span style={{whiteSpace:"nowrap",color:C.textSub,fontWeight:600}}>{fmt(c.valor)} · {dd(c.data)}</span></button>)}
           </div>; })()}
         {ehSaidaConta(it)?<div>
@@ -14716,7 +14718,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261119.1335 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261120.0830 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14842,7 +14844,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261119.1335
+      // HTML v3.20261120.0830
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
