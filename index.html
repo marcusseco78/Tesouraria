@@ -7795,7 +7795,7 @@ function CardBalancoCiclo({data}){
       const perda=_r2(mediaSobra-b.sobraFixa),gray=Math.max(perda,0),ganho=Math.max(-perda,0);
       const cD=Math.max(b.dcpExcesso,0),cE=Math.max(-b.E,0),cC=Math.max(-b.C,0),resta=Math.max(b.total,0);
       const dom=(gray+cD+cE+cC+resta)||1,p=v=>(v/dom*100)+"%",passou=(gray+cD+cE+cC)>mediaSobra;
-      const cor={g:"#C9CED8",d:C.red+"59",e:C.dark,c:"#7C8DBF",s:C.green};
+      const cor={g:"repeating-linear-gradient(135deg,#4B5563 0 3px,#D5D8DF 3px 6px)",d:"#8E1F17",e:C.red,c:"#7C8DBF",s:C.borderLight};
       const causas=[
         [dR>0?"Receitas menores que o normal":"Receitas maiores que o normal",-dR],
         [dF>0?"Despesas fixas maiores":"Despesas fixas menores",-dF],
@@ -7803,7 +7803,7 @@ function CardBalancoCiclo({data}){
       ].filter(x=>Math.abs(x[1])>=1);
       const Item=({c,t,v,onClick,children})=><div>
         <div onClick={onClick} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,minHeight:40,borderTop:"1px solid "+C.border,cursor:onClick?"pointer":"default",fontSize:13}}>
-          <span style={{display:"flex",alignItems:"center",minWidth:0}}><i style={{display:"inline-block",width:10,height:10,borderRadius:3,background:c,marginRight:8,flex:"0 0 auto"}}/>{t}{onClick&&<span style={{color:C.textMuted,marginLeft:6,display:"inline-block",transform:aberta==="perda"?"rotate(90deg)":"none"}}>›</span>}</span>
+          <span style={{display:"flex",alignItems:"center",minWidth:0}}><i style={{display:"inline-block",width:10,height:10,borderRadius:3,background:c,boxShadow:"inset 0 0 0 1px "+C.border,marginRight:8,flex:"0 0 auto"}}/>{t}{onClick&&<span style={{color:C.textMuted,marginLeft:6,display:"inline-block",transform:aberta==="perda"?"rotate(90deg)":"none"}}>›</span>}</span>
           <b style={{fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{v}</b></div>{children}</div>;
       return <div style={{marginBottom:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
@@ -14718,7 +14718,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261120.0830 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261120.2310 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14844,7 +14844,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261120.0830
+      // HTML v3.20261120.2310
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
