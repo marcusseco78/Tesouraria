@@ -1708,8 +1708,9 @@ function KPI({label,value,sub,color,bg,raw}){const neg=typeof raw==="number"&&ra
 </div>;}
 
 // ── CICLO CARD ────────────────────────────────────────────────────────────────
-function CicloCard({fluxo,nome,atual,dcpResumo,basais,data}){
+function CicloCard({fluxo,nome,atual,dcpResumo,basais,data,capPadrao,janela}){
   const [verSaidas,setVerSaidas]=useState(false);
+  const balCiclo=useMemo(()=>{try{return calcBalancoCiclo(data,null,atual?null:janela);}catch(e){return null;}},[data.fluxo,data.cartaoItens,data.cartoes,data.contas,data.config,data.dcpResumo,atual,janela&&janela.inicio]);
   const [ordemSaidas,setOrdemSaidas]=useState("data");
   const [contaLista,setContaLista]=useState(""); // [18/10] "" = contas juntas
   const [verReceitas,setVerReceitas]=useState(false);
@@ -1748,6 +1749,20 @@ function CicloCard({fluxo,nome,atual,dcpResumo,basais,data}){
       <KPI label="Receitas" value={fmt(receitas)} color={C.blue} bg={C.blueLight}/>
       <KPI label="Saídas" value={fmt(saidas)} color={C.red} bg={C.redLight}/>
     </div>
+    {balCiclo&&capPadrao&&(()=>{
+      // [22/11] Sobra do ciclo (mesma conta do Balanco) e quanto ela representa da capacidade de poupanca padrao.
+      // Ciclo futuro sem provisoes de DCP lancadas: desconta a media do DCP.
+      const semProv=!atual&&!balCiclo.dcpPlan;
+      const sobra=_r2(balCiclo.total-(semProv?capPadrao.dcpMed:0)),cap=capPadrao.cap;
+      const pc=cap>0?Math.round(sobra/cap*100):null;
+      return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,background:C.borderLight,borderRadius:12,padding:"10px 12px",marginBottom:12}}>
+        <div><Label>Sobra do ciclo</Label>
+          <div style={{fontSize:17,fontWeight:800,fontVariantNumeric:"tabular-nums",color:sobra<0?C.red:C.text,marginTop:2}}>{(sobra<0?"− ":"")+fmt(Math.abs(sobra))}</div></div>
+        {pc!=null&&<div style={{textAlign:"right"}}>
+          <div style={{fontSize:17,fontWeight:800,color:C.text}}>{pc}%</div>
+          <div style={{fontSize:10,fontWeight:600,color:C.textMuted}}>da capacidade padrão ({fmt(cap)})</div></div>}
+      </div>;
+    })()}
     {Object.keys(faturasPorCartao).some(cid=>faturasPorCartao[cid]>0)&&<div style={{borderTop:"1px solid "+C.border,paddingTop:10,display:"flex",gap:8,marginBottom:10,flexWrap:"wrap"}}>
       {Object.keys(faturasPorCartao).map(cid=><div key={cid} style={{flex:"1 1 45%",background:C.borderLight,borderRadius:8,padding:"8px 10px"}}>
         <Label>Fatura {nomeCartao(cid,data)}</Label>
@@ -1946,6 +1961,9 @@ function Dashboard({data,onUpdate,estouro,onIrPara}){
     return [...vistos].sort((a,b)=>a-b);
   },[fluxo,hj,cicloDia]);
   const ciclosVisiveis=useMemo(()=>new Set(ciclosOrdenados.slice(0,periodo)),[ciclosOrdenados,periodo]);
+  // [22/11] Capacidade de poupanca padrao (media mensal do Orcamento) para comparar a sobra de cada ciclo.
+  const capPadrao=useMemo(()=>{try{const o=calcOrcamento(data,null);return {cap:_r2(o.totalR-o.totalFix-o.dcpMed),dcpMed:o.dcpMed};}catch(e){return {cap:0,dcpMed:0};}},[data.fontesReceita,data.recorr,data.config,data.contas,data.cartoes,data.fluxo]);
+  const janDeKey=(k)=>{const y=Math.floor(k/12),m=k%12;const iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");return {inicio:iso(new Date(y,m,cicloDia)),fim:iso(new Date(y,m+1,cicloDia-1))};};
   const chartPts=useMemo(()=>{const m={};fluxo.forEach(r=>{const dsd=r.dataSaldo||r.data;if(dsd>=hj&&r.saldoProjetado!=null&&ciclosVisiveis.has(cicloKey(dsd)))m[dsd]={d:dsd,v:r.saldoProjetado};});return Object.values(m).sort((a,b)=>a.d>b.d?1:-1);},[fluxo,hj,ciclosVisiveis,cicloDia]);
   // [FIX 16/07] Antes pegava os 3 primeiros nomes de ciclo unicos de TODO o
   // historico do Fluxo, sem olhar a data -- coincidentemente sempre certo
@@ -2018,7 +2036,7 @@ function Dashboard({data,onUpdate,estouro,onIrPara}){
       <Chart pts={chartPts} zoomX={zoomX}/>
     </Card>
     </>}
-    {ciclos.map((k,i)=><CicloCard key={k} fluxo={fluxo.filter(r=>r.data&&cicloKey(r.data)===k)} nome={cicloNomeDeKey(k)} atual={i===0} dcpResumo={dcpResumo} basais={basais} data={data}/>)}
+    {ciclos.map((k,i)=><CicloCard key={k} fluxo={fluxo.filter(r=>r.data&&cicloKey(r.data)===k)} nome={cicloNomeDeKey(k)} atual={i===0} dcpResumo={dcpResumo} basais={basais} data={data} capPadrao={capPadrao} janela={janDeKey(k)}/>)}
     <div style={{height:8}}/>
   </div>;
 }
@@ -7709,9 +7727,9 @@ function CardNotificacoes({data,onUpdate}){
 // [NOVO 11/11, ideia do Marcus] Balanco do ciclo atual: Sobra fixa (receitas - fixas - DCP planejado)
 // +/- extraordinarias, variacao do DCP e compras de cartao que nao sao fixas nem DCP.
 // escopo = id de conta, ou null = todas juntas (transferencias entre contas proprias ficam de fora).
-function calcBalancoCiclo(data,escopo){
+function calcBalancoCiclo(data,escopo,janOv){
   const cfg=data.config||{};
-  const jan=janelaCiclo(cfg.CICLO_INICIO||hoje(),0);
+  const jan=janOv||janelaCiclo(cfg.CICLO_INICIO||hoje(),0);
   const contasAt=(data.contas||[]).filter(c=>c.ativa!==false);
   const contaIdDe=(f)=>{const x=String(f||"CONTA");if(contasAt.some(c=>c.id===x))return x;const u=x.toUpperCase();const tp=u==="CONTA PJ"||u==="PJ"?"PJ":u==="CONTA"||u==="PF"?"PF":null;const c=tp&&contasAt.find(k=>k.tipo===tp);return c?c.id:x;};
   const noEscopo=(f)=>!escopo||contaIdDe(f)===escopo;
@@ -7747,10 +7765,12 @@ function calcBalancoCiclo(data,escopo){
       (cat==="DESPESA FIXA"?fix:(cat==="EXTRAORDINARIA"?ext:car)).push(it);
     });
   });
-  const dr=data.dcpResumo||{base:0,numSemanas:0,totalGasto:0};
+  const dr=janOv?{base:0,numSemanas:0,totalGasto:0}:(data.dcpResumo||{base:0,numSemanas:0,totalGasto:0});
   const provs=(data.fluxo||[]).filter(r=>r.categoria==="DCP_PROVISAO");
   const temDCP=dr.numSemanas>0&&(!escopo||provs.some(r=>contaIdDe(r.forma)===escopo));
-  const dcpPlan=temDCP?_r2(dr.numSemanas*dr.base):0,dcpUsado=temDCP?_r2(dr.totalGasto):0;
+  // [22/11] Ciclo futuro: sem resumo do DCP, o planejado e a soma das provisoes ja lancadas na janela.
+  const dcpPlanProx=janOv?_r2(provs.filter(r=>{const d=String(r.data||"").slice(0,10);return d>=jan.inicio&&d<=jan.fim&&noEscopo(r.forma);}).reduce((s,r)=>s+Math.abs(Number(r.valor)||0),0)):0;
+  const dcpPlan=temDCP?_r2(dr.numSemanas*dr.base):dcpPlanProx,dcpUsado=temDCP?_r2(dr.totalGasto):0;
   // [14/11, regra do Marcus] O DCP e compensado entre semanas: vale o acumulado. Excesso = gasto total
   // - base x semanas ja iniciadas (so as ja comecadas; negativo = economia, devolve poupanca).
   const semIni=temDCP?(dr.semanas||[]).filter(w=>String(w.data||"").slice(0,10)<=hoje()).length:0;
@@ -14718,7 +14738,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261120.2310 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261122.2000 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14844,7 +14864,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261120.2310
+      // HTML v3.20261122.2000
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
