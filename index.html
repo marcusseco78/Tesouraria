@@ -13568,6 +13568,30 @@ function Cartoes({data,onUpdate,destaque,onIrPara,fila}){
     setELoad(false);
   }
 
+  // [24/11] Confirmar baixa em lote (fatura): so as divergencias em que o VALOR e igual ao do banco
+  // (muda so nome/data). As de valor diferente ficam para conferir uma a uma.
+  async function confirmarTodasDivergenciasExatas(){
+    const lista=divExatasValor.slice();
+    if(!lista.length) return;
+    const fora=(conciliacao.possiveisDivergencias||[]).length-lista.length;
+    if(!confirm("Confirmar "+lista.length+" lançamento(s) com valor igual ao do banco?"+(fora?"\n"+fora+" com valor diferente ficam de fora.":""))) return;
+    setELoad(true);
+    const erros=[]; const ok=new Set();
+    for(const d of lista){
+      try{
+        const c=d.csv;
+        await api({action:"vincularCompraCartao",_lote:true,cartao,row:d.planilha.row,
+          descricaoCsv:c.title,valorCsv:c.amount,dataCsv:String(c.date).slice(0,10),parcelaCsv:c.parcela||"1/1",fitid:c.fitid||""});
+        ok.add(d.planilha.row);
+      }catch(e){ erros.push(String(d.csv.title||"")+": "+e.message); }
+    }
+    try{ onUpdate(await api({action:"finalizarLoteCartao",cartao})); }catch(e){ alert("Confirmou, mas não consegui recarregar: "+e.message); }
+    setConciliacao(cc=>cc?{...cc,possiveisDivergencias:(cc.possiveisDivergencias||[]).filter(d=>!ok.has(d.planilha.row))}:cc);
+    setEditRow(null);
+    if(erros.length) alert("Alguns não foram confirmados:\n"+erros.join("\n"));
+    setELoad(false);
+  }
+
   // 🔴 Item que está no CSV mas não na planilha -- ainda não tem linha própria,
   // então "resolver" aqui é lançar de vez (lancarCartao) ou dispensar (o
   // Marcus decidiu que não precisa lançar, ex: pagamento de fatura mal
@@ -13745,6 +13769,7 @@ function Cartoes({data,onUpdate,destaque,onIrPara,fila}){
     if(concValida)(conciliacao.possiveisDivergencias||[]).forEach(d=>mp.set(d.planilha.row,d));
     return mp;
   },[concValida,conciliacao]);
+  const divExatasValor=concValida?(conciliacao.possiveisDivergencias||[]).filter(d=>Math.abs(Math.abs(Number(d.planilha.valor))-Math.abs(Number(d.csv.amount)))<=0.01):[];
   const novosDoCSV=useMemo(()=>{
     if(!concValida||!faturaAtual) return [];
     const brutos=conciliacao.foraDaPlanilha||[];
@@ -14219,6 +14244,10 @@ function Cartoes({data,onUpdate,destaque,onIrPara,fila}){
         LANÇAMENTOS ({faturaAtual.itens.length}) · {confirmados.length} confirmado(s) · {previstos.length} previsto(s)
         {novosDoCSV.length>0&&` · ${novosDoCSV.length} do banco sem par`}
       </div>
+      {divExatasValor.length>1&&<button onClick={confirmarTodasDivergenciasExatas} disabled={eLoad}
+        style={{width:"100%",minHeight:48,marginBottom:8,borderRadius:16,border:"none",background:C.accent,color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+        {eLoad?"…":"Confirmar baixa das "+divExatasValor.length+" com valor igual"}
+      </button>}
       {novosDoCSV.length>0&&<div style={{fontSize:10,color:C.textMuted,padding:"0 4px 8px",lineHeight:1.4}}>
         Toca num 🏦 solto, depois num 📱 solto, pra parear.
       </div>}
@@ -14851,7 +14880,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261124.0300 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261124.1950 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14977,7 +15006,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261124.0300
+      // HTML v3.20261124.1950
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
