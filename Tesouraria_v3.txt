@@ -1,4 +1,4 @@
-// VERSAO: v3.20261119.1230
+// VERSAO: v3.20261123.2300
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -208,6 +208,7 @@ function dispatch(p) {
     case "atualizarCarteiraCofre": return atualizarCarteiraCofre(ss, p);
     case "buscarCotacaoPapel":    return buscarCotacaoPapel(ss, p);
     case "ajustarSaldoCofre":     return ajustarSaldoCofre(ss, p);
+    case "salvarPrazosCofre":     return salvarPrazosCofre(ss, p);
     case "classificarEnvelope":  return classificarEnvelope(ss, p);
     case "editarNomeCartao":     return editarNomeCartao(ss, p);
     case "editarContaCartao":    return editarContaCartao(ss, p);
@@ -432,7 +433,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261119.1230",
+    scriptVersion: "v3.20261123.2300",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -5832,7 +5833,8 @@ function _lerCofresComSaldo(ss) {
   const last = shFluxo.getLastRow();
   const movimentado = {};
   const qtdPapelPorCofre = {};
-  cofres.forEach(function(c) { movimentado[c.id] = 0; qtdPapelPorCofre[c.id] = {}; });
+  const resgatesPend = {};
+  cofres.forEach(function(c) { movimentado[c.id] = 0; qtdPapelPorCofre[c.id] = {}; resgatesPend[c.id] = []; });
 
   if (last >= FLUXO_START) {
     const rows = shFluxo.getRange(FLUXO_START, 1, last - FLUXO_START + 1, 9).getValues();
@@ -5844,10 +5846,19 @@ function _lerCofresComSaldo(ss) {
       // Previsao (ver eventosFluxoCofre no front-end, que ja filtra por
       // status). Sem esse filtro, agendar um aporte futuro inflaria o
       // saldo "atual" na hora, o que anularia o proposito de agendar.
-      if (String(r[6]) !== "EXECUTADO") return;
+      var statusLinha = String(r[6]);
+      if (statusLinha !== "EXECUTADO" && statusLinha !== "PROGRAMADO") return;
       var obs = {};
       try { obs = JSON.parse(r[8] || "{}"); } catch (e) { return; }
       if (!obs.cofre || !(obs.cofre in movimentado)) return;
+      // [23/11] Resgate PROGRAMADO = "a caminho" (prazo D+x): so informa, nao mexe no saldo.
+      if (statusLinha === "PROGRAMADO") {
+        if (obs.tipoCofre === "resgate") {
+          resgatesPend[obs.cofre].push({ data: (r[0] instanceof Date) ? fmtDateSimple(r[0]) : String(r[0]).slice(0, 10), valor: _round2(Number(r[2]) || 0),
+            solicitadoEm: obs.solicitadoEm || "" });
+        }
+        return;
+      }
       movimentado[obs.cofre] += -Number(r[2] || 0);
       // [25/07] Posicao por papel -- so preenchido em lancamento de Cofre RV
       // (obs.papel). Resgate subtrai (mesmo sinal do tipoCofre).
@@ -5876,13 +5887,19 @@ function _lerCofresComSaldo(ss) {
             dataCotacao: cad.dataCotacao || "", valor: _round2(quantidade * cotacaoAtual) };
         });
       const saldo = _round2(papeis.reduce(function(s, p) { return s + p.valor; }, 0));
-      return { id: c.id, nome: c.nome, tipoInvestimento: tipoInvestimento,
+      return { id: c.id, nome: c.nome, tipoInvestimento: tipoInvestimento, conta: c.conta || "CONTA",
+        bloqueadoAte: c.bloqueadoAte || "", cotizacaoDias: Number(c.cotizacaoDias) || 0,
+        cotizacaoTipo: c.cotizacaoTipo || "uteis", liquidacaoDias: Number(c.liquidacaoDias) || 0,
+        resgatesPendentes: resgatesPend[c.id] || [],
         papeis: papeis, log: Array.isArray(c.log) ? c.log : [], saldo: saldo };
     }
 
     const rendimento = Number(c.rendimentoAcumulado) || 0;
     return {
-      id: c.id, nome: c.nome, tipoInvestimento: tipoInvestimento,
+      id: c.id, nome: c.nome, tipoInvestimento: tipoInvestimento, conta: c.conta || "CONTA",
+      bloqueadoAte: c.bloqueadoAte || "", cotizacaoDias: Number(c.cotizacaoDias) || 0,
+      cotizacaoTipo: c.cotizacaoTipo || "uteis", liquidacaoDias: Number(c.liquidacaoDias) || 0,
+      resgatesPendentes: resgatesPend[c.id] || [],
       percentualCdi: c.percentualCdi, taxaAnual: c.taxaAnual, spreadAnual: c.spreadAnual,
       dataBaseRendimento: c.dataBaseRendimento || "",
       rendimentoAcumulado: rendimento,
@@ -5905,7 +5922,7 @@ function salvarCofre(ss, p) {
   // [25/07] Tipo de investimento -- "cdi" e o padrao (retrocompativel com
   // todo cofre criado antes de hoje, que nunca grava esse campo).
   const tipoInvestimento = String(p.tipo_investimento || "cdi");
-  const tiposValidos = ["cdi", "prefixado", "ipca", "renda_variavel", "sem_correcao"];
+  const tiposValidos = ["cdi", "prefixado", "ipca", "renda_variavel", "sem_correcao", "poupanca"];
   if (tiposValidos.indexOf(tipoInvestimento) < 0) throw new Error("Tipo de investimento invalido: " + tipoInvestimento);
   // [14/11] 0% e valido (cofre sem correcao, ex.: dinheiro emprestado): so cai em 100 quando nao vier valor
   const percentualCdi = (p.percentual_cdi === undefined || p.percentual_cdi === null || p.percentual_cdi === "" || isNaN(Number(p.percentual_cdi))) ? 100 : Number(p.percentual_cdi);
@@ -5944,13 +5961,14 @@ function salvarCofre(ss, p) {
         // exibicao/organizacao, nao recalcula nada), preserva a atual se
         // nao vier no payload.
         const contaCofre = p.conta != null ? String(p.conta) : (c.conta || "CONTA");
-        return { id: id, nome: nome, tipoInvestimento: tipoFinal,
+        // [23/11] Object.assign preserva campos que esta funcao nao conhece (bloqueadoAte, prazos D+x...).
+        return Object.assign({}, c, { id: id, nome: nome, tipoInvestimento: tipoFinal,
           percentualCdi: percentualCdi, taxaAnual: taxaAnual, spreadAnual: spreadAnual,
           conta: contaCofre,
           rendimentoAcumulado: Number(c.rendimentoAcumulado) || 0,
           dataBaseRendimento: c.dataBaseRendimento || fmtDateSimple(new Date()),
           papeis: Array.isArray(c.papeis) ? c.papeis : [],
-          log: Array.isArray(c.log) ? c.log : [] };
+          log: Array.isArray(c.log) ? c.log : [] });
       }
       return c;
     });
@@ -6001,6 +6019,7 @@ function _atualizarRendimentoCofre(ss, shCfg, cofre) {
     return { nome: cofre.nome, atualizado: false, motivo: "Renda Variavel nao tem formula automatica -- use '🔄 Atualizar carteira'." };
   }
   if (tipo === "sem_correcao") return { nome: cofre.nome, atualizado: false, motivo: "Cofre sem correcao: o saldo so muda com aporte e resgate." };
+  if (tipo === "poupanca") return _corrigirCofrePoupanca(ss, shCfg, cofre);
   if (tipo === "prefixado") return _corrigirCofrePrefixado(ss, shCfg, cofre);
   if (tipo === "ipca") return _corrigirCofreIpca(ss, shCfg, cofre);
   return _corrigirCofreCdi(ss, shCfg, cofre);
@@ -6021,12 +6040,12 @@ function _gravarCorrecaoCofre(ss, shCfg, cofre, jurosNovo, novaDataBase, tipoEve
     const logAtual = Array.isArray(c.log) ? c.log : [];
     logAtual.push({ data: fmtDateSimple(new Date()), tipoEvento: tipoEvento,
       descricao: descricaoEvento, valor: jurosNovo, saldoResultante: saldoNovoLog });
-    return { id: c.id, nome: c.nome, tipoInvestimento: c.tipoInvestimento || "cdi",
-      percentualCdi: c.percentualCdi, taxaAnual: c.taxaAnual, spreadAnual: c.spreadAnual,
+    // [23/11] Object.assign: antes este retorno reconstruia o objeto e perdia "conta" (e perderia os campos novos).
+    return Object.assign({}, c, { tipoInvestimento: c.tipoInvestimento || "cdi",
       rendimentoAcumulado: _round2((Number(c.rendimentoAcumulado) || 0) + jurosNovo),
       dataBaseRendimento: novaDataBase,
       papeis: Array.isArray(c.papeis) ? c.papeis : [],
-      log: logAtual };
+      log: logAtual });
   });
   _setConfig(shCfg, "COFRES_JSON", JSON.stringify(itens));
   return saldoNovoLog;
@@ -6080,6 +6099,99 @@ function _corrigirCofrePrefixado(ss, shCfg, cofre) {
   const desc = "Correcao pre-fixada (" + dataBaseStr + " a " + hojeStr + ", " + (Number(cofre.taxaAnual) || 0) + "% a.a., " + dias + " dias)";
   const saldoNovoLog = _gravarCorrecaoCofre(ss, shCfg, cofre, jurosNovo, hojeStr, "CORRECAO_PREFIXADO", desc);
   return { nome: cofre.nome, atualizado: true, saldoAnterior: cofre.saldo, saldoNovo: saldoNovoLog, jurosAcumulado: jurosNovo, dias: dias };
+}
+
+/**
+ * [NOVO 23/11] Poupanca -- serie SGS 195 do Banco Central ("Depositos de poupanca a partir de
+ * 04.05.2012 - Rentabilidade no periodo", diaria, % ao mes). A poupanca so rende no ANIVERSARIO
+ * (mes completo contado da data-base). Para cada mes completo desde a data-base pega o valor da serie
+ * no dia em que o mes comecou (se faltar o dia, o mais recente antes dele) e compoe os fatores.
+ * A data-base avanca ate o ultimo aniversario completo. Cofre de poupanca com varios aportes usa uma
+ * data-base so (aproximacao): para uma caucao de deposito unico e exato.
+ * [A CONFERIR com o primeiro rendimento real: se o valor do dia D vale para o periodo que COMECA em D.]
+ */
+function _addMesesClamp(d, n) {
+  var y = d.getFullYear(), m = d.getMonth() + n, dia = d.getDate();
+  var ult = new Date(y, m + 1, 0).getDate();
+  return new Date(y, m, Math.min(dia, ult));
+}
+function _corrigirCofrePoupanca(ss, shCfg, cofre) {
+  const dataBase = _parseDataQualquer(cofre.dataBaseRendimento) || new Date();
+  const hoje = new Date();
+  const dataBaseStr = fmtDateSimple(dataBase);
+  const hojeStr = fmtDateSimple(hoje);
+  if (dataBaseStr >= hojeStr) return { nome: cofre.nome, atualizado: false, motivo: "Já está atualizado até hoje (" + dataBaseStr + ")." };
+  if (Math.abs(cofre.saldo) < 0.01) return { nome: cofre.nome, atualizado: false, motivo: "Saldo zerado, nada pra corrigir." };
+
+  var inicios = [], fimUltimo = null;
+  for (var k = 0; k < 600; k++) {
+    var ini = _addMesesClamp(dataBase, k), fim = _addMesesClamp(dataBase, k + 1);
+    if (fim.getTime() > hoje.getTime()) break;
+    inicios.push(ini); fimUltimo = fim;
+  }
+  if (!inicios.length) return { nome: cofre.nome, atualizado: false, motivo: "Ainda não completou um mês desde " + dataBaseStr + " (a poupança só rende no aniversário)." };
+
+  const url = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.195/dados?formato=json&dataInicial="
+    + _formatarDataBR(dataBase) + "&dataFinal=" + _formatarDataBR(hoje);
+  const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  if (resp.getResponseCode() !== 200) throw new Error("Erro ao consultar o Banco Central (código " + resp.getResponseCode() + ") pra '" + cofre.nome + "'.");
+  const dados = JSON.parse(resp.getContentText());
+  if (!dados || !dados.length) return { nome: cofre.nome, atualizado: false, motivo: "Banco Central não retornou a série da poupança nesse período." };
+  const serie = dados.map(function(d) {
+    var dd = _parseDataQualquer(d.data);
+    return { iso: dd ? fmtDateSimple(dd) : "", v: Number(d.valor) || 0 };
+  }).filter(function(x) { return x.iso; }).sort(function(a, b) { return a.iso < b.iso ? -1 : 1; });
+  if (!serie.length) return { nome: cofre.nome, atualizado: false, motivo: "Série da poupança sem datas válidas." };
+
+  var fator = 1, usados = 0;
+  inicios.forEach(function(ini) {
+    var iso = fmtDateSimple(ini), achado = null;
+    serie.forEach(function(x) { if (x.iso <= iso) achado = x; });
+    if (!achado) achado = serie[0];
+    fator *= (1 + achado.v / 100); usados++;
+  });
+  const jurosNovo = _round2(cofre.saldo * (fator - 1));
+  const novaBaseStr = fmtDateSimple(fimUltimo);
+  const desc = "Correcao poupanca (" + dataBaseStr + " a " + novaBaseStr + ", " + usados + " mes(es) completo(s))";
+  const saldoNovoLog = _gravarCorrecaoCofre(ss, shCfg, cofre, jurosNovo, novaBaseStr, "CORRECAO_POUPANCA", desc);
+  return { nome: cofre.nome, atualizado: true, saldoAnterior: cofre.saldo, saldoNovo: saldoNovoLog, jurosAcumulado: jurosNovo, meses: usados };
+}
+
+/**
+ * [NOVO 23/11] Bloqueio e prazo de resgate do Cofre. p.cofreId, p.bloqueadoAte ("AAAA-MM-DD" ou ""),
+ * p.cotizacaoDias (0-90), p.cotizacaoTipo ("uteis"|"corridos"), p.liquidacaoDias (0-30, uteis),
+ * p.data_base (opcional, so poupanca: data do deposito = aniversario). So grava o que veio no payload.
+ */
+function salvarPrazosCofre(ss, p) {
+  const shCfg = ss.getSheetByName("CONFIG");
+  if (!shCfg) throw new Error("Aba CONFIG nao encontrada.");
+  const cfg = readConfig(ss);
+  let itens = [];
+  try { itens = cfg.COFRES_JSON ? JSON.parse(cfg.COFRES_JSON) : []; } catch (e) { itens = []; }
+  const id = String(p.cofreId || "");
+  let achou = false;
+  const bloq = p.bloqueadoAte === undefined ? undefined : String(p.bloqueadoAte || "").slice(0, 10);
+  if (bloq !== undefined && bloq !== "" && !/^\d{4}-\d{2}-\d{2}$/.test(bloq)) throw new Error("Data de bloqueio invalida.");
+  const clamp = function(v, max) { var n = Math.round(Number(v)); return isNaN(n) ? 0 : Math.max(0, Math.min(max, n)); };
+  itens = itens.map(function(c) {
+    if (c.id !== id) return c;
+    achou = true;
+    const novo = Object.assign({}, c);
+    if (bloq !== undefined) novo.bloqueadoAte = bloq;
+    if (p.cotizacaoDias !== undefined) novo.cotizacaoDias = clamp(p.cotizacaoDias, 90);
+    if (p.cotizacaoTipo !== undefined) novo.cotizacaoTipo = String(p.cotizacaoTipo) === "corridos" ? "corridos" : "uteis";
+    if (p.liquidacaoDias !== undefined) novo.liquidacaoDias = clamp(p.liquidacaoDias, 30);
+    if (p.data_base && (c.tipoInvestimento || "cdi") === "poupanca") {
+      const d = String(p.data_base).slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new Error("Data-base invalida.");
+      novo.dataBaseRendimento = d;
+    }
+    return novo;
+  });
+  if (!achou) throw new Error("Cofre nao encontrado.");
+  _setConfig(shCfg, "COFRES_JSON", JSON.stringify(itens));
+  SpreadsheetApp.flush();
+  return getData(ss);
 }
 
 /**
@@ -6217,10 +6329,7 @@ function atualizarCarteiraCofre(ss, p) {
         papel: ticker, valor: null, saldoResultante: saldoResultante });
       resultados.push({ ticker: ticker, atualizado: true, cotacaoAnterior: cotacaoAnterior, cotacaoNova: novaCotacao });
     });
-    return { id: c.id, nome: c.nome, tipoInvestimento: "renda_variavel",
-      percentualCdi: c.percentualCdi, taxaAnual: c.taxaAnual, spreadAnual: c.spreadAnual,
-      rendimentoAcumulado: c.rendimentoAcumulado, dataBaseRendimento: c.dataBaseRendimento,
-      papeis: papeisCad, log: logAtual };
+    return Object.assign({}, c, { tipoInvestimento: "renda_variavel", papeis: papeisCad, log: logAtual });
   });
   _setConfig(shCfg, "COFRES_JSON", JSON.stringify(itens));
   SpreadsheetApp.flush();
@@ -6314,10 +6423,9 @@ function ajustarSaldoCofre(ss, p) {
     const logAtual = Array.isArray(c.log) ? c.log : [];
     logAtual.push({ data: fmtDateSimple(new Date()), tipoEvento: "AJUSTE_MANUAL",
       descricao: "Corrigido com saldo real informado", valor: diferenca, saldoResultante: saldoReal });
-    return { id: c.id, nome: c.nome, tipoInvestimento: c.tipoInvestimento || "cdi",
-      percentualCdi: c.percentualCdi, taxaAnual: c.taxaAnual, spreadAnual: c.spreadAnual,
+    return Object.assign({}, c, { tipoInvestimento: c.tipoInvestimento || "cdi",
       rendimentoAcumulado: novoRendimento, dataBaseRendimento: fmtDateSimple(new Date()),
-      papeis: Array.isArray(c.papeis) ? c.papeis : [], log: logAtual };
+      papeis: Array.isArray(c.papeis) ? c.papeis : [], log: logAtual });
   });
   _setConfig(shCfg, "COFRES_JSON", JSON.stringify(itens));
 
@@ -6386,6 +6494,9 @@ function lancarCofre(ss, p) {
   const desc = (tipoCofre === "aporte" ? "APORTE COFRE - " : "RESGATE COFRE - ") + cofre.nome + (ehRV ? (" (" + papel + ")") : "");
 
   const obs = { cofre: cofre.id, tipoCofre: tipoCofre };
+  // [23/11] Resgate com prazo D+x: guarda quando foi pedido e quando cota, para a tela mostrar "a caminho".
+  if (p.solicitadoEm) obs.solicitadoEm = String(p.solicitadoEm).slice(0, 10);
+  if (p.cotizacaoEm) obs.cotizacaoEm = String(p.cotizacaoEm).slice(0, 10);
   if (ehRV) { obs.papel = papel; obs.cotacaoCompra = cotacao; obs.quantidade = quantidade; }
 
   const shFluxo = ss.getSheetByName("FLUXO");
@@ -6411,10 +6522,8 @@ function lancarCofre(ss, p) {
       const idxCad = papeisCad.findIndex(function(pp) { return pp.ticker === papel; });
       const entry = { ticker: papel, cotacaoAtual: cotacao, dataCotacao: dataStr };
       if (idxCad >= 0) papeisCad[idxCad] = entry; else papeisCad.push(entry);
-      return { id: c.id, nome: c.nome, tipoInvestimento: "renda_variavel",
-        percentualCdi: c.percentualCdi, taxaAnual: c.taxaAnual, spreadAnual: c.spreadAnual,
-        rendimentoAcumulado: c.rendimentoAcumulado, dataBaseRendimento: c.dataBaseRendimento,
-        papeis: papeisCad, log: Array.isArray(c.log) ? c.log : [] };
+      return Object.assign({}, c, { tipoInvestimento: "renda_variavel",
+        papeis: papeisCad, log: Array.isArray(c.log) ? c.log : [] });
     });
     _setConfig(shCfg, "COFRES_JSON", JSON.stringify(itensAtual));
   }

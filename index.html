@@ -97,6 +97,8 @@ function fatorProjetado(tipoInvestimento,params,dias){
   if(tipoInvestimento==="prefixado"){
     return Math.pow(1+(params.taxaAnual||0)/100,dias/365);
   }
+  // [23/11] Poupanca: projecao aproximada de 0,5% ao mes (TR perto de zero); o valor real vem da serie 195 do BCB.
+  if(tipoInvestimento==="poupanca") return Math.pow(1.005,dias/30.4375);
   if(tipoInvestimento==="ipca"){
     if(params.ultimaTaxaIpcaMensal==null) return 1;
     const fatorIpca=Math.pow(1+params.ultimaTaxaIpcaMensal/100,dias/30);
@@ -4286,9 +4288,10 @@ function _detalheTaxaCofre(cofre){
   if(t==="ipca") return "IPCA+"+(cofre.spreadAnual||0)+"% a.a.";
   if(t==="renda_variavel") return "Carteira de ações";
   if(t==="sem_correcao") return "Sem correção";
+  if(t==="poupanca") return "Poupança (série do BCB)";
   return (cofre.percentualCdi==null?100:cofre.percentualCdi)+"% do CDI";
 }
-const TIPOS_INVESTIMENTO_COFRE=[["cdi","CDI"],["prefixado","Pré-fixada"],["ipca","IPCA+"],["renda_variavel","Renda Var."],["sem_correcao","Sem correção"]];
+const TIPOS_INVESTIMENTO_COFRE=[["cdi","CDI"],["prefixado","Pré-fixada"],["ipca","IPCA+"],["renda_variavel","Renda Var."],["poupanca","Poupança"],["sem_correcao","Sem correção"]];
 // [25/07] Pedido do Marcus: tipo de investimento tao evidente quanto as
 // pilulas de Categoria -- a do tipo do cofre "acesa" (cor cheia), as
 // outras 3 "apagadas" (cinza, translucidas). Nao e um seletor (o tipo
@@ -4305,8 +4308,30 @@ function PilulasTipoInvestimento({cofre}){
   </div>;
 }
 
+// [23/11] Prazo de resgate no formato das corretoras: cotizacao D+N (uteis ou corridos) e liquidacao D+M uteis.
+// So feriados nacionais fixos (FERIADOS_FIXOS_MMDD); feriados moveis nao entram.
+function _isoMaisDias(iso,n){const d=new Date(+iso.slice(0,4),+iso.slice(5,7)-1,+iso.slice(8,10)+n);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+function _ehUtilISO(iso){return _ehDiaUtil(+iso.slice(0,4),+iso.slice(5,7),+iso.slice(8,10));}
+function _proxUtilISO(iso){let r=iso;for(let i=0;i<14&&!_ehUtilISO(r);i++)r=_isoMaisDias(r,1);return r;}
+function _maisUteisISO(iso,n){let r=iso;for(let k=0;k<n;k++){r=_isoMaisDias(r,1);r=_proxUtilISO(r);}return r;}
+function calcPrazoResgateCofre(solicIso,cofre){
+  const cot=Number(cofre.cotizacaoDias)||0,liq=Number(cofre.liquidacaoDias)||0;
+  if(!solicIso||(!cot&&!liq)) return null;
+  const cotIso=cofre.cotizacaoTipo==="corridos"?_proxUtilISO(_isoMaisDias(solicIso,cot)):_maisUteisISO(solicIso,cot);
+  return {cotizacao:cotIso,liquidacao:_maisUteisISO(cotIso,liq)};
+}
+
+function liqDiasTotal(c){return (Number(c.cotizacaoDias)||0)+(Number(c.liquidacaoDias)||0);}
+
 function CardCofre({cofre,onUpdate,data}){
   const ehRV=cofre.tipoInvestimento==="renda_variavel";
+  const [prazoAberto,setPrazoAberto]=useState(false);
+  const [bloqEdit,setBloqEdit]=useState(cofre.bloqueadoAte||"");
+  const [cotDEdit,setCotDEdit]=useState(String(cofre.cotizacaoDias||0));
+  const [cotTipoEdit,setCotTipoEdit]=useState(cofre.cotizacaoTipo||"uteis");
+  const [liqDEdit,setLiqDEdit]=useState(String(cofre.liquidacaoDias||0));
+  const [dbEdit,setDbEdit]=useState(String(cofre.dataBaseRendimento||"").slice(0,10));
+  const [loadPrazos,setLoadPrazos]=useState(false);
   const [tipoAcao,setTipoAcao]=useState("aporte");
   const [valor,setValor]=useState("");
   const [papelInput,setPapelInput]=useState("");
@@ -4320,6 +4345,22 @@ function CardCofre({cofre,onUpdate,data}){
   // item do Fluxo ja usa -- nao precisou de nada novo no backend alem do
   // status calculado certo em lancarCofre).
   const [dataLanc,setDataLanc]=useState(()=>hoje());
+  // [23/11] Prazo D+x: so vale para resgate pedido hoje ou antes (data futura = agendamento manual, sem D+x).
+  const prazoR=(tipoAcao==="resgate"&&dataLanc<=hoje())?calcPrazoResgateCofre(dataLanc,cofre):null;
+  const bloqueado=!!cofre.bloqueadoAte&&String(cofre.bloqueadoAte).slice(0,10)>=hoje();
+  const resgatesPend=cofre.resgatesPendentes||[];
+  async function salvarPrazos(){
+    setLoadPrazos(true);
+    try{
+      const p={action:"salvarPrazosCofre",cofreId:cofre.id,bloqueadoAte:bloqEdit||"",
+        cotizacaoDias:parseInt(cotDEdit)||0,cotizacaoTipo:cotTipoEdit,liquidacaoDias:parseInt(liqDEdit)||0};
+      if(cofre.tipoInvestimento==="poupanca"&&dbEdit) p.data_base=dbEdit;
+      const r=await api(p);
+      onUpdate&&onUpdate(r);
+      setPrazoAberto(false);
+    }catch(e){alert(e.message);}
+    setLoadPrazos(false);
+  }
   const [load,setLoad]=useState(false);
   const [cofreAberto,setCofreAberto]=useState(false); // [02/11] card do cofre fechado por padrao; tocar abre (marinho)
   const [loadApagar,setLoadApagar]=useState(false);
@@ -4415,6 +4456,10 @@ function CardCofre({cofre,onUpdate,data}){
         if(!v||v<=0){ alert("Informe um valor válido."); setLoad(false); return; }
         params.valor=v;
       }
+      if(tipoAcao==="resgate"&&bloqueado&&!confirm("Este cofre está bloqueado até "+fmtD(String(cofre.bloqueadoAte).slice(0,10))+". Resgatar mesmo assim?")){ setLoad(false); return; }
+      if(prazoR){
+        params.solicitadoEm=dataLanc; params.cotizacaoEm=prazoR.cotizacao; params.data=prazoR.liquidacao;
+      }
       const r=await api(params);
       onUpdate&&onUpdate(r);
       setValor("");setPapelInput("");setCotacaoInput("");setQtdInput("");setQtdEditadaAMao(false);setDataLanc(hoje());
@@ -4442,7 +4487,7 @@ function CardCofre({cofre,onUpdate,data}){
   // [25/07] Novos tipoEvento do log (Pre-fixada/IPCA/cotacao de papel) --
   // rotulo amigavel pro historico, mesmo padrao ja usado pro CDI/Ajuste.
   const _rotuloEvento={CORRECAO_CDI:"Correção CDI",CORRECAO_PREFIXADO:"Correção pré-fixada",
-    CORRECAO_IPCA:"Correção IPCA+",AJUSTE_MANUAL:"Ajuste manual",COTACAO_ATUALIZADA:"Cotação atualizada"};
+    CORRECAO_IPCA:"Correção IPCA+",CORRECAO_POUPANCA:"Correção poupança",AJUSTE_MANUAL:"Ajuste manual",COTACAO_ATUALIZADA:"Cotação atualizada"};
   const eventosLogCofre=(cofre.log||[]).filter(l=>l.tipoEvento!=="COTACAO_ATUALIZADA").map(l=>({
     data:l.data,tipo:_rotuloEvento[l.tipoEvento]||l.tipoEvento,
     delta:l.valor||0,desc:l.descricao,status:"EXECUTADO"
@@ -4479,12 +4524,52 @@ function CardCofre({cofre,onUpdate,data}){
           </span>
           {!ehRV&&<span style={{fontSize:10,color:cofreAberto?"#A9B6DA":C.textMuted}}>rendimento acumulado: {fmt(cofre.rendimentoAcumulado||0)}</span>}
         </div>
+        {(bloqueado||(cofre.cotizacaoDias>0||cofre.liquidacaoDias>0)||resgatesPend.length>0)&&<div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:5}}>
+          {bloqueado&&<span style={{padding:"3px 9px",borderRadius:12,fontSize:10,fontWeight:700,background:"#FEF3C7",color:"#92400E"}}>🔒 {fmt(cofre.saldo)} bloqueado até {fmtD(String(cofre.bloqueadoAte).slice(0,10))}</span>}
+          {(cofre.cotizacaoDias>0||cofre.liquidacaoDias>0)&&<span style={{padding:"3px 9px",borderRadius:12,fontSize:10,fontWeight:700,background:C.borderLight,color:C.textSub}}>resgate D+{cofre.cotizacaoDias||0}{cofre.cotizacaoTipo==="corridos"?" corr.":" útil"} · crédito D+{liqDiasTotal(cofre)}</span>}
+          {resgatesPend.map((rp,i)=><span key={i} style={{padding:"3px 9px",borderRadius:12,fontSize:10,fontWeight:700,background:"#DBEAFE",color:"#1E40AF"}}>⏳ {fmt(rp.valor)} cai em {fmtD(String(rp.data).slice(0,10))}</span>)}
+        </div>}
       </div>
       <div style={{fontSize:16,fontWeight:800,color:cofreAberto?"#7FE0B5":C.teal,flexShrink:0,marginLeft:8}}>{fmt(cofre.saldo)}</div>
       <span style={{fontSize:11,color:cofreAberto?"#A9B6DA":C.textMuted,marginLeft:8,paddingTop:3}}>{cofreAberto?"▲":"▼"}</span>
     </div>
     </div>
     {cofreAberto&&<div style={{background:C.bg||"#F5F6F8",padding:"12px 12px 14px",borderTop:"1px solid "+C.border}}>
+
+    {/* [23/11] Bloqueio por data e prazo de resgate D+x. Bloqueio e so sinalizacao: o saldo continua na liquidez. */}
+    {!prazoAberto
+      ?<button onClick={()=>{setBloqEdit(cofre.bloqueadoAte?String(cofre.bloqueadoAte).slice(0,10):"");setCotDEdit(String(cofre.cotizacaoDias||0));setCotTipoEdit(cofre.cotizacaoTipo||"uteis");setLiqDEdit(String(cofre.liquidacaoDias||0));setDbEdit(String(cofre.dataBaseRendimento||"").slice(0,10));setPrazoAberto(true);}}
+        style={{width:"100%",background:"none",border:"1px solid "+C.border,color:C.textSub,borderRadius:6,padding:"6px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+        🔒 Bloqueio e prazo de resgate
+      </button>
+      :<div style={{background:C.surface,borderRadius:8,padding:10,border:"1px solid "+C.border}}>
+        <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:6}}>Bloqueado até (opcional)</div>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          <input type="date" value={bloqEdit} onChange={e=>setBloqEdit(e.target.value)} style={{padding:"7px 6px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+          {bloqEdit&&<button onClick={()=>setBloqEdit("")} style={{background:"none",border:"none",color:C.textMuted,fontSize:11,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit"}}>limpar</button>}
+        </div>
+        <div style={{fontSize:9,color:C.textMuted,marginTop:3}}>Só avisa. O saldo continua contando na sua liquidez; o app pede confirmação antes de resgatar.</div>
+        <div style={{fontSize:11,fontWeight:700,color:C.text,margin:"10px 0 6px"}}>Prazo de resgate (como na corretora)</div>
+        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",fontSize:11,color:C.textSub}}>
+          <span>Cotização D+</span>
+          <input type="text" inputMode="numeric" value={cotDEdit} onChange={e=>setCotDEdit(e.target.value.replace(/\D/g,"").slice(0,2))} style={{width:44,padding:"7px 6px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"center",fontFamily:"inherit"}}/>
+          {["uteis","corridos"].map(t=><button key={t} onClick={()=>setCotTipoEdit(t)} style={{padding:"6px 10px",borderRadius:16,fontSize:11,fontWeight:700,fontFamily:"inherit",cursor:"pointer",border:"1px solid "+(cotTipoEdit===t?C.accent:C.border),background:cotTipoEdit===t?C.accent:"#fff",color:cotTipoEdit===t?"#fff":C.textSub}}>{t==="uteis"?"dias úteis":"dias corridos"}</button>)}
+        </div>
+        <div style={{display:"flex",gap:6,alignItems:"center",marginTop:6,fontSize:11,color:C.textSub}}>
+          <span>Depois, liquidação D+</span>
+          <input type="text" inputMode="numeric" value={liqDEdit} onChange={e=>setLiqDEdit(e.target.value.replace(/\D/g,"").slice(0,2))} style={{width:44,padding:"7px 6px",borderRadius:6,border:"1px solid "+C.border,fontSize:13,textAlign:"center",fontFamily:"inherit"}}/>
+          <span>dias úteis</span>
+        </div>
+        <div style={{fontSize:9,color:C.textMuted,marginTop:3}}>Ao resgatar, o dinheiro entra na data da liquidação. 0 e 0 = cai na hora. Só feriados nacionais fixos entram na conta.</div>
+        {cofre.tipoInvestimento==="poupanca"&&<>
+          <div style={{fontSize:11,fontWeight:700,color:C.text,margin:"10px 0 6px"}}>Data do depósito (aniversário da poupança)</div>
+          <input type="date" value={dbEdit} onChange={e=>setDbEdit(e.target.value)} style={{padding:"7px 6px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+        </>}
+        <div style={{display:"flex",gap:6,marginTop:10}}>
+          <button onClick={salvarPrazos} disabled={loadPrazos} style={{flex:1,minHeight:44,background:C.accent,color:"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{loadPrazos?"…":"Salvar"}</button>
+          <button onClick={()=>setPrazoAberto(false)} style={{minHeight:44,padding:"0 14px",background:"none",border:"1px solid "+C.border,color:C.textSub,borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Cancelar</button>
+        </div>
+      </div>}
 
     {/* [25/07] Renda Variavel mostra a posicao por papel -- um numero so de
         saldo esconderia informacao real (quantas acoes, a que cotacao). */}
@@ -4597,6 +4682,7 @@ function CardCofre({cofre,onUpdate,data}){
       style={{width:"100%",marginTop:6,background:C.text,color:"#fff",border:"none",borderRadius:6,padding:"9px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
       {load?"…":"Confirmar"}
     </button>}
+    {prazoR&&<div style={{fontSize:10,color:C.textSub,fontWeight:700,marginTop:3}}>⏳ Cotiza em {fmtD(prazoR.cotizacao)} · cai na conta em {fmtD(prazoR.liquidacao)}{prazoR.liquidacao>hoje()?" (fica agendado)":""}</div>}
     {!ehRV&&dataLanc>hoje()&&<div style={{fontSize:9,color:C.teal,fontWeight:700,marginTop:2}}>📅 Agendado pra {fmtD(dataLanc)} — só executa nessa data (aparece no Plano até lá).</div>}
 
     {/* [25/07] Secao "pesquisa e compra de novos ativos" -- separada da
@@ -4643,6 +4729,7 @@ function CardCofre({cofre,onUpdate,data}){
           style={{padding:"7px 6px",borderRadius:6,border:"1px solid "+C.border,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
         <span style={{fontSize:9,color:C.textMuted,flex:1}}>{dataLanc>hoje()?"📅 agendado pra "+fmtD(dataLanc):"executa hoje"}</span>
       </div>
+      {prazoR&&<div style={{fontSize:10,color:C.textSub,fontWeight:700,marginTop:3}}>⏳ Cotiza em {fmtD(prazoR.cotizacao)} · cai na conta em {fmtD(prazoR.liquidacao)}{prazoR.liquidacao>hoje()?" (fica agendado)":""}</div>}
       <button onClick={lancar} disabled={load}
         style={{width:"100%",marginTop:6,background:C.text,color:"#fff",border:"none",borderRadius:6,padding:"9px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
         {load?"…":"Confirmar"}
@@ -4736,6 +4823,9 @@ function Cofres({data,onUpdate}){
       </div>}
       {tipoInv==="sem_correcao"&&<div style={{marginBottom:10,fontSize:10,color:C.textMuted,background:C.borderLight,borderRadius:6,padding:8}}>
         O saldo só muda com aporte e resgate. Serve para dinheiro emprestado, valores a receber sem correção etc.
+      </div>}
+      {tipoInv==="poupanca"&&<div style={{marginBottom:10,fontSize:10,color:C.textMuted,background:C.borderLight,borderRadius:6,padding:8}}>
+        Rende como a poupança (série do Banco Central) e só credita no aniversário mensal. Depois de criar, informe a data do depósito em "Bloqueio e prazo de resgate". Serve, por exemplo, para a caução de aluguel.
       </div>}
       {tipoInv==="renda_variavel"&&<div style={{marginBottom:10,fontSize:10,color:C.textMuted,background:C.borderLight,borderRadius:6,padding:8}}>
         Sem taxa fixa aqui — cada aporte/resgate registra o papel (ticker), cotação e quantidade de ações. O saldo é a soma de cada papel × última cotação atualizada.
@@ -9310,7 +9400,7 @@ function Fluxo({data,onUpdate,destaque,onIrPara,estouro}){
         return <div style={{background:C.tealLight,padding:"10px 14px",borderBottom:"1px solid #BFE3D2"}}>
           <div style={{fontSize:10,fontWeight:800,color:C.teal,letterSpacing:".05em",marginBottom:6}}>🏦 SEUS COFRES</div>
           {(data.cofres||[]).map(c=><div key={c.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,color:C.text,padding:"2px 0"}}>
-            <span>{c.nome}</span><span style={{fontWeight:700}}>{fmt(c.saldo)}</span>
+            <span>{c.nome}{c.bloqueadoAte&&String(c.bloqueadoAte).slice(0,10)>=hoje()?<span style={{fontSize:10,color:"#92400E",marginLeft:6}}>🔒 até {fmtD(String(c.bloqueadoAte).slice(0,10))}</span>:null}</span><span style={{fontWeight:700}}>{fmt(c.saldo)}</span>
           </div>)}
           <div style={{borderTop:"1px solid #BFE3D2",marginTop:6,paddingTop:6}}>
             <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:C.textMuted}}>
@@ -14738,7 +14828,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261122.2000 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261123.2330 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14864,7 +14954,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261122.2000
+      // HTML v3.20261123.2330
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
