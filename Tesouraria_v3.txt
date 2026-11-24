@@ -1,4 +1,4 @@
-// VERSAO: v3.20261123.2300
+// VERSAO: v3.20261124.0300
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -433,7 +433,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261123.2300",
+    scriptVersion: "v3.20261124.0300",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -4738,7 +4738,7 @@ function baixaLote(ss, p) {
       var cat = String(sh.getRange(row, COL.CAT).getValue()).toUpperCase();
       if (cat === "DCP_PROVISAO") throw new Error("Envelope DCP nao entra no lote.");
       if (String(sh.getRange(row, COL.STATUS).getValue()).toUpperCase() === "EXECUTADO") throw new Error("Ja estava executado.");
-      baixa(ss, { row: row, valorReal: it.valorReal, dataReal: it.dataReal, _lote: true });
+      baixa(ss, { row: row, valorReal: it.valorReal, dataReal: it.dataReal, identificador: it.identificador || null, _lote: true });
       feitos++;
     } catch (e) {
       erros.push("Linha " + it.row + ": " + e.message);

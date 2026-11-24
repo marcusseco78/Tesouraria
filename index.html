@@ -6670,6 +6670,25 @@ function ConciliarExtratoTab({data,onUpdate,contaInicial,arquivoInicial,chaveFil
     setLancandoRendimento(false);
   }
 
+  // [24/11] Confirmar baixa em lote: so os pares EXATOS (valor do banco = valor do app).
+  // Os "fortes" (valor diferente) ficam de fora e seguem um a um, pois a baixa grava o valor do banco.
+  const baixasExatas=(resultado&&resultado.paraBaixar||[]).filter(x=>Math.abs((x.valorReal??x.valor)-x.valor)<=0.01);
+  async function confirmarTodasExatas(){
+    if(!baixasExatas.length) return;
+    const fora=(resultado.paraBaixar||[]).length-baixasExatas.length;
+    if(!confirm("Confirmar a baixa de "+baixasExatas.length+" lançamento(s) com valor igual ao do banco?"+(fora?"\n"+fora+" com valor diferente ficam de fora para você conferir um a um.":""))) return;
+    setLoad(true);
+    try{
+      const r=await api({action:"baixaLote",itens:baixasExatas.map(x=>({row:x.row,valorReal:x.valorReal,dataReal:x.dataReal,identificador:x.identificador||null}))});
+      onUpdate(r);
+      const falhas=(r.lote&&r.lote.erros)||[];
+      const ok=new Set(baixasExatas.map(x=>x.row));
+      setResultado(res=>({...res,paraBaixar:res.paraBaixar.filter(x=>!ok.has(x.row)||falhas.some(f=>f.indexOf("Linha "+x.row+":")===0))}));
+      if(falhas.length) alert("Alguns não foram confirmados:\n"+falhas.join("\n"));
+    }catch(e){ alert(e.message); }
+    setLoad(false);
+  }
+
   async function confirmarBaixa(item){
     setLoad(true); setEmVoo(item.row);
     try{
@@ -7128,6 +7147,10 @@ function ConciliarExtratoTab({data,onUpdate,contaInicial,arquivoInicial,chaveFil
           {(resultado.novos||[]).length>0&&` · ${resultado.novos.length} do banco sem par`}
           {(resultado.aguardando||[]).length>0&&` · ${resultado.aguardando.length} do app sem par`}
         </div>
+        {baixasExatas.length>1&&<button onClick={confirmarTodasExatas} disabled={load}
+          style={{width:"100%",minHeight:48,marginBottom:8,borderRadius:16,border:"none",background:C.accent,color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+          {load?"…":"Confirmar baixa das "+baixasExatas.length+" exatas"}
+        </button>}
         {(resultado.novos||[]).length>0&&<div style={{fontSize:10,color:C.textMuted,padding:"0 4px 8px",lineHeight:1.4}}>
           Toca num 🏦 solto, depois num 📱 solto, pra parear. Ou toca "+" num 🏦 solto pra criar um lançamento novo já pareado com ele.
         </div>}
@@ -14828,7 +14851,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261123.2330 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261124.0300 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14954,7 +14977,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261123.2330
+      // HTML v3.20261124.0300
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
