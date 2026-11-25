@@ -1,4 +1,4 @@
-// VERSAO: v3.20261124.0300
+// VERSAO: v3.20261124.2240
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -433,7 +433,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261124.0300",
+    scriptVersion: "v3.20261124.2240",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -9438,6 +9438,14 @@ function conciliarFatura(ss, p) {
 
   var startIdx = /date|title|amount/i.test(linhas[0]) ? 1 : 0;
 
+  // [24/11, ideia do Marcus] Juros/IOF de rotativo lancados NA DATA de um pagamento (ou antes
+  // dele) ja sao definitivos: o banco os cobra quando o rotativo e quitado. So os mais novos que o
+  // ultimo pagamento do arquivo ainda podem crescer. Guarda a data do ultimo "pagamento recebido".
+  var _ultPagRot = "";
+  linhas.forEach(function (l) {
+    var cc = parseCSVLine(l);
+    if (cc.length >= 3 && /pagamento recebido/i.test(cc[1])) { var dd = String(cc[0]).trim().slice(0, 10); if (dd > _ultPagRot) _ultPagRot = dd; }
+  });
   var comprasCSV = [];
   for (var i = startIdx; i < linhas.length; i++) {
     var cols = parseCSVLine(linhas[i]);
@@ -9461,7 +9469,7 @@ function conciliarFatura(ss, p) {
     // via DTEND/DTSERVER, calculado acima). Se a fatura ainda esta aberta,
     // essas linhas ficam de fora ate a proxima conciliacao trazer o valor
     // definitivo, ja fechado.
-    if (!fechadaConfiavel && /juros de.*rotativo|iof de.*rotativo/i.test(title)) continue;
+    if (!fechadaConfiavel && /juros de.*rotativo|iof de.*rotativo/i.test(title) && !(_ultPagRot && String(dateStr).trim().slice(0, 10) <= _ultPagRot)) continue;
     // [NOVO 09/09, mesmo motivo do _parsearCSVSimples] Estorno/credito
     // real (valor negativo aqui, depois de ja normalizado) nao pode mais
     // ser descartado silenciosamente.
@@ -11387,6 +11395,14 @@ function _parsearCSVSimples(csv, vencimento, status, permitirRotativo) {
   if (linhas.length < 2) return [];
 
   var startIdx = /date|title|amount/i.test(linhas[0]) ? 1 : 0;
+  // [24/11, ideia do Marcus] Juros/IOF de rotativo lancados NA DATA de um pagamento (ou antes
+  // dele) ja sao definitivos: o banco os cobra quando o rotativo e quitado. So os mais novos que o
+  // ultimo pagamento do arquivo ainda podem crescer. Guarda a data do ultimo "pagamento recebido".
+  var _ultPagRot = "";
+  linhas.forEach(function (l) {
+    var cc = parseCSVLine(l);
+    if (cc.length >= 3 && /pagamento recebido/i.test(cc[1])) { var dd = String(cc[0]).trim().slice(0, 10); if (dd > _ultPagRot) _ultPagRot = dd; }
+  });
   var itens = [];
 
   for (var i = startIdx; i < linhas.length; i++) {
@@ -11414,7 +11430,7 @@ function _parsearCSVSimples(csv, vencimento, status, permitirRotativo) {
     // decidido pelo chamador -- ve _resetUmCartao/conciliarFatura). Numa
     // fatura aberta, essas linhas ficam de fora ate a proxima fatura
     // fechada trazer o valor definitivo.
-    if (!permitirRotativo && /juros de.*rotativo|iof de.*rotativo/i.test(title)) continue;
+    if (!permitirRotativo && /juros de.*rotativo|iof de.*rotativo/i.test(title) && !(_ultPagRot && String(dateStr).trim().slice(0, 10) <= _ultPagRot)) continue;
     // [NOVO 09/09, pedido do Marcus] Antes ignorava tudo que nao fosse
     // positivo, "pra nao confundir estorno com compra" -- na pratica isso
     // fazia todo estorno/credito real (ex: reembolso de compra) sumir sem
