@@ -14880,7 +14880,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261124.1950 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261124.2230 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -14925,9 +14925,14 @@ function Tesouraria(){
           <button onClick={()=>avancarFila()} style={{minHeight:44,padding:"0 14px",borderRadius:12,border:"none",background:C.accent,color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>{fila.idx+1>=fila.itens.length?"Concluir":"Próximo ›"}</button>
           <button onClick={()=>setFila(null)} style={{minHeight:44,padding:"0 12px",borderRadius:12,border:"1px solid #3B4A78",background:"transparent",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Sair</button>
         </div>
-        <div style={{display:"flex",gap:6}}>
-          {fila.itens.map((it,k)=>{const ativo=k===fila.idx;const nome=it.tipo==="cartao"?"💳 "+nomeCartao(it.destino,data):"🧾 "+((((data&&data.contas)||[]).find(c=>c.id===it.destino)||{}).nome||it.destino);
-            return <button key={k} onClick={()=>avancarFila(k)} style={{minHeight:44,padding:"0 12px",borderRadius:16,border:ativo?"none":"1px solid #3B4A78",background:ativo?"#fff":"transparent",color:ativo?C.dark:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",flex:"1 1 0",minWidth:0,padding:"0 8px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nome}</button>;})}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+          {fila.itens.map((it,k)=>{const ativo=k===fila.idx;const feito=k<fila.idx;
+            const ehCartao=it.tipo==="cartao";
+            const nome=ehCartao?nomeCartao(it.destino,data):((((data&&data.contas)||[]).find(c=>c.id===it.destino)||{}).nome||it.destino);
+            return <button key={k} onClick={()=>avancarFila(k)} style={{minHeight:52,padding:"6px 10px",borderRadius:12,textAlign:"left",border:ativo?"none":"1px solid #3B4A78",background:ativo?"#fff":"transparent",color:ativo?C.dark:"#fff",cursor:"pointer",fontFamily:"inherit",minWidth:0,display:"flex",flexDirection:"column",justifyContent:"center",gap:1,opacity:feito&&!ativo?.7:1}}>
+              <span style={{fontSize:9,fontWeight:800,letterSpacing:".05em",color:ativo?C.accent:"#A9B6DA"}}>{k+1} · {ehCartao?"💳 CARTÃO":"🧾 CONTA"}{feito?" ✓":""}</span>
+              <span style={{fontSize:12,fontWeight:700,lineHeight:1.2,wordBreak:"break-word"}}>{nome}</span>
+            </button>;})}
         </div>
       </div>}
       {!load&&!err&&data&&(
@@ -15006,7 +15011,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261124.1950
+      // HTML v3.20261124.2230
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
