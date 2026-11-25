@@ -7764,7 +7764,10 @@ function CardNotificacoes({data,onUpdate}){
       const nm=palavras.some(w=>nome.includes(w))||nome.split(" ").filter(w=>w.length>=4).some(w=>est.includes(w));
       const v=Math.abs(Number(r[2])||0), vm=Math.abs(v-it.valor)<=Math.max(1,it.valor*0.15);
       const dias=Math.abs((new Date(String(r[0]).slice(0,10)+"T12:00:00")-new Date(it.data+"T12:00:00"))/864e5)||0;
-      return {row:_linhaCartao(r),desc:String(r[1]),valor:v,data:String(r[0]).slice(0,10),cat:String(r[5]||""),score:(nm?2:0)+(vm?1:0),dias};
+      // [25/11] Valor IGUAL ao centavo e data proxima pesam mais que so o nome parecido
+      // (o banco as vezes usa outro nome: "GOOGLE *YOUTUBE" = "AVIOES E MUSICAS").
+      const vExato=Math.abs(v-it.valor)<=0.01;
+      return {row:_linhaCartao(r),desc:String(r[1]),valor:v,data:String(r[0]).slice(0,10),cat:String(r[5]||""),score:(nm?2:0)+(vm?1:0)+(vExato?3:0)+(vExato&&dias<=7?1:0),dias};
     }).sort((x,y)=>y.score-x.score||x.dias-y.dias);
     return {top:base.filter(x=>x.score>0&&x.dias<=45).slice(0,4),all:base.slice(0,40)};
   };
@@ -14880,7 +14883,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261124.2230 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261125.1600 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -15011,7 +15014,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261124.2230
+      // HTML v3.20261125.1600
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
