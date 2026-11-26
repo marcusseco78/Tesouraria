@@ -4798,7 +4798,7 @@ function Cofres({data,onUpdate}){
       <div style={{marginBottom:8}}>
         <label style={{fontSize:10,fontWeight:700,color:C.textSub,textTransform:"uppercase"}}>Tipo de investimento</label>
         <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:4}}>
-          {[["cdi","Pós-fixado (CDI)"],["prefixado","Pré-fixada"],["ipca","IPCA+"],["renda_variavel","Renda Variável"],["sem_correcao","Sem correção"]].map(([id,l])=>
+          {[["cdi","Pós-fixado (CDI)"],["prefixado","Pré-fixada"],["ipca","IPCA+"],["renda_variavel","Renda Variável"],["poupanca","Poupança"],["sem_correcao","Sem correção"]].map(([id,l])=>
             <button key={id} onClick={()=>setTipoInv(id)} type="button"
               style={{padding:"6px 9px",borderRadius:7,border:"1px solid "+(tipoInv===id?C.teal:C.border),
                 background:tipoInv===id?C.tealLight:C.surface,color:tipoInv===id?C.teal:C.textSub,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>)}
@@ -14885,7 +14885,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261125.1605 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261126.1845 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -15016,7 +15016,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261125.1605
+      // HTML v3.20261126.1845
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
