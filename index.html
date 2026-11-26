@@ -2730,7 +2730,7 @@ function FormAmortizarDivida({data,divida,onUpdate,onDone}){
     <input type="text" value={obsAm} onChange={e=>setObsAm(e.target.value)} placeholder="Observação (opcional — ex: nome de quem recebeu)" style={{...inp,fontSize:13}}/>
     <label style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:12,color:C.textSub,marginBottom:12,cursor:"pointer"}}>
       <input type="checkbox" checked={semDebito} onChange={e=>setSemDebito(e.target.checked)} style={{marginTop:2}}/>
-      <span>Sou devedor e credor dessa amortização (CC Art 381-384). Sem débito na conta</span>
+      <span>Não gerar saída no caixa (o pagamento já está lançado no Fluxo, ou sou devedor e credor — CC Art 381-384)</span>
     </label>
     <button onClick={amortizar} disabled={loadAm||!pronto}
       style={{width:"100%",padding:"11px",borderRadius:10,background:pronto?C.accent:C.borderLight,color:pronto?"#fff":C.textMuted,fontSize:14,fontWeight:700,border:"none",cursor:"pointer",fontFamily:"inherit"}}>
@@ -14885,7 +14885,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261126.1930 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261126.1950 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -15016,7 +15016,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261126.1930
+      // HTML v3.20261126.1950
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
