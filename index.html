@@ -107,7 +107,7 @@ function fatorProjetado(tipoInvestimento,params,dias){
   }
   // cdi (padrao, cobre tambem Divida Pos-Fixada que so tem esse tipo)
   if(params.ultimaTaxaCdiDiaria==null) return 1;
-  const diaria=(params.ultimaTaxaCdiDiaria/100)*((params.percentualCdi||100)/100);
+  const diaria=(params.ultimaTaxaCdiDiaria/100)*(((params.percentualCdi==null?100:params.percentualCdi))/100);
   return Math.pow(1+diaria,dias);
 }
 // saldoBase = magnitude atual (sempre positiva). eventosReais = [{data,
@@ -2371,7 +2371,7 @@ function FormCriarDividaPosFixada({data,onSalvo,onClose}){
       // saldo iniciais e as amortizacoes; o saldo de cada ponto e o de hoje
       // sao recalculados com o CDI diario do Banco Central.
       const r=await api({action:"criarDividaPosFixada",nome,saldo_inicial:numBR(saldoInicial),
-        percentual_cdi:parseFloat(percCdi)||100,observacao,conta,modo:"EVENTOS",data_inicial:dataInicial});
+        percentual_cdi:(isNaN(parseFloat(String(percCdi).replace(",",".")))?100:parseFloat(String(percCdi).replace(",","."))),observacao,conta,modo:"EVENTOS",data_inicial:dataInicial});
       if(r&&r._avisoCriacaoDivida) alert(r._avisoCriacaoDivida);
       onSalvo(r);
     }catch(e){alert(e.message);}
@@ -2399,7 +2399,7 @@ function FormCriarDividaPosFixada({data,onSalvo,onClose}){
         <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Depois lance as amortizações (com a data de cada uma): o app recalcula o saldo de cada ponto com o CDI diário do Banco Central.</div></div>
       <div><label style={lbl}>% do CDI</label>
         <input type="number" step="1" value={percCdi} onChange={e=>setPercCdi(e.target.value)} placeholder="100" style={inp}/>
-        <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Só variação de percentual do CDI (ex: 100, 120) — nunca outro índice.</div></div>
+        <div style={{fontSize:10,color:C.textMuted,marginTop:3}}>Só variação de percentual do CDI (ex: 100, 120) — nunca outro índice. Use 0 para dívida sem correção.</div></div>
       <div><label style={lbl}>Observação (opcional)</label>
         <input value={observacao} onChange={e=>setObservacao(e.target.value.toUpperCase())} placeholder="Contexto livre" style={inp}/></div>
       {contasAtivas.length>1&&<div><label style={lbl}>Conta</label>
@@ -2831,7 +2831,7 @@ function CardDividaPosFixada({divida,onUpdate,data}){
     <div onClick={()=>setAberto(v=>!v)} style={{cursor:"pointer",minHeight:44,padding:"12px 14px",background:aberto?C.dark:C.surface,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
       <div style={{minWidth:0}}>
         <div style={{fontSize:14,fontWeight:800,color:aberto?"#fff":C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{divida.nome}</div>
-        <div style={{fontSize:11,color:aberto?"#A9B6DA":C.textMuted,marginTop:1}}>correção {divida.percentualCdi}% CDI · desde {fmtD(divida.dataAquisicao)}</div>
+        <div style={{fontSize:11,color:aberto?"#A9B6DA":C.textMuted,marginTop:1}}>{divida.percentualCdi===0?"sem correção":"correção "+divida.percentualCdi+"% CDI"} · desde {fmtD(divida.dataAquisicao)}</div>
       </div>
       <div style={{fontSize:16,fontWeight:800,color:aberto?"#FFB4AC":C.dark,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{fmt(-divida.saldoAtual)}</div>
     </div>
@@ -14885,7 +14885,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261126.1845 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261126.1930 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -15016,7 +15016,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261126.1845
+      // HTML v3.20261126.1930
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
