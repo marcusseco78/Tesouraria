@@ -191,7 +191,10 @@ const fmtD=s=>{
 // (mesmo padrão que CONTAS.NOME já usava), com o texto fixo só como último
 // recurso se o cadastro nunca teve nome nenhum.
 function nomeCartao(sigla,data){
-  const cad=(data&&data.cartoes||[]).find(c=>c.id===sigla);
+  const cads=(data&&data.cartoes)||[];
+  let cad=cads.find(c=>c.id===sigla);
+  // [27/11] Destino gravado sem pontos/hifens (ex: CARTAO_INTCCNUMCMCB) tambem acha o cartao.
+  if(!cad){const lim=x=>String(x||"").toUpperCase().replace(/[^A-Z0-9]/g,"");const k=lim(sigla);cad=k?cads.find(c=>lim(c.id)===k):null;}
   if(cad&&cad.nome&&cad.nome.trim())return cad.nome.trim();
   return "Cartão "+sigla;
 }
@@ -14885,7 +14888,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261126.1950 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261127.1500 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -15016,7 +15019,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261126.1950
+      // HTML v3.20261127.1500
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
