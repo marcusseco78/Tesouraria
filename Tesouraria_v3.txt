@@ -1,4 +1,4 @@
-// VERSAO: v3.20261126.1930
+// VERSAO: v3.20261127.1630
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -433,7 +433,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261126.1930",
+    scriptVersion: "v3.20261127.1630",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -9144,6 +9144,14 @@ function _preencherRecorrentesCartao12Ciclos(ss, nCiclos, corteISO, mantidos) {
   var existentes = {};
   var existentesPorDescVenc = {};
   var linhasPorVenc = {};
+  // [27/11, bug real do Marcus: ARVRO (11,99) sumiu do Plano] Termos alternativos (alias) como
+  // "GOOGLE YOUTUBE" sao compartilhados por varias recorrencias (YouTube Premium 53,90, doacoes
+  // 7,99 e 11,99 -- o banco usa o MESMO texto). Uma linha de OUTRA recorrencia nao pode contar
+  // como "ja existe" para esta. Guarda quem e o dono de cada termo e so pula se o dono nao for
+  // outra recorrencia cadastrada.
+  var nomesRecAtivas = {};
+  recRows.forEach(function(rr) { if (String(rr[6] || "").toUpperCase() !== "N" && rr[0]) nomesRecAtivas[String(rr[0]).toUpperCase()] = true; });
+  var donosPorTermo = {};
 
   // [NOVO 02/09, achado real com o Marcus] Mapa desc+destino -> alias, a
   // partir do que ja esta cadastrado em RECORRENCIAS agora mesmo -- usado
@@ -9196,6 +9204,9 @@ function _preencherRecorrentesCartao12Ciclos(ss, nCiclos, corteISO, mantidos) {
       var chave = c.id + "|" + vStr + "|" + String(r[1]).toUpperCase() + "|" + valorNum;
       existentes[chave] = true;
       existentesPorDescVenc[c.id + "|" + vStr + "|" + String(r[1]).toUpperCase()] = true;
+      var donoLinha = String(r[1]).toUpperCase();
+      try { var obsDono = JSON.parse(String(r[8] || "{}")); var apD = String(obsDono.apelido || "").toUpperCase(); if (apD && nomesRecAtivas[apD]) donoLinha = apD; } catch (e) {}
+      (donosPorTermo[c.id + "|" + vStr + "|" + String(r[1]).toUpperCase()] = donosPorTermo[c.id + "|" + vStr + "|" + String(r[1]).toUpperCase()] || []).push(donoLinha);
       // [NOVO 06/08] Pool de candidatos por vencimento, pra busca fuzzy
       // (ver logica de casamento aproximado mais abaixo) -- separado dos
       // mapas booleanos acima porque aqui precisamos do texto/valor de
@@ -9212,6 +9223,8 @@ function _preencherRecorrentesCartao12Ciclos(ss, nCiclos, corteISO, mantidos) {
           if (!termo) return;
           existentes[c.id + "|" + vStr + "|" + termo + "|" + valorNum] = true;
           existentesPorDescVenc[c.id + "|" + vStr + "|" + termo] = true;
+          var kDono = c.id + "|" + vStr + "|" + termo;
+          (donosPorTermo[kDono] = donosPorTermo[kDono] || []).push(donoLinha);
         });
       } catch (e) {}
     });
@@ -9288,7 +9301,14 @@ function _preencherRecorrentesCartao12Ciclos(ss, nCiclos, corteISO, mantidos) {
       var aliasRecPrevio = String(row[11] || "").trim();
       if (aliasRecPrevio) {
         var termosPrevio = aliasRecPrevio.split(/[;|]/).map(function(s) { return s.trim().toUpperCase(); }).filter(Boolean);
-        if (termosPrevio.some(function(t) { return existentesPorDescVenc[tipo + "|" + vencStr + "|" + t]; })) return;
+        if (termosPrevio.some(function(t) {
+          var kT = tipo + "|" + vencStr + "|" + t;
+          if (!existentesPorDescVenc[kT]) return false;
+          var donos = donosPorTermo[kT] || [];
+          if (!donos.length) return true; // casou pela descricao crua da linha (comportamento de sempre)
+          // so conta se algum dono for esta mesma recorrencia ou um texto cru do banco (nao o nome de OUTRA recorrencia)
+          return donos.some(function(d) { return d === desc || !nomesRecAtivas[d]; });
+        })) return;
       }
 
       // [NOVO 06/08, achado real com o Marcus] Casamento FUZZY -- antes so
