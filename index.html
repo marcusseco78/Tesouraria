@@ -7864,6 +7864,9 @@ function calcBalancoCiclo(data,escopo,janOv){
     const tipo=semAc(r.tipo),cat=semAc(r.categoria),v=Number(r.valor)||0;
     if(tipo.indexOf("CARTAO")===0||cat==="CARTAO") return;          // fatura: as compras entram abaixo
     if(cat==="DCP_PROVISAO"||tipo==="DCP_PROVISAO"||cat==="DCP"||tipo==="DCP") return; // DCP vem do resumo
+    // [27/11, achado do Marcus: "perdido vs media" incluia o aporte do cofre da caucao] Aporte/resgate de cofre e
+    // poupanca movida, nao gasto: fica fora do balanco (nao conta como despesa fixa).
+    if(tipo==="COFRE"||cat==="COFRE") return;
     const it={desc:r.descricao,valor:v,data:d};
     if(tipo.indexOf("TRANSFERENCIA")>=0||cat.indexOf("TRANSFERENCIA")>=0){
       // So o LUCROS recebido/enviado e renda planejada da conta; emprestimo, ressarcimento etc. ficam de fora.
@@ -14888,7 +14891,7 @@ function Tesouraria(){
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:9,color:C.textMuted,marginBottom:2}}>
-            HTML v3.20261127.1920 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
+            HTML v3.20261127.1950 · Script {(data&&data.scriptVersion)||"—"}{data&&data.tempos?" · script "+((data.tempos.ajusteMs+data.tempos.leituraMs)/1000).toFixed(1)+"s":""}
           </div>
           <div style={{display:"flex",gap:5,justifyContent:"flex-end"}}>
             <button onClick={alternarSom} title={somOn?"Som de feedback ligado — toque pra desligar":"Som de feedback desligado — toque pra ligar"}
@@ -15019,7 +15022,7 @@ function Tesouraria(){
       }
       root.innerHTML="";
       ReactDOM.createRoot(root).render(React.createElement(EB,null,React.createElement(App)));
-      // HTML v3.20261127.1920
+      // HTML v3.20261127.1950
     }catch(e){root.innerHTML="<div style='padding:20px;color:red;font-size:13px'>Erro: "+e.message+"</div>";}
   }
   boot();
