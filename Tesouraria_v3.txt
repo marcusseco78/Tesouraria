@@ -1,4 +1,4 @@
-// VERSAO: v3.20261127.1630
+// VERSAO: v3.20261127.1700
 /**
  * TESOURARIA v3 - Apps Script completo e limpo
  *
@@ -433,7 +433,7 @@ function _getDataCore(ss) {
     contas:    _lerContas(ss),
     cartoes:   _lerCartoes(ss),
     ts:        new Date().toISOString(),
-    scriptVersion: "v3.20261127.1630",
+    scriptVersion: "v3.20261127.1700",
     sheets:    ss.getSheets().map(s=>s.getName())
   };
 }
@@ -9213,7 +9213,7 @@ function _preencherRecorrentesCartao12Ciclos(ss, nCiclos, corteISO, mantidos) {
       // verdade pra comparar, nao so "existe ou nao".
       var chaveVenc = c.id + "|" + vStr;
       if (!linhasPorVenc[chaveVenc]) linhasPorVenc[chaveVenc] = [];
-      linhasPorVenc[chaveVenc].push({ desc: String(r[1]).toUpperCase(), valor: valorNum });
+      linhasPorVenc[chaveVenc].push({ desc: String(r[1]).toUpperCase(), valor: valorNum, dono: donoLinha });
       try {
         var obsR = JSON.parse(String(r[8] || "{}"));
         var termos = [];
@@ -9321,7 +9321,10 @@ function _preencherRecorrentesCartao12Ciclos(ss, nCiclos, corteISO, mantidos) {
       // definicao acima na aba de utilidades) -- mesmo criterio que
       // conciliarFatura e _resetUmCartao agora usam, combinado com o
       // Marcus pra nao ter 3 regras diferentes fazendo a mesma pergunta.
-      var poolVenc = linhasPorVenc[tipo + "|" + vencStr] || [];
+      // [27/11, bug real: ARVRO 11,99 nunca gerava -- 'AVIOES E MUSICAS (DOACAO)' 7,99 no mesmo vencimento
+      // parecia o mesmo gasto e ainda gravava o nome dele como apelido do ARVRO] Linha que pertence a
+      // OUTRA recorrencia cadastrada nunca entra no casamento aproximado.
+      var poolVenc = (linhasPorVenc[tipo + "|" + vencStr] || []).filter(function(l) { return l.dono === desc || !nomesRecAtivas[l.dono]; });
       var achadoRec = _melhorCandidato(poolVenc, desc, valor, null, null);
       if (achadoRec && (achadoRec.forca === "exato" || achadoRec.forca === "forte")) {
         var termosAtuais = aliasRecPrevio ? aliasRecPrevio.split(/[;|]/).map(function(s) { return s.trim(); }).filter(Boolean) : [];
